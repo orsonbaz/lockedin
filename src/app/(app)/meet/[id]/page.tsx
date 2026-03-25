@@ -16,7 +16,7 @@ import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '@/components/ui/tabs';
 import { db }                                          from '@/lib/db/database';
-import { calcDots }                                    from '@/lib/engine/calc';
+import { calcDots, suggestAttempts }                   from '@/lib/engine/calc';
 import type {
   Meet, MeetAttempt, AthleteProfile, AttemptResult,
 } from '@/lib/db/types';
@@ -312,7 +312,15 @@ export default function MeetDetailPage({
   // ── Derived ───────────────────────────────────────────────────────────────
   function getOpener(lift: CompLift): number {
     const att = attempts.find((a) => a.lift === lift && a.attemptNumber === 1);
-    return att?.plannedKg ?? 100;
+    if (att) return att.plannedKg;
+    // No attempts stored — derive opener from training max in profile
+    const maxField: Record<CompLift, keyof AthleteProfile> = {
+      SQUAT:    'maxSquat',
+      BENCH:    'maxBench',
+      DEADLIFT: 'maxDeadlift',
+    };
+    const trainingMax = (profile?.[maxField[lift]] as number | undefined) ?? 0;
+    return trainingMax > 0 ? suggestAttempts(trainingMax)[0] : 60;
   }
 
   function bestGoodLift(lift: CompLift): number {

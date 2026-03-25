@@ -52,31 +52,12 @@ export async function seedIfEmpty(): Promise<void> {
 
   await db.profile.put(profile);
 
-  // Seed one upcoming meet so the dashboard has something to show
-  const meetId = newId();
-  const meetDate = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 84); // ~12 weeks out
-    return d.toISOString().split('T')[0];
-  })();
-
-  await db.meets.put({
-    id: meetId,
-    name: 'Sample Powerlifting Meet',
-    date: meetDate,
-    federation: 'IPF',
-    weightClass: 83,
-    weighIn: 'TWO_HOUR',
-    status: 'UPCOMING',
-  });
-
-  // Seed an active training cycle
+  // Seed an active training cycle (no meet attached — user adds their own)
   const cycleId = newId();
   await db.cycles.put({
     id: cycleId,
     name: '12-Week Meet Prep',
     startDate: today(),
-    meetId,
     totalWeeks: 12,
     currentWeek: 1,
     status: 'ACTIVE',

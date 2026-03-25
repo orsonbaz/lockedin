@@ -37,7 +37,29 @@ const C = {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
 
-const WEIGHT_CLASSES = [52, 56, 60, 67.5, 75, 82.5, 90, 100, 110, 125, 140, 145];
+// Weight classes keyed by federation group and sex.
+// Sentinel values (120.1, 84.1, 140.1, 90.1) represent the open "+" class.
+const WEIGHT_CLASS_LABELS: Record<number, string> = {
+  120.1: '120+', 84.1: '84+', 140.1: '140+', 90.1: '90+',
+};
+
+type SexKey = 'MALE' | 'FEMALE' | 'OTHER';
+
+function getWeightClasses(federation: Federation, sex?: SexKey): number[] {
+  const female = sex === 'FEMALE';
+
+  // USPA / RPS use the old IPF weight classes
+  if (federation === 'USPA' || federation === 'RPS') {
+    return female
+      ? [44, 48, 52, 56, 60, 67.5, 75, 82.5, 90, 90.1]
+      : [52, 56, 60, 67.5, 75, 82.5, 90, 100, 110, 125, 140, 140.1];
+  }
+
+  // IPF, USAPL, CPU, and default (OTHER) use current IPF classes
+  return female
+    ? [47, 52, 57, 63, 69, 76, 84, 84.1]
+    : [59, 66, 74, 83, 93, 105, 120, 120.1];
+}
 
 const MEET_LIFTS: Array<{ lift: 'SQUAT' | 'BENCH' | 'DEADLIFT'; label: string; max: keyof AthleteProfile }> = [
   { lift: 'SQUAT',    label: 'Squat',       max: 'maxSquat'    },
@@ -483,7 +505,16 @@ export default function MeetDashboardPage() {
               </label>
               <select
                 value={form.federation}
-                onChange={(e) => setForm((f) => ({ ...f, federation: e.target.value as Federation }))}
+                onChange={(e) => {
+                  const fed = e.target.value as Federation;
+                  const classes = getWeightClasses(fed, profile?.sex as SexKey | undefined);
+                  setForm((f) => ({
+                    ...f,
+                    federation: fed,
+                    // Reset weight class to nearest valid class for the new federation
+                    weightClass: classes.includes(f.weightClass) ? f.weightClass : (classes[classes.length - 2] ?? classes[0]),
+                  }));
+                }}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none appearance-none"
                 style={{ backgroundColor: C.surface, borderColor: C.border, color: C.text }}
               >
@@ -502,8 +533,10 @@ export default function MeetDashboardPage() {
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none appearance-none"
                 style={{ backgroundColor: C.surface, borderColor: C.border, color: C.text }}
               >
-                {WEIGHT_CLASSES.map((wc) => (
-                  <option key={wc} value={wc}>{wc} kg</option>
+                {getWeightClasses(form.federation, profile?.sex as SexKey | undefined).map((wc) => (
+                  <option key={wc} value={wc}>
+                    {WEIGHT_CLASS_LABELS[wc] ?? `${wc} kg`}
+                  </option>
                 ))}
               </select>
             </div>

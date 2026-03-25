@@ -294,10 +294,9 @@ export default function CoachPage() {
       const key = profile?.groqApiKey ?? '';
       setGroqKey(key);
 
-      // If on-device mode and model not yet loaded — start download
-      if (!key && !isModelLoaded()) {
-        startModelLoad();
-      } else if (isModelLoaded()) {
+      // If model is already cached, mark as ready.
+      // Otherwise wait for explicit user action — don't auto-download 2.2 GB.
+      if (isModelLoaded()) {
         setModelStatus('ready');
       }
     }
@@ -444,8 +443,80 @@ export default function CoachPage() {
   // ── Determine active mode ─────────────────────────────────────────────────
   const isGroqMode = Boolean(groqKey);
 
-  // ── Model download screen (on-device, first load) ─────────────────────────
-  if (!isGroqMode && (modelStatus === 'idle' || modelStatus === 'loading')) {
+  // ── Setup choice screen (no key, model not started yet) ──────────────────
+  if (!isGroqMode && modelStatus === 'idle') {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center p-6"
+        style={{ backgroundColor: C.bg, color: C.text }}
+      >
+        <div
+          className="w-full max-w-sm rounded-2xl p-8"
+          style={{ backgroundColor: C.surface }}
+        >
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-6"
+            style={{ backgroundColor: `${C.accent}20`, border: `2px solid ${C.accent}` }}
+          >
+            🧠
+          </div>
+
+          <h2 className="text-xl font-bold mb-1 text-center">Set up your AI Coach</h2>
+          <p className="text-sm text-center mb-6" style={{ color: C.muted }}>
+            Choose how you want to power the coach.
+          </p>
+
+          {/* Option A — Groq (recommended) */}
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="w-full rounded-xl p-4 mb-3 text-left border-2 transition-all active:opacity-70"
+            style={{ backgroundColor: C.bg, borderColor: C.accent }}
+          >
+            <p className="font-bold mb-0.5" style={{ color: C.accent }}>
+              ⚡ Groq — Recommended
+            </p>
+            <p className="text-sm" style={{ color: C.muted }}>
+              Free API key at <span style={{ color: C.gold }}>console.groq.com</span>.
+              Fast, no download needed.
+            </p>
+          </button>
+
+          {/* Option B — On-device */}
+          <button
+            type="button"
+            onClick={() => startModelLoad()}
+            className="w-full rounded-xl p-4 text-left border transition-all active:opacity-70"
+            style={{ backgroundColor: C.bg, borderColor: C.border }}
+          >
+            <p className="font-bold mb-0.5" style={{ color: C.text }}>
+              📱 On-device — Offline
+            </p>
+            <p className="text-sm" style={{ color: C.muted }}>
+              Downloads Phi-3.5-mini once (~2.2 GB). Works offline, no key needed.
+            </p>
+          </button>
+        </div>
+
+        {/* Settings sheet for entering Groq key */}
+        <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
+          <SettingsSheet
+            groqKey={groqKey}
+            onGroqKeyChange={async (key) => {
+              await handleGroqKeyChange(key);
+              if (key) setSettingsOpen(false);
+            }}
+            modelStatus={modelStatus}
+            loadProgress={loadProgress}
+            onClearChat={handleClearChat}
+          />
+        </Sheet>
+      </div>
+    );
+  }
+
+  // ── Model download progress screen ────────────────────────────────────────
+  if (!isGroqMode && modelStatus === 'loading') {
     const pct = loadProgress?.progress ?? (
       loadProgress?.loaded && loadProgress?.total
         ? Math.round((loadProgress.loaded / loadProgress.total) * 100)
@@ -463,7 +534,6 @@ export default function CoachPage() {
           className="w-full max-w-sm rounded-2xl p-8 text-center"
           style={{ backgroundColor: C.surface }}
         >
-          {/* Pulsing brain icon */}
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-6 animate-pulse"
             style={{ backgroundColor: `${C.accent}20`, border: `2px solid ${C.accent}` }}
@@ -476,7 +546,6 @@ export default function CoachPage() {
             This happens once (~2.2 GB). After this, everything runs offline.
           </p>
 
-          {/* Progress bar */}
           <div className="mb-3">
             <Progress value={pct} className="h-3" />
           </div>
@@ -486,21 +555,19 @@ export default function CoachPage() {
           </p>
 
           <p className="text-xs" style={{ color: C.muted }}>
-            This may take a few minutes on mobile data.
+            Keep the app open. This may take a few minutes on mobile data.
           </p>
 
-          {/* Option to add Groq key instead */}
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
             className="mt-6 text-xs underline"
             style={{ color: C.gold }}
           >
-            Or add a free Groq key for instant access →
+            Add a free Groq key for instant access instead →
           </button>
         </div>
 
-        {/* Settings sheet accessible from download screen */}
         <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
           <SettingsSheet
             groqKey={groqKey}

@@ -220,6 +220,15 @@ export default function OnboardingStep1() {
         updatedAt:          now,
       });
 
+      // Remove the seeded dummy meet so the user starts with a clean slate
+      await db.meets
+        .filter((m) => m.name === 'Sample Powerlifting Meet')
+        .delete();
+      // Detach cycle from sample meet (meet was deleted)
+      await db.cycles
+        .filter((c) => c.status === 'ACTIVE')
+        .modify({ meetId: undefined });
+
       // Mark onboarding done
       localStorage.setItem('lockedin_onboarding_complete', '1');
       router.replace('/home');
