@@ -42,13 +42,15 @@ function makeBlock(
     PIVOT:           { volumeTarget: 0.8, intensityTarget: 0.70 },
     MAINTENANCE:     { volumeTarget: 0.75, intensityTarget: 0.75 },
   };
+  const base = baseMap[blockType];
   return {
-    id: 'block-1',
-    cycleId: 'cycle-1',
+    id:              'block-1',
+    cycleId:         'cycle-1',
     blockType,
-    weekStart: 1,
-    weekEnd: 4,
-    ...baseMap[blockType],
+    weekStart:       1,
+    weekEnd:         4,
+    volumeTarget:    base.volumeTarget    ?? 1.0,
+    intensityTarget: base.intensityTarget ?? 0.75,
     ...overrides,
   };
 }
