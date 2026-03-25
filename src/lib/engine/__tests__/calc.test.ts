@@ -11,6 +11,8 @@ import {
   responderMultiplier,
   overshooterRpeAdjust,
   calcDots,
+  calcWilks,
+  calcIpfPoints,
   suggestAttempts,
 } from '../calc';
 
@@ -287,6 +289,72 @@ describe('calcDots', () => {
   it('clamps male bodyweight to 40–210 kg range', () => {
     expect(calcDots(600, 30, 'MALE')).toEqual(calcDots(600, 40, 'MALE'));
     expect(calcDots(600, 250, 'MALE')).toEqual(calcDots(600, 210, 'MALE'));
+  });
+});
+
+// ── calcWilks ────────────────────────────────────────────────────────────────
+
+describe('calcWilks', () => {
+  it('produces a plausible score for an intermediate male (83 kg, 510 total)', () => {
+    const wilks = calcWilks(510, 83, 'MALE');
+    expect(wilks).toBeGreaterThan(250);
+    expect(wilks).toBeLessThan(450);
+  });
+
+  it('higher total at same bodyweight gives higher score', () => {
+    expect(calcWilks(600, 83, 'MALE')).toBeGreaterThan(calcWilks(500, 83, 'MALE'));
+  });
+
+  it('same total at lower bodyweight gives higher score (male)', () => {
+    expect(calcWilks(510, 75, 'MALE')).toBeGreaterThan(calcWilks(510, 93, 'MALE'));
+  });
+
+  it('uses female formula for FEMALE sex', () => {
+    const male   = calcWilks(400, 65, 'MALE');
+    const female = calcWilks(400, 65, 'FEMALE');
+    expect(male).not.toBeCloseTo(female, 0);
+  });
+
+  it('uses female formula for OTHER sex', () => {
+    expect(calcWilks(400, 65, 'OTHER')).toBeCloseTo(calcWilks(400, 65, 'FEMALE'), 3);
+  });
+
+  it('clamps bodyweight to valid range', () => {
+    expect(calcWilks(500, 30, 'MALE')).toEqual(calcWilks(500, 40, 'MALE'));
+    expect(calcWilks(500, 250, 'MALE')).toEqual(calcWilks(500, 200, 'MALE'));
+  });
+
+  it('returns 0 or positive (never negative)', () => {
+    expect(calcWilks(0, 83, 'MALE')).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── calcIpfPoints ─────────────────────────────────────────────────────────────
+
+describe('calcIpfPoints', () => {
+  it('produces a plausible score for an intermediate male (83 kg, 510 total)', () => {
+    const gl = calcIpfPoints(510, 83, 'MALE');
+    expect(gl).toBeGreaterThan(40);
+    expect(gl).toBeLessThan(120);
+  });
+
+  it('higher total gives higher points', () => {
+    expect(calcIpfPoints(600, 83, 'MALE')).toBeGreaterThan(calcIpfPoints(500, 83, 'MALE'));
+  });
+
+  it('same total at lower bodyweight gives higher points', () => {
+    expect(calcIpfPoints(510, 75, 'MALE')).toBeGreaterThan(calcIpfPoints(510, 100, 'MALE'));
+  });
+
+  it('uses female coefficients for FEMALE', () => {
+    const male   = calcIpfPoints(400, 65, 'MALE');
+    const female = calcIpfPoints(400, 65, 'FEMALE');
+    expect(male).not.toBeCloseTo(female, 0);
+  });
+
+  it('clamps bodyweight to 40–250 range', () => {
+    expect(calcIpfPoints(500, 30, 'MALE')).toEqual(calcIpfPoints(500, 40, 'MALE'));
+    expect(calcIpfPoints(500, 300, 'MALE')).toEqual(calcIpfPoints(500, 250, 'MALE'));
   });
 });
 

@@ -17,23 +17,12 @@ import { Skeleton }                     from '@/components/ui/skeleton';
 import { Settings, ChevronRight }       from 'lucide-react';
 import { db, today }                    from '@/lib/db/database';
 import { readinessLabel }               from '@/lib/engine/readiness';
+import { C }                            from '@/lib/theme';
+import { greeting, daysUntil }          from '@/lib/date-utils';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
   SessionExercise, TrainingBlock, TrainingCycle, Meet,
 } from '@/lib/db/types';
-
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  border:  '#1E3A5F',
-  green:   '#22C55E',
-} as const;
 
 // ── Ring geometry ──────────────────────────────────────────────────────────────
 const RING_R    = 50;
@@ -41,23 +30,10 @@ const RING_SIZE = 120;
 const CIRC      = 2 * Math.PI * RING_R; // ≈ 314.16
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
-}
-
 function formatDateFull(): string {
   return new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   });
-}
-
-function daysUntil(dateStr: string): number {
-  return Math.max(0, Math.ceil(
-    (new Date(dateStr).getTime() - Date.now()) / 86_400_000,
-  ));
 }
 
 function estimateDuration(exercises: SessionExercise[]): number {

@@ -12,19 +12,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { db }        from '@/lib/db/database';
+import { C }         from '@/lib/theme';
 import type { Sex, Federation, WeighIn, Equipment } from '@/lib/db/types';
-
-// ── Design tokens ──────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  border:  '#1E3A5F',
-} as const;
 
 // ── Option sets ───────────────────────────────────────────────────────────────
 const FEDERATIONS: Federation[]  = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
@@ -50,10 +39,10 @@ function SectionTitle({ n, title, sub }: { n: number; title: string; sub: string
   );
 }
 
-function FieldLabel({ label, hint }: { label: string; hint?: string }) {
+function FieldLabel({ label, hint, htmlFor }: { label: string; hint?: string; htmlFor?: string }) {
   return (
     <div className="mb-1.5">
-      <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+      <label htmlFor={htmlFor} className="text-xs font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
         {label}
       </label>
       {hint && <p className="text-xs mt-0.5" style={{ color: C.muted }}>{hint}</p>}
@@ -62,12 +51,13 @@ function FieldLabel({ label, hint }: { label: string; hint?: string }) {
 }
 
 function TextInput({
-  value, onChange, placeholder, type = 'text',
+  id, value, onChange, placeholder, type = 'text',
 }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+  id?: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
 }) {
   return (
     <input
+      id={id}
       type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -79,13 +69,14 @@ function TextInput({
 }
 
 function NumberInput({
-  value, onChange, min = 0, step = 1, suffix,
+  id, value, onChange, min = 0, step = 1, suffix,
 }: {
-  value: string; onChange: (v: string) => void; min?: number; step?: number; suffix?: string;
+  id?: string; value: string; onChange: (v: string) => void; min?: number; step?: number; suffix?: string;
 }) {
   return (
     <div className="relative">
       <input
+        id={id}
         type="number"
         value={value}
         min={min}
@@ -267,8 +258,9 @@ export default function OnboardingStep1() {
           <div className="flex flex-col gap-4">
             {/* Name */}
             <div>
-              <FieldLabel label="Your name" />
+              <FieldLabel label="Your name" htmlFor="ob-name" />
               <TextInput
+                id="ob-name"
                 value={name}
                 onChange={setName}
                 placeholder="e.g. Alex"
@@ -293,8 +285,8 @@ export default function OnboardingStep1() {
 
             {/* Body weight */}
             <div>
-              <FieldLabel label="Current body weight" hint="Your weight right now, not at weigh-in" />
-              <NumberInput value={weightKg} onChange={setWeightKg} min={30} step={0.1} suffix="kg" />
+              <FieldLabel label="Current body weight" hint="Your weight right now, not at weigh-in" htmlFor="ob-weight" />
+              <NumberInput id="ob-weight" value={weightKg} onChange={setWeightKg} min={30} step={0.1} suffix="kg" />
             </div>
 
             {/* Weight class */}
@@ -334,13 +326,14 @@ export default function OnboardingStep1() {
 
           <div className="flex flex-col gap-4">
             {[
-              { label: 'Squat',     value: maxSquat,    set: setMaxSquat    },
-              { label: 'Bench',     value: maxBench,    set: setMaxBench    },
-              { label: 'Deadlift',  value: maxDeadlift, set: setMaxDeadlift },
-            ].map(({ label, value, set }) => (
+              { label: 'Squat',     value: maxSquat,    set: setMaxSquat,    id: 'ob-squat'    },
+              { label: 'Bench',     value: maxBench,    set: setMaxBench,    id: 'ob-bench'    },
+              { label: 'Deadlift',  value: maxDeadlift, set: setMaxDeadlift, id: 'ob-deadlift' },
+            ].map(({ label, value, set, id }) => (
               <div key={label}>
-                <FieldLabel label={label} />
+                <FieldLabel label={label} htmlFor={id} />
                 <NumberInput
+                  id={id}
                   value={value}
                   onChange={set}
                   min={20}

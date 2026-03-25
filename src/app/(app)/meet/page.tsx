@@ -15,24 +15,13 @@ import {
 } from '@/components/ui/sheet';
 import { db, newId }                         from '@/lib/db/database';
 import { suggestAttempts, blockToIntensity } from '@/lib/engine/calc';
+import { C }                                 from '@/lib/theme';
+import { daysUntil, todayIso }               from '@/lib/date-utils';
 import type {
   Meet, MeetAttempt, AthleteProfile,
   TrainingCycle, TrainingBlock,
   Federation, WeighIn, BlockType, Lift,
 } from '@/lib/db/types';
-
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  border:  '#1E3A5F',
-  green:   '#1A7A4A',
-} as const;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
@@ -79,16 +68,6 @@ const BLOCK_COLORS: Record<BlockType, string> = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function daysUntil(dateStr: string): number {
-  return Math.max(0, Math.ceil(
-    (new Date(dateStr).getTime() - Date.now()) / 86_400_000,
-  ));
-}
-
-function todayIso(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
 function safeMax(val: unknown): number {
   const n = typeof val === 'number' ? val : 0;
   return n > 0 ? n : 100;
@@ -180,6 +159,7 @@ function AttemptCard({
                   min={0}
                   onChange={(e) => onChange(attempt.id, parseFloat(e.target.value) || 0)}
                   onBlur={(e)   => onBlur(attempt.id,   parseFloat(e.target.value) || 0)}
+                  aria-label={`${ATTEMPT_LABELS[numKey]} load in kilograms`}
                   className="w-full rounded-lg border px-3 py-2 text-right text-base font-bold outline-none transition-colors"
                   style={{
                     backgroundColor: C.bg,
@@ -209,10 +189,10 @@ function AttemptCard({
                   className="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full"
                   style={{
                     backgroundColor:
-                      attempt.result === 'GOOD'    ? `${C.green}30` :
+                      attempt.result === 'GOOD'    ? `${C.greenDeep}30` :
                       attempt.result === 'NO_LIFT' ? `${C.gold}30`  : `${C.accent}30`,
                     color:
-                      attempt.result === 'GOOD'    ? C.green :
+                      attempt.result === 'GOOD'    ? C.greenDeep :
                       attempt.result === 'NO_LIFT' ? C.gold   : C.accent,
                   }}
                 >
@@ -454,10 +434,11 @@ export default function MeetDashboardPage() {
         <div className="flex flex-col gap-4 max-w-lg mx-auto">
           {/* Meet name */}
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
+            <label htmlFor="meet-name" className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
               Meet Name *
             </label>
             <input
+              id="meet-name"
               type="text"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -469,10 +450,11 @@ export default function MeetDashboardPage() {
 
           {/* Date */}
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
+            <label htmlFor="meet-date" className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
               Meet Date *
             </label>
             <input
+              id="meet-date"
               type="date"
               value={form.date}
               min={todayIso()}
@@ -484,10 +466,11 @@ export default function MeetDashboardPage() {
 
           {/* Location */}
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
+            <label htmlFor="meet-location" className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
               Location (optional)
             </label>
             <input
+              id="meet-location"
               type="text"
               value={form.location}
               onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
@@ -500,10 +483,11 @@ export default function MeetDashboardPage() {
           {/* Federation + Weight class (side by side) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
+              <label htmlFor="meet-federation" className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
                 Federation
               </label>
               <select
+                id="meet-federation"
                 value={form.federation}
                 onChange={(e) => {
                   const fed = e.target.value as Federation;
@@ -524,10 +508,11 @@ export default function MeetDashboardPage() {
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
+              <label htmlFor="meet-weight-class" className="text-xs font-semibold uppercase tracking-wider block mb-1" style={{ color: C.muted }}>
                 Weight Class
               </label>
               <select
+                id="meet-weight-class"
                 value={form.weightClass}
                 onChange={(e) => setForm((f) => ({ ...f, weightClass: parseFloat(e.target.value) }))}
                 className="w-full rounded-xl border px-3 py-3 text-sm outline-none appearance-none"

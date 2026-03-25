@@ -182,6 +182,13 @@ export interface MeetAttempt {
   result?: AttemptResult;
 }
 
+export interface BodyweightEntry {
+  id: string;
+  date: string;             // YYYY-MM-DD
+  weightKg: number;
+  createdAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;

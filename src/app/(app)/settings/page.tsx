@@ -17,23 +17,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter }                         from 'next/navigation';
 import { toast }                             from 'sonner';
-import { ArrowLeft, TriangleAlert, Check }   from 'lucide-react';
-import { db }                                from '@/lib/db/database';
-import type { AthleteProfile, Federation }   from '@/lib/db/types';
-
-// ── Design tokens ──────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  border:  '#1E3A5F',
-  green:   '#22C55E',
-  red:     '#DC2626',
-} as const;
+import { ArrowLeft, TriangleAlert, Check, Download, Upload }   from 'lucide-react';
+import { db, exportAll, importAll }           from '@/lib/db/database';
+import { C }                                  from '@/lib/theme';
+import type { AthleteProfile, Federation }    from '@/lib/db/types';
 
 const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -69,10 +56,10 @@ function Row({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RowLabel({ label, sub }: { label: string; sub?: string }) {
+function RowLabel({ label, sub, htmlFor }: { label: string; sub?: string; htmlFor?: string }) {
   return (
     <div className="flex-1 min-w-0">
-      <p className="text-sm font-medium" style={{ color: C.text }}>{label}</p>
+      <label htmlFor={htmlFor} className="text-sm font-medium block" style={{ color: C.text }}>{label}</label>
       {sub && <p className="text-xs" style={{ color: C.muted }}>{sub}</p>}
     </div>
   );
@@ -103,6 +90,11 @@ export default function SettingsPage() {
   const [resetOpen,    setResetOpen]    = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetting,    setResetting]    = useState(false);
+
+  // Export / Import
+  const [exporting,    setExporting]    = useState(false);
+  const [importing,    setImporting]    = useState(false);
+  const fileInputRef   = { current: null as HTMLInputElement | null };
 
   useEffect(() => {
     async function load() {
@@ -166,6 +158,50 @@ export default function SettingsPage() {
     }
   }, [resetConfirm]);
 
+  // ── Export ───────────────────────────────────────────────────────────────────
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const data = await exportAll();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `lockedin-backup-${data.exportedAt.split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast('Backup downloaded!', { duration: 2500 });
+    } catch {
+      toast('Export failed.', { duration: 3000 });
+    } finally {
+      setExporting(false);
+    }
+  }, []);
+
+  // ── Import ───────────────────────────────────────────────────────────────────
+  const handleImportFile = useCallback(async (file: File) => {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data?.version || !data?.tables) {
+        toast('Invalid backup file.', { duration: 3000 });
+        return;
+      }
+      const counts = await importAll(data);
+      const total  = Object.values(counts).reduce((a, b) => a + b, 0);
+      toast(`Restored ${total} records. Reloading…`, { duration: 2000 });
+      setTimeout(() => window.location.reload(), 1500);
+    } catch {
+      toast('Import failed — file may be corrupted.', { duration: 3000 });
+    } finally {
+      setImporting(false);
+    }
+  }, []);
+
   // ── Loading ───────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -181,9 +217,11 @@ export default function SettingsPage() {
     onChange: (v: string) => void,
     onBlurFn: (v: number) => void,
     unit = 'kg',
+    id?: string,
   ) => (
     <div className="flex items-center gap-1">
       <input
+        id={id}
         type="number"
         value={value}
         step={0.5}
@@ -231,8 +269,9 @@ export default function SettingsPage() {
         <SettingsCard>
           {/* Name */}
           <Row>
-            <RowLabel label="Name" />
+            <RowLabel label="Name" htmlFor="settings-name" />
             <input
+              id="settings-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -244,20 +283,21 @@ export default function SettingsPage() {
 
           {/* Body weight */}
           <Row>
-            <RowLabel label="Body Weight" sub="Used for DOTS calculation" />
-            {numInput(weightKg, setWeightKg, (n) => void save({ weightKg: n }))}
+            <RowLabel label="Body Weight" sub="Used for DOTS calculation" htmlFor="settings-weight" />
+            {numInput(weightKg, setWeightKg, (n) => void save({ weightKg: n }), 'kg', 'settings-weight')}
           </Row>
 
           {/* Target weight class */}
           <Row>
-            <RowLabel label="Target Weight Class" />
-            {numInput(targetWC, setTargetWC, (n) => void save({ targetWeightClass: n }))}
+            <RowLabel label="Target Weight Class" htmlFor="settings-wc" />
+            {numInput(targetWC, setTargetWC, (n) => void save({ targetWeightClass: n }), 'kg', 'settings-wc')}
           </Row>
 
           {/* Federation */}
           <Row>
-            <RowLabel label="Federation" />
+            <RowLabel label="Federation" htmlFor="settings-federation" />
             <select
+              id="settings-federation"
               value={federation}
               onChange={(e) => {
                 const v = e.target.value as Federation;
@@ -276,16 +316,16 @@ export default function SettingsPage() {
         <SectionHeader title="Current Maxes" />
         <SettingsCard>
           <Row>
-            <RowLabel label="Squat" />
-            {numInput(maxSquat, setMaxSquat, (n) => void save({ maxSquat: n }))}
+            <RowLabel label="Squat" htmlFor="settings-squat" />
+            {numInput(maxSquat, setMaxSquat, (n) => void save({ maxSquat: n }), 'kg', 'settings-squat')}
           </Row>
           <Row>
-            <RowLabel label="Bench Press" />
-            {numInput(maxBench, setMaxBench, (n) => void save({ maxBench: n }))}
+            <RowLabel label="Bench Press" htmlFor="settings-bench" />
+            {numInput(maxBench, setMaxBench, (n) => void save({ maxBench: n }), 'kg', 'settings-bench')}
           </Row>
           <Row>
-            <RowLabel label="Deadlift" />
-            {numInput(maxDeadlift, setMaxDeadlift, (n) => void save({ maxDeadlift: n }))}
+            <RowLabel label="Deadlift" htmlFor="settings-deadlift" />
+            {numInput(maxDeadlift, setMaxDeadlift, (n) => void save({ maxDeadlift: n }), 'kg', 'settings-deadlift')}
           </Row>
         </SettingsCard>
 
@@ -318,8 +358,9 @@ export default function SettingsPage() {
 
           {/* Peak day of week */}
           <Row>
-            <RowLabel label="Peak Day of Week" sub="Heaviest session scheduled on this day" />
+            <RowLabel label="Peak Day of Week" sub="Heaviest session scheduled on this day" htmlFor="settings-peak-day" />
             <select
+              id="settings-peak-day"
               value={peakDay}
               onChange={(e) => {
                 const v = parseInt(e.target.value);
@@ -348,6 +389,7 @@ export default function SettingsPage() {
           <Row>
             <div className="flex-1 relative">
               <input
+                id="settings-groq-key"
                 type={showGroqKey ? 'text' : 'password'}
                 value={groqKey}
                 onChange={(e) => setGroqKey(e.target.value)}
@@ -413,7 +455,49 @@ export default function SettingsPage() {
           </>
         )}
 
-        {/* ── 6. DANGER ZONE ────────────────────────────────────────────── */}
+        {/* ── 6. DATA ──────────────────────────────────────────────────── */}
+        <SectionHeader title="Your Data" />
+        <SettingsCard>
+          <Row>
+            <RowLabel label="Export Backup" sub="Download all training data as JSON" />
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              disabled={exporting}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, color: C.text }}
+            >
+              <Download size={15} />
+              {exporting ? 'Exporting…' : 'Export'}
+            </button>
+          </Row>
+          <Row>
+            <RowLabel label="Import Backup" sub="Restore from a previous backup file" />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, color: C.text }}
+            >
+              <Upload size={15} />
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+            <input
+              ref={(el) => { fileInputRef.current = el; }}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleImportFile(f);
+                e.target.value = '';
+              }}
+            />
+          </Row>
+        </SettingsCard>
+
+        {/* ── 7. DANGER ZONE ────────────────────────────────────────────── */}
         <SectionHeader title="Danger Zone" />
         <div
           className="rounded-2xl overflow-hidden"
@@ -448,7 +532,9 @@ export default function SettingsPage() {
                 All data — profile, cycles, sessions, readiness logs, meet records, and chat history —
                 will be permanently deleted. Type <strong style={{ color: C.text }}>DELETE</strong> to confirm.
               </p>
+              <label htmlFor="settings-reset-confirm" className="sr-only">Type DELETE to confirm</label>
               <input
+                id="settings-reset-confirm"
                 type="text"
                 value={resetConfirm}
                 onChange={(e) => setResetConfirm(e.target.value)}

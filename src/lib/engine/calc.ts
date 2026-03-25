@@ -169,6 +169,72 @@ export function calcDots(total: number, bodyweightKg: number, sex: Sex): number 
   return (total * 500) / denominator;
 }
 
+// ── Wilks Score ───────────────────────────────────────────────────────────────
+
+/**
+ * Wilks score (2020 revised coefficients).
+ * Bodyweight is clamped to valid ranges: men 40–200 kg, women 40–150 kg.
+ * Returns points (typically 200–600 for competitive lifters).
+ *
+ * Formula:  Wilks = Total × 500 / (a·bw⁵ + b·bw⁴ + c·bw³ + d·bw² + e·bw + f)
+ */
+export function calcWilks(total: number, bodyweightKg: number, sex: Sex): number {
+  let a: number, b: number, c: number, d: number, e: number, f: number, bw: number;
+
+  if (sex === 'MALE') {
+    bw = Math.min(200, Math.max(40, bodyweightKg));
+    a = -216.0475144;
+    b =  16.2606339;
+    c = -0.002388645;
+    d = -0.00113732;
+    e =  7.01863e-6;
+    f = -1.291e-8;
+  } else {
+    bw = Math.min(150, Math.max(40, bodyweightKg));
+    a =  594.31747775582;
+    b = -27.23842536447;
+    c =  0.82112226871;
+    d = -0.00930733913;
+    e =  4.731582e-5;
+    f = -9.054e-8;
+  }
+
+  const denom = a + b * bw + c * bw ** 2 + d * bw ** 3 + e * bw ** 4 + f * bw ** 5;
+  if (denom <= 0) return 0;
+
+  return (total * 500) / denom;
+}
+
+// ── IPF GL Points ─────────────────────────────────────────────────────────────
+
+/**
+ * IPF Goodlift Points (GL Points) — the official IPF scoring system (2020+).
+ * Uses natural-log regression coefficients published by the IPF.
+ *
+ * Formula:  GL = Total × 100 / (a − b × e^(−c × bw))
+ * Bodyweight is clamped to 40–250 kg.
+ */
+export function calcIpfPoints(total: number, bodyweightKg: number, sex: Sex): number {
+  const bw = Math.min(250, Math.max(40, bodyweightKg));
+
+  let a: number, b: number, c: number;
+
+  if (sex === 'MALE') {
+    a = 1199.72839;
+    b = 1025.18162;
+    c = 0.009210;
+  } else {
+    a = 610.32796;
+    b = 527.01485;
+    c = 0.011452;
+  }
+
+  const denom = a - b * Math.exp(-c * bw);
+  if (denom <= 0) return 0;
+
+  return (total * 100) / denom;
+}
+
 // ── Attempt Selection ──────────────────────────────────────────────────────────
 
 /**

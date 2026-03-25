@@ -38,19 +38,7 @@ import {
   type ChatMessage,
   type ProgressPayload,
 } from '@/lib/ai/coach';
-
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  green:   '#1A7A4A',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  border:  '#1E3A5F',
-} as const;
+import { C }                                            from '@/lib/theme';
 
 // ── Suggested quick-prompts ───────────────────────────────────────────────────
 const SUGGESTED_PROMPTS = [
@@ -131,7 +119,7 @@ function SettingsSheet({
 
       {/* Groq key input */}
       <div className="mb-6">
-        <label className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
+        <label htmlFor="coach-groq-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
           Groq API Key
         </label>
         <p className="text-xs mb-3" style={{ color: C.muted }}>
@@ -139,6 +127,7 @@ function SettingsSheet({
         </p>
         <div className="flex gap-2 mb-2">
           <input
+            id="coach-groq-key"
             type={showKey ? 'text' : 'password'}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -698,11 +687,13 @@ export default function CoachPage() {
         <div className="flex items-end gap-2">
           {/* Multi-line input */}
           <textarea
+            id="coach-message"
             ref={textareaRef}
             value={input}
             onChange={(e) => { setInput(e.target.value); resizeTextarea(); }}
             onKeyDown={handleKeyDown}
             placeholder="Ask your coach…"
+            aria-label="Message to coach"
             rows={1}
             disabled={isGenerating}
             className="flex-1 rounded-xl border px-3 py-2.5 text-sm resize-none outline-none leading-relaxed transition-colors"

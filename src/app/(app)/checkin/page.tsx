@@ -24,16 +24,17 @@ import {
   readinessLabel,
 } from '@/lib/engine/readiness';
 import { generateSession } from '@/lib/engine/session';
-import type { ReadinessRecord, SessionExercise } from '@/lib/db/types';
+import { C }                                          from '@/lib/theme';
+import type { ReadinessRecord, SessionExercise, BodyweightEntry } from '@/lib/db/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const ACCENT      = '#E94560';
-const SURFACE     = '#0F3460';
-const TEXT        = '#E8E8F0';
-const MUTED       = '#9AA0B4';
-const BG          = '#1A1A2E';
-const GOLD        = '#F5A623';
+const ACCENT      = C.accent;
+const SURFACE     = C.surface;
+const TEXT        = C.text;
+const MUTED       = C.muted;
+const BG          = C.bg;
+const GOLD        = C.gold;
 
 const SLEEP_EMOJIS = ['😩', '😕', '😐', '🙂', '😁'] as const;
 
@@ -236,6 +237,7 @@ export default function CheckInPage() {
   const [soreness,     setSoreness]     = useState<number | undefined>();
   const [stress,       setStress]       = useState<number | undefined>();
   const [note,         setNote]         = useState('');
+  const [bodyweight,   setBodyweight]   = useState('');
 
   // ── Async state ─────────────────────────────────────────────────────────
   const [hrvBaseline, setHrvBaseline] = useState<number | undefined>();
@@ -347,6 +349,18 @@ export default function CheckInPage() {
       };
       await db.readiness.add(record);
 
+      // 1b. Save bodyweight entry if provided
+      const bwNum = bodyweight.trim() !== '' ? parseFloat(bodyweight) : undefined;
+      if (bwNum !== undefined && !isNaN(bwNum) && bwNum >= 30 && bwNum <= 250) {
+        const bwEntry: BodyweightEntry = {
+          id:        newId(),
+          date:      dateStr,
+          weightKg:  bwNum,
+          createdAt: new Date().toISOString(),
+        };
+        await db.bodyweight.add(bwEntry);
+      }
+
       // 2. Find today's scheduled session
       const session = await db.sessions
         .where('scheduledDate')
@@ -432,6 +446,7 @@ export default function CheckInPage() {
     soreness,
     stress,
     note,
+    bodyweight,
     readinessScore,
     router,
   ]);
@@ -584,12 +599,44 @@ export default function CheckInPage() {
             </div>
           </Section>
 
+          {/* ── SECTION 1b: Bodyweight (optional) ───────────────────── */}
+          <Section title="Bodyweight (optional)">
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <input
+                  id="bw-input"
+                  type="number"
+                  min={30}
+                  max={250}
+                  step={0.1}
+                  value={bodyweight}
+                  onChange={(e) => setBodyweight(e.target.value)}
+                  placeholder="e.g. 83.0"
+                  className="w-full rounded-lg border px-3 py-2 text-2xl font-bold text-right pr-14 bg-transparent outline-none transition-colors"
+                  style={{
+                    borderColor: bodyweight ? ACCENT : MUTED,
+                    color:       TEXT,
+                  }}
+                />
+                <span
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium pointer-events-none"
+                  style={{ color: MUTED }}
+                >
+                  kg
+                </span>
+              </div>
+            </div>
+            <p className="text-xs" style={{ color: MUTED }}>
+              Weigh yourself each morning before eating for the most consistent tracking.
+            </p>
+          </Section>
+
           {/* ── SECTION 2: Sleep ──────────────────────────────────────── */}
           <Section title="Sleep">
             {/* Hours slider */}
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">
+                <label htmlFor="sleep-hours" className="text-sm font-medium">
                   Hours of sleep last night
                 </label>
                 <span
@@ -602,6 +649,7 @@ export default function CheckInPage() {
 
               {/* Native range — styled via accentColor */}
               <input
+                id="sleep-hours"
                 type="range"
                 min={3}
                 max={12}
@@ -690,6 +738,8 @@ export default function CheckInPage() {
           {/* ── SECTION 4: Note ────────────────────────────────────────── */}
           <Section title="Notes (optional)">
             <textarea
+              id="checkin-notes"
+              aria-label="Check-in notes"
               value={note}
               onChange={(e) => setNote(e.target.value.slice(0, 200))}
               placeholder="Anything to flag? (optional)"

@@ -32,6 +32,7 @@ export interface SessionInput {
   readinessScore: number;    // 0–100 composite
   sessionNumber: number;     // which session this week (1-based)
   overshootHistory?: number; // avg RPE overshoot in last 5 sessions (positive = over)
+  weekWithinBlock?: number;  // 1-based week index within the current block (for taper logic)
 }
 
 export interface GeneratedExercise {
@@ -89,8 +90,9 @@ export function generateSession(input: SessionInput): GeneratedSession {
   }
 
   // ── 4. Build exercises ─────────────────────────────────────────────────────
+  const weekInBlock = input.weekWithinBlock ?? 1;
   const exercises = buildSessionExercises(
-    profile, block, primaryLift, volMult, totalRpeOffset,
+    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock,
   );
 
   // ── 5. Coach note ──────────────────────────────────────────────────────────
@@ -145,12 +147,15 @@ function buildSessionExercises(
   primaryLift: Lift,
   volMult: number,
   rpeOffset: number,
+  weekWithinBlock = 1,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
 
   // Primary comp movement(s)
+  const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
+    weekWithinBlock, totalBlockWeeks,
   );
   exercises.push(...primaryExercises);
 
@@ -174,6 +179,8 @@ function buildPrimaryExercises(
   lift: Lift,
   volMult: number,
   rpeOffset: number,
+  weekInBlock = 1,
+  totalBlockWeeks = 1,
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
   const baseRpe = getBaseRpeForBlock(blockType);
@@ -186,16 +193,41 @@ function buildPrimaryExercises(
   const compName      = getCompMovementName(lift);
   const variationName = getVariationName(lift);
 
-  // ── REALIZATION ────────────────────────────────────────────────────────────
+  // ── REALIZATION (with taper) ──────────────────────────────────────────────
+  //   Week 1 of REAL: 3 sets of 2 (full ramp)
+  //   Middle weeks:   2 sets of 2 (reduced volume)
+  //   Meet week:      1 × 1 @ RPE 7 (openers only)
   if (blockType === 'REALIZATION') {
+    const isMeetWeek = totalBlockWeeks > 1 && weekInBlock >= totalBlockWeeks;
+
+    if (isMeetWeek) {
+      const openerRpe  = clampRpe(7 + rpeOffset);
+      const openerLoad = roundLoad(prescribeLoad(maxKg, openerRpe, 1));
+      return [
+        {
+          name:            compName,
+          exerciseType:    'COMPETITION',
+          setStructure:    'STRAIGHT',
+          sets:            1,
+          reps:            1,
+          rpeTarget:       openerRpe,
+          estimatedLoadKg: openerLoad,
+          order:           1,
+          notes:           `Opener rehearsal only. Hit ${openerLoad}kg × 1 @RPE ${openerRpe} and call it.`,
+        },
+      ];
+    }
+
+    // Progressive taper: sets decrease through the block
+    const sets    = weekInBlock <= 1 ? 3 : 2;
     const topLoad = roundLoad(prescribeLoad(maxKg, adjustedRpe, 1));
     return [
       {
         name:            compName,
         exerciseType:    'COMPETITION',
         setStructure:    'ASCENDING',
-        sets:            3,
-        reps:            2,          // avg across ascending ramp
+        sets,
+        reps:            2,
         rpeTarget:       adjustedRpe,
         estimatedLoadKg: topLoad,
         order:           1,

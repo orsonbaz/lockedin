@@ -17,25 +17,10 @@ import {
 } from '@/components/ui/tabs';
 import { db }                                          from '@/lib/db/database';
 import { calcDots, suggestAttempts }                   from '@/lib/engine/calc';
+import { C }                                           from '@/lib/theme';
 import type {
   Meet, MeetAttempt, AthleteProfile, AttemptResult,
 } from '@/lib/db/types';
-
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  border:  '#1E3A5F',
-  green:   '#22C55E',
-  greenDim:'#14532D',
-  redDim:  '#450A0A',
-  yellowDim:'#422006',
-} as const;
 
 // ── Lift ordering ─────────────────────────────────────────────────────────────
 const LIFT_ORDER = ['SQUAT', 'BENCH', 'DEADLIFT'] as const;
@@ -780,6 +765,7 @@ export default function MeetDetailPage({
                                 type="number"
                                 step={0.5}
                                 min={0}
+                                aria-label={`${numLabel} actual weight in kilograms`}
                                 value={actualKgs[attempt.id] ?? ''}
                                 onChange={(e) =>
                                   setActualKgs((prev) => ({
@@ -904,12 +890,14 @@ export default function MeetDetailPage({
             {/* ── Post-meet notes ───────────────────────────────────────────── */}
             <div className="mb-5">
               <label
+                htmlFor="post-meet-notes"
                 className="text-xs font-semibold uppercase tracking-widest block mb-2"
                 style={{ color: C.muted }}
               >
                 Post-Meet Notes
               </label>
               <textarea
+                id="post-meet-notes"
                 rows={4}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}

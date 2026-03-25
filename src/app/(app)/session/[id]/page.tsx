@@ -17,21 +17,11 @@ import { useRouter }                                      from 'next/navigation'
 import { toast }                                          from 'sonner';
 import { db, today, newId }                               from '@/lib/db/database';
 import { readinessLabel }                                 from '@/lib/engine/readiness';
+import { C as _C }                                        from '@/lib/theme';
 import type { TrainingSession, SessionExercise, SetLog }  from '@/lib/db/types';
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg:      '#1A1A2E',
-  surface: '#0F3460',
-  accent:  '#E94560',
-  gold:    '#F5A623',
-  green:   '#1A7A4A',
-  text:    '#E8E8F0',
-  muted:   '#9AA0B4',
-  dim:     '#2A2A4A',
-  amber:   '#D97706',
-  red:     '#991B1B',
-} as const;
+// ── Design tokens (extends shared theme with session-specific colours) ───────
+const C = { ..._C, amber: '#D97706', green: _C.greenDeep } as const;
 
 // ── SVG rest-timer constants ───────────────────────────────────────────────────
 const RING_R    = 80;
@@ -906,10 +896,11 @@ export default function SessionPage({
           className="rounded-xl p-4 mb-6"
           style={{ backgroundColor: C.surface }}
         >
-          <label className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
+          <label htmlFor="session-notes" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
             Session Notes (optional)
           </label>
           <textarea
+            id="session-notes"
             value={sessionNote}
             onChange={(e) => setSessionNote(e.target.value)}
             placeholder="How did it feel? Anything to flag for next time?"

@@ -22,6 +22,13 @@ const PRECACHE = [
   '/icon-512.png',
 ];
 
+// ── Message handler (SKIP_WAITING from client) ───────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // ── Install ───────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,7 +37,7 @@ self.addEventListener('install', (event) => {
       Promise.allSettled(PRECACHE.map((url) => cache.add(url)))
     )
   );
-  self.skipWaiting();
+  // Don't auto-skipWaiting — let the client decide via SKIP_WAITING message
 });
 
 // ── Activate ──────────────────────────────────────────────────────────────────

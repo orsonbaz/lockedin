@@ -55,29 +55,63 @@ export function generateMacrocycle(input: MacrocycleInput): GeneratedMacrocycle 
 
 /**
  * Meet-prep layout — working backwards from the competition:
- *   Last 4 weeks  → REALIZATION (weeks 9–12 in a 12-week plan)
- *   Next 4 weeks  → INTENSIFICATION
- *   Remaining     → ACCUMULATION
+ *   REALIZATION is always the final block (1–4 weeks).
+ *   DELOAD weeks are inserted before REALIZATION and between
+ *   ACCUMULATION/INTENSIFICATION for cycles ≥ 8 weeks.
  *
- * For shorter preps the INTENSIFICATION and ACCUMULATION periods shrink
- * proportionally; REALIZATION is never less than 1 week.
+ * 12 weeks → ACCUM(3) → DELOAD(1) → INTENS(3) → DELOAD(1) → REAL(4)
+ * 10 weeks → ACCUM(2) → DELOAD(1) → INTENS(3) → REAL(4)
+ *  8 weeks → ACCUM(1) → DELOAD(1) → INTENS(2) → REAL(4)
+ *  4 weeks → REAL(4)  (no room for prep or deloads)
  */
 function buildMeetBlocks(totalWeeks: number): Omit<TrainingBlock, 'id'>[] {
-  const realizationWeeks = Math.max(1, Math.min(4, totalWeeks));
-  const intensWeeks      = Math.max(0, Math.min(4, totalWeeks - realizationWeeks));
-  const accumWeeks       = Math.max(0, totalWeeks - realizationWeeks - intensWeeks);
+  const realWeeks = Math.max(1, Math.min(4, totalWeeks));
+  const remaining = totalWeeks - realWeeks;
 
   const blocks: Omit<TrainingBlock, 'id'>[] = [];
   let cursor = 1;
 
-  if (accumWeeks > 0) {
+  if (remaining >= 7) {
+    // Long prep: two deloads
+    const accumWeeks = 3;
+    const intensWeeks = remaining - accumWeeks - 2; // minus 2 deload weeks
+
     blocks.push(makeBlock('ACCUMULATION', cursor, cursor + accumWeeks - 1));
     cursor += accumWeeks;
-  }
-
-  if (intensWeeks > 0) {
+    blocks.push(makeBlock('DELOAD', cursor, cursor));
+    cursor += 1;
     blocks.push(makeBlock('INTENSIFICATION', cursor, cursor + intensWeeks - 1));
     cursor += intensWeeks;
+    blocks.push(makeBlock('DELOAD', cursor, cursor));
+    cursor += 1;
+  } else if (remaining >= 4) {
+    // Medium prep: one deload between accum and intens
+    const accumWeeks  = Math.floor((remaining - 1) / 2);
+    const intensWeeks = remaining - 1 - accumWeeks;
+
+    if (accumWeeks > 0) {
+      blocks.push(makeBlock('ACCUMULATION', cursor, cursor + accumWeeks - 1));
+      cursor += accumWeeks;
+    }
+    blocks.push(makeBlock('DELOAD', cursor, cursor));
+    cursor += 1;
+    if (intensWeeks > 0) {
+      blocks.push(makeBlock('INTENSIFICATION', cursor, cursor + intensWeeks - 1));
+      cursor += intensWeeks;
+    }
+  } else if (remaining > 0) {
+    // Short prep: no room for deloads
+    const intensWeeks = Math.min(remaining, 4);
+    const accumWeeks  = remaining - intensWeeks;
+
+    if (accumWeeks > 0) {
+      blocks.push(makeBlock('ACCUMULATION', cursor, cursor + accumWeeks - 1));
+      cursor += accumWeeks;
+    }
+    if (intensWeeks > 0) {
+      blocks.push(makeBlock('INTENSIFICATION', cursor, cursor + intensWeeks - 1));
+      cursor += intensWeeks;
+    }
   }
 
   blocks.push(makeBlock('REALIZATION', cursor, totalWeeks));
@@ -86,25 +120,34 @@ function buildMeetBlocks(totalWeeks: number): Omit<TrainingBlock, 'id'>[] {
 
 /**
  * General (no meet) layout:
- *   Weeks 1–(n-2) → ACCUMULATION  (all but last 2)
- *   Last 2 weeks   → INTENSIFICATION
+ *   INTENSIFICATION is always the last 2 weeks.
+ *   A DELOAD week is inserted when the ACCUMULATION block is ≥ 4 weeks.
  *
- * For ≤ 2 total weeks, produces a single INTENSIFICATION block.
+ * 8 weeks → ACCUM(5) → DELOAD(1) → INTENS(2)
+ * 6 weeks → ACCUM(3) → DELOAD(1) → INTENS(2)
+ * 4 weeks → ACCUM(2) → INTENS(2)   (too short for a deload)
+ * 2 weeks → INTENS(2)
  */
 function buildGeneralBlocks(totalWeeks: number): Omit<TrainingBlock, 'id'>[] {
   const intensWeeks = Math.min(2, totalWeeks);
-  const accumWeeks  = Math.max(0, totalWeeks - intensWeeks);
+  const remaining   = totalWeeks - intensWeeks;
 
   const blocks: Omit<TrainingBlock, 'id'>[] = [];
+  let cursor = 1;
 
-  if (accumWeeks > 0) {
-    blocks.push(makeBlock('ACCUMULATION', 1, accumWeeks));
+  if (remaining >= 4) {
+    // Room for a deload
+    const accumWeeks = remaining - 1;
+    blocks.push(makeBlock('ACCUMULATION', cursor, cursor + accumWeeks - 1));
+    cursor += accumWeeks;
+    blocks.push(makeBlock('DELOAD', cursor, cursor));
+    cursor += 1;
+  } else if (remaining > 0) {
+    blocks.push(makeBlock('ACCUMULATION', cursor, cursor + remaining - 1));
+    cursor += remaining;
   }
 
-  blocks.push(
-    makeBlock('INTENSIFICATION', accumWeeks + 1, totalWeeks),
-  );
-
+  blocks.push(makeBlock('INTENSIFICATION', cursor, totalWeeks));
   return blocks;
 }
 
