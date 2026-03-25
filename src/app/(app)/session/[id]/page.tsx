@@ -1,0 +1,939 @@
+'use client';
+
+/**
+ * Session Logging Screen — /app/session/[id]
+ *
+ * Three states managed by local useState:
+ *   'overview'  — exercise list, coach note, readiness, Start button
+ *   'logging'   — set-by-set logging with fixed input panel + rest timer
+ *   'complete'  — post-session summary, RPE accuracy, save + redirect
+ *
+ * Performance contract: all DB writes during 'logging' are fire-and-forget.
+ * UI state updates happen synchronously; the user never waits for a write.
+ */
+
+import { use, useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter }                                      from 'next/navigation';
+import { toast }                                          from 'sonner';
+import { db, today, newId }                               from '@/lib/db/database';
+import { readinessLabel }                                 from '@/lib/engine/readiness';
+import type { TrainingSession, SessionExercise, SetLog }  from '@/lib/db/types';
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const C = {
+  bg:      '#1A1A2E',
+  surface: '#0F3460',
+  accent:  '#E94560',
+  gold:    '#F5A623',
+  green:   '#1A7A4A',
+  text:    '#E8E8F0',
+  muted:   '#9AA0B4',
+  dim:     '#2A2A4A',
+  amber:   '#D97706',
+  red:     '#991B1B',
+} as const;
+
+// ── SVG rest-timer constants ───────────────────────────────────────────────────
+const RING_R    = 80;
+const RING_CIRC = 2 * Math.PI * RING_R; // ≈ 502.65
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+type PageState = 'overview' | 'logging' | 'complete';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-component: Rest Timer Overlay
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface RestTimerProps {
+  secsRemaining: number;
+  maxSecs:       number;
+  onSkip:        () => void;
+}
+
+function RestTimerOverlay({ secsRemaining, maxSecs, onSkip }: RestTimerProps) {
+  const progress    = secsRemaining / maxSecs;          // 1→0 as time passes
+  const dashOffset  = RING_CIRC * (1 - progress);       // 0→CIRC: ring drains
+  const mins        = Math.floor(secsRemaining / 60);
+  const secs        = secsRemaining % 60;
+  const display     = `${mins}:${String(secs).padStart(2, '0')}`;
+
+  // Colour shifts from green → amber → red as time depletes
+  const ringColour  = progress > 0.5 ? C.green : progress > 0.25 ? C.gold : C.accent;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center"
+      style={{ backgroundColor: 'rgba(26,26,46,0.92)', backdropFilter: 'blur(4px)' }}
+    >
+      <p className="text-sm font-semibold uppercase tracking-widest mb-8" style={{ color: C.muted }}>
+        Rest
+      </p>
+
+      {/* Ring + countdown */}
+      <svg viewBox="0 0 200 200" className="w-52 h-52" aria-label={`Rest timer ${display}`}>
+        {/* Track */}
+        <circle cx="100" cy="100" r={RING_R} fill="none" stroke={C.dim} strokeWidth="10" />
+        {/* Progress arc */}
+        <circle
+          cx="100" cy="100" r={RING_R}
+          fill="none"
+          stroke={ringColour}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={RING_CIRC}
+          strokeDashoffset={dashOffset}
+          transform="rotate(-90 100 100)"
+          style={{ transition: 'stroke-dashoffset 0.9s linear, stroke 0.5s ease' }}
+        />
+        {/* Time digits */}
+        <text
+          x="100" y="95"
+          textAnchor="middle" dominantBaseline="middle"
+          fill={C.text} fontSize="42" fontWeight="bold" fontFamily="monospace"
+        >
+          {display}
+        </text>
+        <text
+          x="100" y="125"
+          textAnchor="middle" dominantBaseline="middle"
+          fill={C.muted} fontSize="13" fontFamily="sans-serif"
+        >
+          rest
+        </text>
+      </svg>
+
+      <button
+        type="button"
+        onClick={onSkip}
+        className="mt-10 text-sm transition-colors active:opacity-70"
+        style={{ color: C.muted }}
+      >
+        Skip rest →
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-component: Logged Set Row
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SetLogRowProps {
+  setLog:    SetLog;
+  rpeTarget: number;
+}
+
+function SetLogRow({ setLog, rpeTarget }: SetLogRowProps) {
+  const overshoot = (setLog.rpeLogged ?? 0) - rpeTarget;
+  const isCritical = setLog.rpeLogged !== undefined && overshoot > 2;
+  const isWarning  = setLog.rpeLogged !== undefined && overshoot > 1 && !isCritical;
+
+  let bg     = 'transparent';
+  let border = 'transparent';
+  if (isCritical) { bg = 'rgba(153,27,27,0.2)';  border = C.accent; }
+  if (isWarning)  { bg = 'rgba(217,119,6,0.15)'; border = C.amber;  }
+
+  return (
+    <div
+      className="flex items-center justify-between rounded-lg px-4 py-3 text-sm border"
+      style={{ backgroundColor: bg, borderColor: border }}
+    >
+      <span className="w-12 font-bold" style={{ color: C.muted }}>
+        Set {setLog.setNumber}
+      </span>
+      <span className="flex-1 text-center font-semibold" style={{ color: C.text }}>
+        {setLog.loadKg} kg
+      </span>
+      <span className="flex-1 text-center" style={{ color: C.text }}>
+        {setLog.reps} reps
+      </span>
+      <span
+        className="w-20 text-right font-semibold"
+        style={{ color: isCritical ? C.accent : isWarning ? C.amber : C.gold }}
+      >
+        {setLog.rpeLogged !== undefined ? `RPE ${setLog.rpeLogged}` : '—'}
+        {isCritical && ' ⚠'}
+        {isWarning  && ' △'}
+      </span>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-component: Exercise type badge
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ExerciseBadge({ type }: { type: SessionExercise['exerciseType'] }) {
+  const map = {
+    COMPETITION: { label: 'Comp',      bg: 'rgba(233,69,96,0.15)',  text: C.accent },
+    VARIATION:   { label: 'Variation', bg: 'rgba(245,166,35,0.15)', text: C.gold   },
+    ACCESSORY:   { label: 'Accessory', bg: 'rgba(154,160,180,0.1)', text: C.muted  },
+  } as const;
+  const { label, bg, text } = map[type];
+  return (
+    <span
+      className="text-xs font-semibold px-2 py-0.5 rounded-full"
+      style={{ backgroundColor: bg, color: text }}
+    >
+      {label}
+    </span>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Page
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function SessionPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id: sessionId } = use(params);
+  const router            = useRouter();
+
+  // ── Data ────────────────────────────────────────────────────────────────
+  const [loading,          setLoading]          = useState(true);
+  const [session,          setSession]          = useState<TrainingSession | null>(null);
+  const [exercises,        setExercises]        = useState<SessionExercise[]>([]);
+  const [setLogs,          setSetLogs]          = useState<SetLog[]>([]);
+  const [todayReadiness,   setTodayReadiness]   = useState<number | undefined>();
+
+  // ── Page flow ────────────────────────────────────────────────────────────
+  const [pageState,        setPageState]        = useState<PageState>('overview');
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [showModifications,setShowModifications]= useState(false);
+
+  // ── Logging: exercise tracking ────────────────────────────────────────
+  const [activeExIdx,      setActiveExIdx]      = useState(0);
+
+  // ── Logging: draft inputs (refs for zero-latency read in logSet) ──────
+  const [draftLoad,        setDraftLoad]        = useState(0);
+  const [draftReps,        setDraftReps]        = useState(5);
+  const [draftRpe,         setDraftRpe]         = useState(8);
+  const draftLoadRef = useRef(0);
+  const draftRepsRef = useRef(5);
+  const draftRpeRef  = useRef(8);
+  // Keep refs in sync with state
+  draftLoadRef.current = draftLoad;
+  draftRepsRef.current = draftReps;
+  draftRpeRef.current  = draftRpe;
+
+  // ── Rest timer ─────────────────────────────────────────────────────────
+  const [restTimerSecs,    setRestTimerSecs]    = useState<number | null>(null);
+  const [restTimerMax,     setRestTimerMax]     = useState(180);
+
+  // ── Complete state ─────────────────────────────────────────────────────
+  const [sessionNote,      setSessionNote]      = useState('');
+  const [saving,           setSaving]           = useState(false);
+
+  // ── Load data ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const [sess, exs, sets, readiness] = await Promise.all([
+        db.sessions.get(sessionId),
+        db.exercises.where('sessionId').equals(sessionId).sortBy('order'),
+        db.sets.where('sessionId').equals(sessionId).toArray(),
+        db.readiness.where('date').equals(today()).first(),
+      ]);
+      if (cancelled) return;
+      setSession(sess ?? null);
+      setExercises(exs);
+      setSetLogs(sets);
+      setTodayReadiness(readiness?.readinessScore);
+      if (exs.length > 0) {
+        const first = exs[0];
+        setDraftLoad(first.estimatedLoadKg);
+        setDraftReps(first.reps);
+        setDraftRpe(first.rpeTarget);
+      }
+      setLoading(false);
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  // ── Rest timer countdown ───────────────────────────────────────────────
+  useEffect(() => {
+    if (restTimerSecs === null) return;
+    if (restTimerSecs <= 0)    { setRestTimerSecs(null); return; }
+    const t = setTimeout(
+      () => setRestTimerSecs((s) => (s !== null && s > 0 ? s - 1 : null)),
+      1000,
+    );
+    return () => clearTimeout(t);
+  }, [restTimerSecs]);
+
+  // ── Pre-fill draft when active exercise changes ────────────────────────
+  useEffect(() => {
+    if (exercises.length === 0) return;
+    const ex = exercises[activeExIdx];
+    if (!ex) return;
+    setDraftLoad(ex.estimatedLoadKg);
+    setDraftReps(ex.reps);
+    setDraftRpe(ex.rpeTarget);
+    // Dismiss rest timer when moving to a new exercise
+    setRestTimerSecs(null);
+  }, [activeExIdx, exercises]);
+
+  // ── Derived ────────────────────────────────────────────────────────────
+  const activeExercise    = exercises[activeExIdx] ?? null;
+  const activeExSets      = activeExercise
+    ? setLogs.filter((sl) => sl.exerciseId === activeExercise.id)
+    : [];
+  const completedCount    = activeExIdx; // exercises before current are done
+  const exerciseCount     = exercises.length;
+
+  // ── Handlers ────────────────────────────────────────────────────────────
+
+  /** Fire-and-forget set log — must respond < 50ms. */
+  const logSet = useCallback(() => {
+    if (!activeExercise) return;
+    const load = draftLoadRef.current;
+    const reps = draftRepsRef.current;
+    const rpe  = draftRpeRef.current;
+    const setNumber = setLogs.filter((sl) => sl.exerciseId === activeExercise.id).length + 1;
+
+    const newLog: SetLog = {
+      id:         newId(),
+      exerciseId: activeExercise.id,
+      sessionId,
+      setNumber,
+      reps,
+      loadKg:     load,
+      rpeLogged:  rpe,
+      loggedAt:   new Date().toISOString(),
+    };
+
+    // Fire-and-forget — never await during logging
+    void db.sets.add(newLog);
+
+    // Synchronous UI update
+    setSetLogs((prev) => [...prev, newLog]);
+
+    // Start rest timer (duration by RPE)
+    const dur = rpe < 8 ? 180 : rpe < 9 ? 240 : 300;
+    setRestTimerMax(dur);
+    setRestTimerSecs(dur);
+  }, [activeExercise, sessionId, setLogs]);
+
+  const completeExercise = useCallback(() => {
+    setRestTimerSecs(null);
+    if (activeExIdx + 1 >= exerciseCount) {
+      setPageState('complete');
+    } else {
+      setActiveExIdx((i) => i + 1);
+    }
+  }, [activeExIdx, exerciseCount]);
+
+  const skipExercise = useCallback(() => {
+    completeExercise();
+  }, [completeExercise]);
+
+  const startSession = useCallback(() => {
+    setSessionStartTime(new Date());
+    setPageState('logging');
+  }, []);
+
+  const finishSession = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const note = sessionNote.trim();
+      await db.sessions.update(sessionId, {
+        status:      'COMPLETED',
+        completedAt: new Date().toISOString(),
+        ...(note ? { coachNote: note } : {}),
+      });
+      await checkOvershooter();
+      router.push('/home');
+    } catch (err) {
+      console.error('[Session] finish failed:', err);
+      setSaving(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving, sessionId, sessionNote, router]);
+
+  async function checkOvershooter() {
+    const compExercises = await db.exercises
+      .filter((e) => e.exerciseType === 'COMPETITION')
+      .toArray();
+    if (compExercises.length === 0) return;
+
+    const rpeTargetMap = new Map(compExercises.map((e) => [e.id, e.rpeTarget]));
+
+    // Collect all sets for competition exercises (across all sessions)
+    const competitionSets: SetLog[] = [];
+    for (const ex of compExercises) {
+      const exSets = await db.sets
+        .where('exerciseId')
+        .equals(ex.id)
+        .filter((s) => s.rpeLogged !== undefined)
+        .toArray();
+      competitionSets.push(...exSets);
+    }
+
+    const last20 = competitionSets
+      .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))
+      .slice(0, 20);
+
+    if (last20.length < 5) return; // insufficient data
+
+    const overshootCount = last20.filter((s) => {
+      const target = rpeTargetMap.get(s.exerciseId);
+      return (
+        target !== undefined &&
+        s.rpeLogged !== undefined &&
+        s.rpeLogged - target > 1.0
+      );
+    }).length;
+
+    if (overshootCount / last20.length > 0.4) {
+      void db.profile.update('me', {
+        overshooter: true,
+        updatedAt:   new Date().toISOString(),
+      });
+      toast(
+        "Heads up — we noticed you're going harder than prescribed. Your coach will adjust future sessions.",
+        { duration: 6000 },
+      );
+    }
+  }
+
+  // ── Parse AI modifications ────────────────────────────────────────────
+  const modifications: string[] = (() => {
+    if (!session?.aiModifications) return [];
+    try   { return JSON.parse(session.aiModifications) as string[]; }
+    catch { return []; }
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Render: Loading
+  // ─────────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: C.bg }}
+      >
+        <div
+          className="w-10 h-10 rounded-full border-4 animate-spin"
+          style={{ borderColor: `${C.accent} transparent transparent transparent` }}
+        />
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Render: Session not found
+  // ─────────────────────────────────────────────────────────────────────
+  if (!session) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-4 p-6"
+        style={{ backgroundColor: C.bg, color: C.text }}
+      >
+        <p className="text-xl font-bold">Session not found</p>
+        <button
+          type="button"
+          onClick={() => router.push('/home')}
+          className="px-6 py-3 rounded-xl font-semibold"
+          style={{ backgroundColor: C.accent, color: C.text }}
+        >
+          Back to Home
+        </button>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Render: OVERVIEW state
+  // ─────────────────────────────────────────────────────────────────────
+  if (pageState === 'overview') {
+    const rdLabel =
+      todayReadiness !== undefined ? readinessLabel(todayReadiness) : null;
+
+    return (
+      <div
+        className="min-h-screen pb-8"
+        style={{ backgroundColor: C.bg, color: C.text }}
+      >
+        <div className="max-w-lg mx-auto px-4">
+
+          {/* Header */}
+          <div className="pt-8 pb-4">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: C.muted }}>
+              Today&apos;s Session
+            </p>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {session.sessionType} SESSION
+              {' '}&mdash;{' '}
+              {session.primaryLift}
+            </h1>
+          </div>
+
+          {/* AI modifications banner */}
+          {modifications.length > 0 && (
+            <div
+              className="rounded-xl p-4 mb-4"
+              style={{ backgroundColor: 'rgba(233,69,96,0.12)', border: `1px solid ${C.accent}` }}
+            >
+              <div
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setShowModifications((v) => !v)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && setShowModifications((v) => !v)}
+              >
+                <p className="text-sm font-semibold" style={{ color: C.accent }}>
+                  ✦ Session adjusted based on your readiness
+                </p>
+                <span style={{ color: C.accent }}>{showModifications ? '▲' : '▼'}</span>
+              </div>
+              {showModifications && (
+                <ul className="mt-3 space-y-1">
+                  {modifications.map((m, i) => (
+                    <li key={i} className="text-xs" style={{ color: C.muted }}>
+                      • {m}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Readiness badge */}
+          {rdLabel && todayReadiness !== undefined && (
+            <div
+              className="rounded-xl px-4 py-3 mb-4 flex items-center justify-between"
+              style={{ backgroundColor: C.surface }}
+            >
+              <span className="text-sm" style={{ color: C.muted }}>Readiness today</span>
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold" style={{ color: rdLabel.colour }}>
+                  {todayReadiness}
+                </span>
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: `${rdLabel.colour}22`, color: rdLabel.colour }}
+                >
+                  {rdLabel.label}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Coach note */}
+          {session.coachNote && (
+            <div
+              className="rounded-xl p-4 mb-4"
+              style={{
+                backgroundColor: C.surface,
+                border:          `1px solid ${C.gold}`,
+              }}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.gold }}>
+                Coach Note
+              </p>
+              <p className="text-sm leading-relaxed" style={{ color: C.text }}>
+                {session.coachNote}
+              </p>
+            </div>
+          )}
+
+          {/* Exercise list */}
+          <div className="flex flex-col gap-3 mb-8">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+              Exercises ({exercises.length})
+            </p>
+            {exercises.length === 0 ? (
+              <div
+                className="rounded-xl p-6 text-center"
+                style={{ backgroundColor: C.surface }}
+              >
+                <p className="text-sm" style={{ color: C.muted }}>
+                  No exercises found. Complete check-in first to generate your session.
+                </p>
+              </div>
+            ) : (
+              exercises.map((ex) => (
+                <div
+                  key={ex.id}
+                  className="rounded-xl p-4"
+                  style={{ backgroundColor: C.surface }}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <span className="font-semibold text-base" style={{ color: C.text }}>
+                      {ex.name}
+                    </span>
+                    <ExerciseBadge type={ex.exerciseType} />
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm" style={{ color: C.muted }}>
+                      {ex.sets} × {ex.reps} @ RPE {ex.rpeTarget}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: C.dim, color: C.muted }}>
+                      ~{ex.estimatedLoadKg} kg
+                    </span>
+                    <span className="text-xs capitalize" style={{ color: C.muted }}>
+                      {ex.setStructure.toLowerCase()} sets
+                    </span>
+                  </div>
+                  {ex.notes && (
+                    <p className="text-xs mt-2 italic" style={{ color: C.muted }}>
+                      {ex.notes}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Start Session CTA */}
+          <button
+            type="button"
+            onClick={startSession}
+            disabled={exercises.length === 0}
+            className="w-full py-5 rounded-2xl text-lg font-bold tracking-wide transition-all duration-150 active:scale-[0.98] disabled:opacity-40"
+            style={{ backgroundColor: C.accent, color: C.text }}
+          >
+            Start Session
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Render: LOGGING state
+  // ─────────────────────────────────────────────────────────────────────
+  if (pageState === 'logging') {
+    const isLastExercise = activeExIdx >= exerciseCount - 1;
+
+    return (
+      <div
+        className="flex flex-col overflow-hidden"
+        style={{ height: '100dvh', backgroundColor: C.bg, color: C.text }}
+      >
+        {/* ── Rest Timer overlay ──────────────────────────────────────── */}
+        {restTimerSecs !== null && restTimerSecs > 0 && (
+          <RestTimerOverlay
+            secsRemaining={restTimerSecs}
+            maxSecs={restTimerMax}
+            onSkip={() => setRestTimerSecs(null)}
+          />
+        )}
+
+        {/* ── TOP BAR ─────────────────────────────────────────────────── */}
+        <div
+          className="flex-shrink-0 px-4 pt-10 pb-3 border-b"
+          style={{ borderColor: C.dim }}
+        >
+          {/* Exercise name + progress */}
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h2 className="text-xl font-bold leading-tight flex-1" style={{ color: C.text }}>
+              {activeExercise?.name ?? '—'}
+            </h2>
+            <span
+              className="text-sm font-semibold shrink-0 px-3 py-1 rounded-full"
+              style={{ backgroundColor: C.dim, color: C.muted }}
+            >
+              {completedCount}/{exerciseCount}
+            </span>
+          </div>
+
+          {/* Prescription */}
+          {activeExercise && (
+            <p className="text-sm" style={{ color: C.muted }}>
+              {activeExercise.sets} sets × {activeExercise.reps} reps
+              {' '}@ RPE {activeExercise.rpeTarget}
+              {' '}&mdash;{' '}
+              ~{activeExercise.estimatedLoadKg} kg
+            </p>
+          )}
+        </div>
+
+        {/* ── SCROLLABLE SET LOG ───────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+          {activeExSets.length === 0 ? (
+            <p className="text-center text-sm pt-6" style={{ color: C.muted }}>
+              No sets logged yet — let&apos;s go.
+            </p>
+          ) : (
+            activeExSets.map((sl) => (
+              <SetLogRow
+                key={sl.id}
+                setLog={sl}
+                rpeTarget={activeExercise?.rpeTarget ?? 8}
+              />
+            ))
+          )}
+        </div>
+
+        {/* ── FIXED BOTTOM PANEL ──────────────────────────────────────── */}
+        <div
+          className="flex-shrink-0 border-t px-4 pt-3 pb-6 space-y-3"
+          style={{ backgroundColor: C.surface, borderColor: C.dim }}
+        >
+          {/* ROW 1: Load input ± 2.5 */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDraftLoad((v) => Math.max(0, Math.round((v - 2.5) * 10) / 10))}
+              className="w-14 h-14 rounded-xl text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform"
+              style={{ backgroundColor: C.dim, color: C.text }}
+              aria-label="Decrease load by 2.5 kg"
+            >
+              −
+            </button>
+
+            <div className="flex-1 relative">
+              <input
+                type="number"
+                value={draftLoad}
+                onChange={(e) => setDraftLoad(parseFloat(e.target.value) || 0)}
+                className="w-full text-center text-3xl font-bold rounded-xl h-14 bg-transparent border outline-none"
+                style={{ borderColor: C.accent, color: C.text }}
+                aria-label="Load in kilograms"
+                inputMode="decimal"
+              />
+              <span
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none"
+                style={{ color: C.muted }}
+              >
+                kg
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setDraftLoad((v) => Math.round((v + 2.5) * 10) / 10)}
+              className="w-14 h-14 rounded-xl text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform"
+              style={{ backgroundColor: C.dim, color: C.text }}
+              aria-label="Increase load by 2.5 kg"
+            >
+              +
+            </button>
+          </div>
+
+          {/* ROW 2: Reps stepper */}
+          <div className="flex items-center gap-3">
+            <span className="w-14 text-sm text-right" style={{ color: C.muted }}>
+              Reps
+            </span>
+            <button
+              type="button"
+              onClick={() => setDraftReps((v) => Math.max(1, v - 1))}
+              className="w-14 h-12 rounded-xl text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform"
+              style={{ backgroundColor: C.dim, color: C.text }}
+              aria-label="Decrease reps"
+            >
+              −
+            </button>
+            <div
+              className="flex-1 h-12 flex items-center justify-center rounded-xl text-2xl font-bold"
+              style={{ backgroundColor: C.bg, color: C.text }}
+            >
+              {draftReps}
+            </div>
+            <button
+              type="button"
+              onClick={() => setDraftReps((v) => v + 1)}
+              className="w-14 h-12 rounded-xl text-2xl font-bold flex items-center justify-center active:scale-95 transition-transform"
+              style={{ backgroundColor: C.dim, color: C.text }}
+              aria-label="Increase reps"
+            >
+              +
+            </button>
+          </div>
+
+          {/* ROW 3: RPE slider */}
+          <div className="flex items-center gap-3">
+            <span className="w-14 text-sm text-right shrink-0" style={{ color: C.muted }}>
+              RPE
+            </span>
+            <input
+              type="range"
+              min={6}
+              max={10}
+              step={0.5}
+              value={draftRpe}
+              onChange={(e) => setDraftRpe(parseFloat(e.target.value))}
+              className="flex-1 h-10 cursor-pointer"
+              style={{ accentColor: C.accent }}
+              aria-label="RPE target"
+            />
+            <div
+              className="w-14 h-12 flex items-center justify-center rounded-xl text-xl font-bold shrink-0"
+              style={{ backgroundColor: C.bg, color: C.gold }}
+            >
+              {draftRpe}
+            </div>
+          </div>
+
+          {/* Log Set button */}
+          <button
+            type="button"
+            onClick={logSet}
+            className="w-full h-14 rounded-2xl text-lg font-bold tracking-wide active:scale-[0.97] transition-transform"
+            style={{ backgroundColor: C.accent, color: C.text }}
+          >
+            Log Set
+          </button>
+
+          {/* Exercise navigation */}
+          <div className="flex items-center justify-between pt-1">
+            <button
+              type="button"
+              onClick={skipExercise}
+              className="text-sm active:opacity-60"
+              style={{ color: C.muted }}
+            >
+              Skip exercise
+            </button>
+
+            <button
+              type="button"
+              onClick={isLastExercise ? () => setPageState('complete') : completeExercise}
+              className="px-5 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-transform"
+              style={{ backgroundColor: C.dim, color: C.text }}
+            >
+              {isLastExercise ? 'Finish Session' : 'Done with exercise →'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Render: COMPLETE state
+  // ─────────────────────────────────────────────────────────────────────
+
+  const totalVolume  = setLogs.reduce((sum, sl) => sum + sl.loadKg * sl.reps, 0);
+  const loggedRpes   = setLogs.filter((sl) => sl.rpeLogged !== undefined).map((sl) => sl.rpeLogged as number);
+  const avgLoggedRpe = loggedRpes.length > 0
+    ? loggedRpes.reduce((a, b) => a + b, 0) / loggedRpes.length
+    : null;
+  const avgPlannedRpe = exercises.length > 0
+    ? exercises.reduce((sum, ex) => sum + ex.rpeTarget, 0) / exercises.length
+    : 0;
+  const setsCompleted = setLogs.length;
+  const setsPlanned   = exercises.reduce((sum, ex) => sum + ex.sets, 0);
+  const durationMins  = sessionStartTime
+    ? Math.max(1, Math.floor((Date.now() - sessionStartTime.getTime()) / 60000))
+    : 0;
+
+  function getRpeAccuracy(): { message: string; colour: string } {
+    if (avgLoggedRpe === null) return { message: 'No RPE data logged.', colour: C.muted };
+    const diff = avgLoggedRpe - avgPlannedRpe;
+    if (diff > 1)             return { message: 'You went harder than planned today.', colour: C.accent };
+    if (Math.abs(diff) <= 0.5)return { message: 'Great RPE accuracy today! 🎯',        colour: C.green  };
+    if (diff < -1)            return { message: 'Conservative session — consider going harder next time.', colour: C.gold };
+    return { message: 'Good session. Keep dialling in the RPE.', colour: C.muted };
+  }
+  const { message: rpeMsg, colour: rpeColour } = getRpeAccuracy();
+
+  return (
+    <div
+      className="min-h-screen pb-12"
+      style={{ backgroundColor: C.bg, color: C.text }}
+    >
+      <div className="max-w-lg mx-auto px-4">
+
+        {/* Header */}
+        <div className="pt-12 pb-6 text-center">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
+            style={{ backgroundColor: `${C.green}22`, border: `2px solid ${C.green}` }}
+          >
+            ✓
+          </div>
+          <h1 className="text-2xl font-bold">Session Complete</h1>
+          <p className="text-sm mt-1" style={{ color: C.muted }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+
+        {/* Stats grid */}
+        <div
+          className="rounded-2xl p-5 mb-4 grid grid-cols-2 gap-4"
+          style={{ backgroundColor: C.surface }}
+        >
+          <div>
+            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: C.muted }}>Total Volume</p>
+            <p className="text-xl font-bold" style={{ color: C.text }}>
+              {totalVolume >= 1000
+                ? `${(totalVolume / 1000).toFixed(1)}t`
+                : `${Math.round(totalVolume)} kg`}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: C.muted }}>Duration</p>
+            <p className="text-xl font-bold" style={{ color: C.text }}>{durationMins} min</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: C.muted }}>Sets</p>
+            <p className="text-xl font-bold" style={{ color: C.text }}>
+              {setsCompleted}
+              <span className="text-sm font-normal" style={{ color: C.muted }}> / {setsPlanned} planned</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider mb-1" style={{ color: C.muted }}>Avg RPE</p>
+            <p className="text-xl font-bold" style={{ color: C.text }}>
+              {avgLoggedRpe !== null ? avgLoggedRpe.toFixed(1) : '—'}
+              <span className="text-sm font-normal" style={{ color: C.muted }}>
+                {' '}/ {avgPlannedRpe.toFixed(1)} target
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* RPE accuracy */}
+        <div
+          className="rounded-xl px-5 py-4 mb-4"
+          style={{ backgroundColor: `${rpeColour}15`, border: `1px solid ${rpeColour}` }}
+        >
+          <p className="text-sm font-semibold" style={{ color: rpeColour }}>
+            {rpeMsg}
+          </p>
+        </div>
+
+        {/* Session note */}
+        <div
+          className="rounded-xl p-4 mb-6"
+          style={{ backgroundColor: C.surface }}
+        >
+          <label className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
+            Session Notes (optional)
+          </label>
+          <textarea
+            value={sessionNote}
+            onChange={(e) => setSessionNote(e.target.value)}
+            placeholder="How did it feel? Anything to flag for next time?"
+            rows={3}
+            className="w-full bg-transparent rounded-lg border px-3 py-2 text-sm resize-none outline-none transition-colors"
+            style={{
+              borderColor: sessionNote ? C.accent : C.dim,
+              color:       C.text,
+            }}
+          />
+        </div>
+
+        {/* Done button */}
+        <button
+          type="button"
+          onClick={() => void finishSession()}
+          disabled={saving}
+          className="w-full py-5 rounded-2xl text-lg font-bold tracking-wide transition-all active:scale-[0.98] disabled:opacity-50"
+          style={{ backgroundColor: C.accent, color: C.text }}
+        >
+          {saving ? 'Saving…' : 'Done — Back to Home'}
+        </button>
+
+      </div>
+    </div>
+  );
+}

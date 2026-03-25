@@ -1,0 +1,490 @@
+'use client';
+
+/**
+ * Settings — /settings
+ *
+ * Sections:
+ *   1. Profile summary (name, maxes, weight class, federation)
+ *   2. Update maxes — inline editable S / B / D
+ *   3. Unit system toggle (kg / lbs)
+ *   4. Peak day of week selector
+ *   5. Groq API key field
+ *   6. Reset all data (type 'DELETE' to confirm)
+ *
+ * Accessible via the ⚙️ icon on the home header.
+ */
+
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter }                         from 'next/navigation';
+import { toast }                             from 'sonner';
+import { ArrowLeft, TriangleAlert, Check }   from 'lucide-react';
+import { db }                                from '@/lib/db/database';
+import type { AthleteProfile, Federation }   from '@/lib/db/types';
+
+// ── Design tokens ──────────────────────────────────────────────────────────────
+const C = {
+  bg:      '#1A1A2E',
+  surface: '#0F3460',
+  accent:  '#E94560',
+  gold:    '#F5A623',
+  text:    '#E8E8F0',
+  muted:   '#9AA0B4',
+  dim:     '#2A2A4A',
+  border:  '#1E3A5F',
+  green:   '#22C55E',
+  red:     '#DC2626',
+} as const;
+
+const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// ── Row components ──────────────────────────────────────────────────────────────
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <p
+      className="text-xs font-semibold uppercase tracking-widest px-1 mb-2 mt-6 first:mt-0"
+      style={{ color: C.muted }}
+    >
+      {title}
+    </p>
+  );
+}
+
+function SettingsCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="rounded-2xl overflow-hidden divide-y mb-1"
+      style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, borderColor: C.border }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Row({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3.5" style={{ borderColor: C.border }}>
+      {children}
+    </div>
+  );
+}
+
+function RowLabel({ label, sub }: { label: string; sub?: string }) {
+  return (
+    <div className="flex-1 min-w-0">
+      <p className="text-sm font-medium" style={{ color: C.text }}>{label}</p>
+      {sub && <p className="text-xs" style={{ color: C.muted }}>{sub}</p>}
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────────
+export default function SettingsPage() {
+  const router = useRouter();
+
+  const [loading,  setLoading]  = useState(true);
+  const [profile,  setProfile]  = useState<AthleteProfile | null>(null);
+  const [saving,   setSaving]   = useState(false);
+
+  // Local editable copies
+  const [name,         setName]         = useState('');
+  const [maxSquat,     setMaxSquat]     = useState('');
+  const [maxBench,     setMaxBench]     = useState('');
+  const [maxDeadlift,  setMaxDeadlift]  = useState('');
+  const [weightKg,     setWeightKg]     = useState('');
+  const [targetWC,     setTargetWC]     = useState('');
+  const [federation,   setFederation]   = useState<Federation>('IPF');
+  const [unitSystem,   setUnitSystem]   = useState<'KG' | 'LBS'>('KG');
+  const [peakDay,      setPeakDay]      = useState(6); // Saturday
+  const [groqKey,      setGroqKey]      = useState('');
+  const [showGroqKey,  setShowGroqKey]  = useState(false);
+
+  // Reset flow
+  const [resetOpen,    setResetOpen]    = useState(false);
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [resetting,    setResetting]    = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const p = await db.profile.get('me');
+      if (p) {
+        setProfile(p);
+        setName(p.name);
+        setMaxSquat(String(p.maxSquat));
+        setMaxBench(String(p.maxBench));
+        setMaxDeadlift(String(p.maxDeadlift));
+        setWeightKg(String(p.weightKg));
+        setTargetWC(String(p.targetWeightClass));
+        setFederation(p.federation);
+        setUnitSystem(p.unitSystem);
+        setPeakDay(p.peakDayOfWeek);
+        setGroqKey(p.groqApiKey ?? '');
+      }
+      setLoading(false);
+    }
+    void load();
+  }, []);
+
+  // ── Save helper ──────────────────────────────────────────────────────────────
+  const save = useCallback(async (patch: Partial<AthleteProfile>) => {
+    if (!profile) return;
+    setSaving(true);
+    try {
+      await db.profile.update('me', { ...patch, updatedAt: new Date().toISOString() });
+      setProfile((p) => (p ? { ...p, ...patch } : p));
+      toast('Saved', { duration: 1500 });
+    } catch {
+      toast('Failed to save', { duration: 3000 });
+    } finally {
+      setSaving(false);
+    }
+  }, [profile]);
+
+  // ── Reset ────────────────────────────────────────────────────────────────────
+  const handleReset = useCallback(async () => {
+    if (resetConfirm !== 'DELETE') return;
+    setResetting(true);
+    try {
+      await Promise.all([
+        db.profile.clear(),
+        db.cycles.clear(),
+        db.blocks.clear(),
+        db.sessions.clear(),
+        db.exercises.clear(),
+        db.sets.clear(),
+        db.readiness.clear(),
+        db.meets.clear(),
+        db.attempts.clear(),
+        db.chat.clear(),
+      ]);
+      toast('All data erased.', { duration: 2000 });
+      // Small delay so toast shows, then redirect to onboarding
+      setTimeout(() => { window.location.href = '/'; }, 1500);
+    } catch {
+      toast('Reset failed.', { duration: 3000 });
+      setResetting(false);
+    }
+  }, [resetConfirm]);
+
+  // ── Loading ───────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: C.bg }}>
+        <div className="w-10 h-10 rounded-full border-4 animate-spin"
+          style={{ borderColor: `${C.accent} transparent transparent transparent` }} />
+      </div>
+    );
+  }
+
+  const numInput = (
+    value: string,
+    onChange: (v: string) => void,
+    onBlurFn: (v: number) => void,
+    unit = 'kg',
+  ) => (
+    <div className="flex items-center gap-1">
+      <input
+        type="number"
+        value={value}
+        step={0.5}
+        min={0}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => {
+          const n = parseFloat(e.target.value);
+          if (!isNaN(n) && n > 0) onBlurFn(n);
+        }}
+        className="w-20 rounded-xl border px-3 py-2 text-right text-sm font-bold outline-none"
+        style={{
+          backgroundColor: C.bg,
+          borderColor:     C.border,
+          color:           C.text,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      />
+      <span className="text-xs" style={{ color: C.muted }}>{unit}</span>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen pb-8" style={{ backgroundColor: C.bg, color: C.text }}>
+      <div className="max-w-lg mx-auto px-4">
+
+        {/* ── HEADER ─────────────────────────────────────────────────────── */}
+        <div className="pt-6 pb-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="p-2 rounded-xl transition-all active:scale-95"
+            style={{ color: C.muted, backgroundColor: C.surface }}
+            aria-label="Back"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <h1 className="text-xl font-bold" style={{ color: C.text }}>Settings</h1>
+          {saving && (
+            <span className="ml-auto text-xs" style={{ color: C.muted }}>Saving…</span>
+          )}
+        </div>
+
+        {/* ── 1. PROFILE ─────────────────────────────────────────────────── */}
+        <SectionHeader title="Profile" />
+        <SettingsCard>
+          {/* Name */}
+          <Row>
+            <RowLabel label="Name" />
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => { void save({ name: name.trim() || 'Athlete' }); }}
+              className="rounded-xl border px-3 py-2 text-sm text-right outline-none w-36"
+              style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
+            />
+          </Row>
+
+          {/* Body weight */}
+          <Row>
+            <RowLabel label="Body Weight" sub="Used for DOTS calculation" />
+            {numInput(weightKg, setWeightKg, (n) => void save({ weightKg: n }))}
+          </Row>
+
+          {/* Target weight class */}
+          <Row>
+            <RowLabel label="Target Weight Class" />
+            {numInput(targetWC, setTargetWC, (n) => void save({ targetWeightClass: n }))}
+          </Row>
+
+          {/* Federation */}
+          <Row>
+            <RowLabel label="Federation" />
+            <select
+              value={federation}
+              onChange={(e) => {
+                const v = e.target.value as Federation;
+                setFederation(v);
+                void save({ federation: v });
+              }}
+              className="rounded-xl border px-3 py-2 text-sm outline-none appearance-none"
+              style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
+            >
+              {FEDERATIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </Row>
+        </SettingsCard>
+
+        {/* ── 2. TRAINING MAXES ──────────────────────────────────────────── */}
+        <SectionHeader title="Current Maxes" />
+        <SettingsCard>
+          <Row>
+            <RowLabel label="Squat" />
+            {numInput(maxSquat, setMaxSquat, (n) => void save({ maxSquat: n }))}
+          </Row>
+          <Row>
+            <RowLabel label="Bench Press" />
+            {numInput(maxBench, setMaxBench, (n) => void save({ maxBench: n }))}
+          </Row>
+          <Row>
+            <RowLabel label="Deadlift" />
+            {numInput(maxDeadlift, setMaxDeadlift, (n) => void save({ maxDeadlift: n }))}
+          </Row>
+        </SettingsCard>
+
+        {/* ── 3. UNIT SYSTEM ─────────────────────────────────────────────── */}
+        <SectionHeader title="Preferences" />
+        <SettingsCard>
+          {/* Unit system */}
+          <Row>
+            <RowLabel label="Unit System" />
+            <div className="flex gap-1 rounded-xl overflow-hidden border" style={{ borderColor: C.border }}>
+              {(['KG', 'LBS'] as const).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => {
+                    setUnitSystem(u);
+                    void save({ unitSystem: u });
+                  }}
+                  className="px-4 py-2 text-sm font-semibold transition-all"
+                  style={{
+                    backgroundColor: unitSystem === u ? C.accent    : C.dim,
+                    color:           unitSystem === u ? '#fff'       : C.muted,
+                  }}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </Row>
+
+          {/* Peak day of week */}
+          <Row>
+            <RowLabel label="Peak Day of Week" sub="Heaviest session scheduled on this day" />
+            <select
+              value={peakDay}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                setPeakDay(v);
+                void save({ peakDayOfWeek: v });
+              }}
+              className="rounded-xl border px-3 py-2 text-sm outline-none appearance-none"
+              style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
+            >
+              {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            </select>
+          </Row>
+        </SettingsCard>
+
+        {/* ── 4. AI ──────────────────────────────────────────────────────── */}
+        <SectionHeader title="AI Coach" />
+        <SettingsCard>
+          <Row>
+            <RowLabel
+              label="Groq API Key"
+              sub={groqKey.trim()
+                ? 'Online mode active (llama-3.3-70b)'
+                : 'Leave blank for on-device AI (Phi-3.5-mini)'}
+            />
+          </Row>
+          <Row>
+            <div className="flex-1 relative">
+              <input
+                type={showGroqKey ? 'text' : 'password'}
+                value={groqKey}
+                onChange={(e) => setGroqKey(e.target.value)}
+                onBlur={() => void save({ groqApiKey: groqKey.trim() || undefined })}
+                placeholder="gsk_…"
+                className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none pr-24"
+                style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowGroqKey((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+                style={{ color: C.muted }}
+              >
+                {showGroqKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </Row>
+          {groqKey.trim() && (
+            <Row>
+              <button
+                type="button"
+                onClick={() => {
+                  setGroqKey('');
+                  void save({ groqApiKey: undefined });
+                }}
+                className="text-xs"
+                style={{ color: C.accent }}
+              >
+                Remove key (switch to on-device)
+              </button>
+            </Row>
+          )}
+        </SettingsCard>
+
+        {/* ── 5. ABOUT ─────────────────────────────────────────────────── */}
+        {profile && (
+          <>
+            <SectionHeader title="About Your Profile" />
+            <div
+              className="rounded-2xl p-4 mb-1 text-xs"
+              style={{ backgroundColor: C.dim, border: `1px solid ${C.border}` }}
+            >
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                {[
+                  ['Sex',         profile.sex],
+                  ['Training age', `${profile.trainingAgeMonths}m`],
+                  ['Bottleneck',  profile.bottleneck],
+                  ['Responder',   profile.responder],
+                  ['Overshooter', profile.overshooter ? 'Yes' : 'No'],
+                  ['Weigh-in',    profile.weighIn === 'TWO_HOUR' ? '2-hour' : '24-hour'],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <span style={{ color: C.muted }}>{label}:</span>
+                    <span style={{ color: C.text }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs" style={{ color: C.muted }}>
+                To change these values, complete onboarding again after resetting all data.
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* ── 6. DANGER ZONE ────────────────────────────────────────────── */}
+        <SectionHeader title="Danger Zone" />
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ border: `1px solid ${C.red}40` }}
+        >
+          {!resetOpen ? (
+            <button
+              type="button"
+              onClick={() => setResetOpen(true)}
+              className="w-full flex items-center gap-3 px-4 py-4 text-left transition-all"
+              style={{ backgroundColor: `${C.red}10` }}
+            >
+              <TriangleAlert size={18} color={C.red} />
+              <div>
+                <p className="text-sm font-semibold" style={{ color: C.red }}>
+                  Reset All Data
+                </p>
+                <p className="text-xs" style={{ color: C.muted }}>
+                  Permanently erases your profile, sessions, and history.
+                </p>
+              </div>
+            </button>
+          ) : (
+            <div className="p-4" style={{ backgroundColor: `${C.red}08` }}>
+              <div className="flex items-center gap-2 mb-3">
+                <TriangleAlert size={16} color={C.red} />
+                <p className="text-sm font-bold" style={{ color: C.red }}>
+                  This cannot be undone.
+                </p>
+              </div>
+              <p className="text-xs mb-3" style={{ color: C.muted }}>
+                All data — profile, cycles, sessions, readiness logs, meet records, and chat history —
+                will be permanently deleted. Type <strong style={{ color: C.text }}>DELETE</strong> to confirm.
+              </p>
+              <input
+                type="text"
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)}
+                placeholder="Type DELETE to confirm"
+                className="w-full rounded-xl border px-4 py-3 text-sm outline-none mb-3"
+                style={{ backgroundColor: C.bg, borderColor: `${C.red}60`, color: C.text }}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setResetOpen(false); setResetConfirm(''); }}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold border"
+                  style={{ borderColor: C.border, color: C.muted, backgroundColor: C.dim }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleReset()}
+                  disabled={resetConfirm !== 'DELETE' || resetting}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-30"
+                  style={{ backgroundColor: C.red, color: '#fff' }}
+                >
+                  {resetting ? 'Erasing…' : 'Erase Everything'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Version */}
+        <p className="text-center text-xs mt-8" style={{ color: C.muted }}>
+          Lockedin · local-first powerlifting coach · v0.1
+        </p>
+
+      </div>
+    </div>
+  );
+}
