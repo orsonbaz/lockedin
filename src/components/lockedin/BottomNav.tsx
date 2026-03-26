@@ -12,10 +12,10 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-const ACCENT  = '#E94560';
-const MUTED   = '#9AA0B4';
-const BG      = '#0F3460';
-const BORDER  = '#1E3A5F';
+const ACCENT  = '#D4844C';
+const MUTED   = '#787882';
+const BG      = '#1C1C1F';
+const BORDER  = '#2E2E33';
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 interface Tab {

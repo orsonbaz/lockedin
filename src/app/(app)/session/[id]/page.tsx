@@ -1288,7 +1288,7 @@ export default function SessionPage({
 
   return (
     <div
-      className="min-h-screen pb-12"
+      className="min-h-screen pb-12 animate-fade-in"
       style={{ backgroundColor: C.bg, color: C.text }}
     >
       <div className="max-w-lg mx-auto px-4">

@@ -34,12 +34,12 @@ export default function OfflinePage() {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-6 text-center"
-      style={{ backgroundColor: '#1A1A2E', color: '#E8E8F0' }}
+      style={{ backgroundColor: '#111113', color: '#ECECEF' }}
     >
       {/* Icon */}
       <div
         className="w-24 h-24 rounded-3xl flex items-center justify-center mb-6 text-5xl"
-        style={{ backgroundColor: '#0F3460' }}
+        style={{ backgroundColor: '#1C1C1F' }}
       >
         {/* Barbell SVG */}
         <svg
@@ -50,39 +50,39 @@ export default function OfflinePage() {
           aria-hidden
         >
           {/* Left collar */}
-          <rect x="0" y="10" width="8" height="12" rx="2" fill="#E94560" />
+          <rect x="0" y="10" width="8" height="12" rx="2" fill="#D4844C" />
           {/* Left sleeve */}
-          <rect x="8" y="12" width="10" height="8" rx="1" fill="#9AA0B4" />
+          <rect x="8" y="12" width="10" height="8" rx="1" fill="#787882" />
           {/* Bar */}
-          <rect x="18" y="14" width="28" height="4" rx="2" fill="#9AA0B4" />
+          <rect x="18" y="14" width="28" height="4" rx="2" fill="#787882" />
           {/* Right sleeve */}
-          <rect x="46" y="12" width="10" height="8" rx="1" fill="#9AA0B4" />
+          <rect x="46" y="12" width="10" height="8" rx="1" fill="#787882" />
           {/* Right collar */}
-          <rect x="56" y="10" width="8" height="12" rx="2" fill="#E94560" />
+          <rect x="56" y="10" width="8" height="12" rx="2" fill="#D4844C" />
           {/* Left plate */}
-          <rect x="5" y="6" width="6" height="20" rx="2" fill="#E94560" opacity="0.8" />
+          <rect x="5" y="6" width="6" height="20" rx="2" fill="#D4844C" opacity="0.8" />
           {/* Right plate */}
-          <rect x="53" y="6" width="6" height="20" rx="2" fill="#E94560" opacity="0.8" />
+          <rect x="53" y="6" width="6" height="20" rx="2" fill="#D4844C" opacity="0.8" />
         </svg>
       </div>
 
       {/* Heading */}
       <h1
         className="text-3xl font-black mb-2 tracking-tight"
-        style={{ color: '#E8E8F0' }}
+        style={{ color: '#ECECEF' }}
       >
         You&rsquo;re offline
       </h1>
 
       {/* Subtitle */}
-      <p className="text-base mb-6 max-w-xs leading-relaxed" style={{ color: '#9AA0B4' }}>
+      <p className="text-base mb-6 max-w-xs leading-relaxed" style={{ color: '#787882' }}>
         Your training data is saved on this device.
       </p>
 
       {/* Feature list */}
       <div
         className="w-full max-w-xs rounded-2xl p-4 mb-6 text-left"
-        style={{ backgroundColor: '#0F3460', border: '1px solid #1E3A5F' }}
+        style={{ backgroundColor: '#1C1C1F', border: '1px solid #2E2E33' }}
       >
         {[
           { icon: '✅', text: 'Session logging works offline' },
@@ -95,7 +95,7 @@ export default function OfflinePage() {
             <span>{icon}</span>
             <span
               className="text-sm"
-              style={{ color: dim ? '#9AA0B4' : '#E8E8F0' }}
+              style={{ color: dim ? '#787882' : '#ECECEF' }}
             >
               {text}
             </span>
@@ -109,7 +109,7 @@ export default function OfflinePage() {
         onClick={() => void retry()}
         disabled={checking}
         className="px-8 py-4 rounded-2xl text-base font-bold transition-all active:scale-[0.98] disabled:opacity-50"
-        style={{ backgroundColor: '#E94560', color: '#fff' }}
+        style={{ backgroundColor: '#D4844C', color: '#fff' }}
       >
         {checking ? 'Checking…' : 'Retry Connection'}
       </button>
@@ -120,12 +120,12 @@ export default function OfflinePage() {
         </p>
       )}
       {result === 'still-offline' && (
-        <p className="mt-4 text-sm" style={{ color: '#9AA0B4' }}>
+        <p className="mt-4 text-sm" style={{ color: '#787882' }}>
           Still offline. Your data is safe — try again when connected.
         </p>
       )}
 
-      <p className="mt-8 text-xs" style={{ color: '#3A3A5C' }}>
+      <p className="mt-8 text-xs" style={{ color: '#787882' }}>
         LOCKEDIN — AI Powerlifting Coach
       </p>
     </div>

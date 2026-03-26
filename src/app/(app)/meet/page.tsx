@@ -59,12 +59,12 @@ const MEET_LIFTS: Array<{ lift: 'SQUAT' | 'BENCH' | 'DEADLIFT'; label: string; m
 const ATTEMPT_LABELS: Record<1 | 2 | 3, string> = { 1: 'Opener', 2: '2nd', 3: '3rd' };
 
 const BLOCK_COLORS: Record<BlockType, string> = {
-  ACCUMULATION:    '#3B82F6',
-  INTENSIFICATION: '#F5A623',
-  REALIZATION:     '#E94560',
-  DELOAD:          '#9AA0B4',
+  ACCUMULATION:    '#60A5FA',
+  INTENSIFICATION: '#E5A84B',
+  REALIZATION:     '#D4844C',
+  DELOAD:          '#787882',
   PIVOT:           '#8B5CF6',
-  MAINTENANCE:     '#1A7A4A',
+  MAINTENANCE:     '#22C55E',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -648,7 +648,7 @@ export default function MeetDashboardPage() {
     attempts.filter((a) => a.lift === lift);
 
   return (
-    <div className="min-h-screen pb-10" style={{ backgroundColor: C.bg, color: C.text }}>
+    <div className="min-h-screen pb-10 animate-fade-in" style={{ backgroundColor: C.bg, color: C.text }}>
       <div className="max-w-lg mx-auto px-4">
 
         {/* ── COUNTDOWN CARD ─────────────────────────────────────────── */}

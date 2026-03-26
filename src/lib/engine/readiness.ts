@@ -136,16 +136,16 @@ export interface ReadinessLabelResult {
 /**
  * Map a readiness score to a user-facing label and colour.
  *
- * 80–100 → Excellent  #1A7A4A (green)
- * 65–79  → Good       #F5A623 (amber)
- * 50–64  → Moderate   #E94560 (accent red)
- * 30–49  → Low        #8B0000 (dark red)
- *  0–29  → Rest Day   #3A3A5C (dim slate)
+ * 80–100 → Excellent  #22C55E (green)
+ * 65–79  → Good       #E5A84B (gold)
+ * 50–64  → Moderate   #D4844C (copper)
+ * 30–49  → Low        #EF4444 (red)
+ *  0–29  → Rest Day   #787882 (muted)
  */
 export function readinessLabel(score: number): ReadinessLabelResult {
-  if (score >= 80) return { label: 'Excellent', colour: '#1A7A4A' };
-  if (score >= 65) return { label: 'Good',      colour: '#F5A623' };
-  if (score >= 50) return { label: 'Moderate',  colour: '#E94560' };
-  if (score >= 30) return { label: 'Low',        colour: '#8B0000' };
-  return                   { label: 'Rest Day',  colour: '#3A3A5C' };
+  if (score >= 80) return { label: 'Excellent', colour: '#22C55E' };
+  if (score >= 65) return { label: 'Good',      colour: '#E5A84B' };
+  if (score >= 50) return { label: 'Moderate',  colour: '#D4844C' };
+  if (score >= 30) return { label: 'Low',        colour: '#EF4444' };
+  return                   { label: 'Rest Day',  colour: '#787882' };
 }

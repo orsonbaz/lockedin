@@ -22,18 +22,18 @@ export default function SplashPage() {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center"
-      style={{ backgroundColor: '#1A1A2E' }}
+      style={{ backgroundColor: '#111113' }}
     >
-      <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-col items-center gap-3 animate-fade-in">
         <h1
           className="text-6xl font-black tracking-widest"
-          style={{ color: '#E94560' }}
+          style={{ color: '#D4844C' }}
         >
           LOCKEDIN
         </h1>
         <p
           className="text-lg font-medium tracking-wide"
-          style={{ color: '#9AA0B4' }}
+          style={{ color: '#787882' }}
         >
           AI Powerlifting Coach
         </p>

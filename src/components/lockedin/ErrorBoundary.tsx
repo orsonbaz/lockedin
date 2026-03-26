@@ -68,8 +68,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
           alignItems: 'center',
           justifyContent: 'center',
           padding: 24,
-          backgroundColor: '#1A1A2E',
-          color: '#E8E8F0',
+          backgroundColor: '#111113',
+          color: '#ECECEF',
           fontFamily: 'system-ui, sans-serif',
         }}
       >
@@ -77,7 +77,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           style={{
             maxWidth: 400,
             width: '100%',
-            backgroundColor: '#0F3460',
+            backgroundColor: '#1C1C1F',
             borderRadius: 16,
             padding: 32,
             textAlign: 'center',
@@ -87,7 +87,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
             Something went wrong
           </h2>
-          <p style={{ fontSize: 14, color: '#9AA0B4', marginBottom: 24, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 14, color: '#787882', marginBottom: 24, lineHeight: 1.5 }}>
             {this.state.error?.message || 'An unexpected error occurred.'}
           </p>
 
@@ -98,7 +98,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
               padding: '14px 0',
               borderRadius: 12,
               border: 'none',
-              backgroundColor: '#E94560',
+              backgroundColor: '#D4844C',
               color: '#fff',
               fontSize: 16,
               fontWeight: 700,
@@ -116,9 +116,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
               width: '100%',
               padding: '12px 0',
               borderRadius: 12,
-              border: '1px solid #1E3A5F',
+              border: '1px solid #2E2E33',
               backgroundColor: 'transparent',
-              color: '#9AA0B4',
+              color: '#787882',
               fontSize: 14,
               cursor: 'pointer',
               opacity: this.state.exporting ? 0.5 : 1,

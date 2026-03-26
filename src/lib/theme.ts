@@ -1,23 +1,31 @@
 /**
  * Shared design tokens — single source of truth for all UI colors.
  *
- * Import `C` in any page/component instead of defining inline `const C = { … }`.
+ * Palette: warm charcoal dark theme with copper/amber accent.
+ * Clean, minimal, gym-app aesthetic without the gaming look.
  */
 
 export const C = {
-  bg:        '#1A1A2E',
-  surface:   '#0F3460',
-  accent:    '#E94560',
-  gold:      '#F5A623',
-  text:      '#E8E8F0',
-  muted:     '#9AA0B4',
-  dim:       '#2A2A4A',
-  border:    '#1E3A5F',
-  green:     '#22C55E',
-  greenDeep: '#1A7A4A',
-  blue:      '#3B82F6',
-  red:       '#DC2626',
+  // Backgrounds
+  bg:        '#111113',    // near-black, warm
+  surface:   '#1C1C1F',    // card/panel backgrounds
+  dim:       '#252529',    // input backgrounds, subtle fills
+  border:    '#2E2E33',    // subtle borders
+
+  // Accent — warm copper/amber
+  accent:    '#D4844C',    // primary action color (warm copper)
+  gold:      '#E5A84B',    // secondary accent (gold)
+
+  // Text
+  text:      '#ECECEF',    // primary text (warm off-white)
+  muted:     '#787882',    // secondary text
+
+  // Semantic
+  green:     '#4ADE80',    // success, positive
+  greenDeep: '#22C55E',    // readiness good
+  blue:      '#60A5FA',    // informational, charts
+  red:       '#EF4444',    // destructive, danger
   greenDim:  '#14532D',
-  redDim:    '#450A0A',
+  redDim:    '#451A1A',
   yellowDim: '#422006',
 } as const;

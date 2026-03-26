@@ -11,7 +11,7 @@ export function Skeleton({
   return (
     <div
       className={cn('animate-pulse rounded-xl', className)}
-      style={{ backgroundColor: '#2A2A4A' }}
+      style={{ backgroundColor: '#252529' }}
       {...props}
     />
   );

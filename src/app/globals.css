@@ -57,82 +57,82 @@
 }
 
 :root {
-  /* Lockedin palette */
-  --lockedin-bg: #1A1A2E;
-  --lockedin-surface: #0F3460;
-  --lockedin-accent: #E94560;
-  --lockedin-gold: #F5A623;
-  --lockedin-text: #E8E8F0;
-  --lockedin-muted: #9AA0B4;
+  /* Lockedin palette — warm charcoal + copper */
+  --lockedin-bg: #111113;
+  --lockedin-surface: #1C1C1F;
+  --lockedin-accent: #D4844C;
+  --lockedin-gold: #E5A84B;
+  --lockedin-text: #ECECEF;
+  --lockedin-muted: #787882;
 
-  /* shadcn tokens mapped to Lockedin dark palette */
-  --background: #1A1A2E;
-  --foreground: #E8E8F0;
-  --card: #0F3460;
-  --card-foreground: #E8E8F0;
-  --popover: #0F3460;
-  --popover-foreground: #E8E8F0;
-  --primary: #E94560;
-  --primary-foreground: #E8E8F0;
-  --secondary: #0F3460;
-  --secondary-foreground: #E8E8F0;
-  --muted: #0F3460;
-  --muted-foreground: #9AA0B4;
-  --accent: #F5A623;
-  --accent-foreground: #1A1A2E;
-  --destructive: #E94560;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #E94560;
-  --chart-1: #E94560;
-  --chart-2: #F5A623;
-  --chart-3: #0F3460;
-  --chart-4: #9AA0B4;
-  --chart-5: #E8E8F0;
+  /* shadcn tokens mapped to Lockedin palette */
+  --background: #111113;
+  --foreground: #ECECEF;
+  --card: #1C1C1F;
+  --card-foreground: #ECECEF;
+  --popover: #1C1C1F;
+  --popover-foreground: #ECECEF;
+  --primary: #D4844C;
+  --primary-foreground: #ECECEF;
+  --secondary: #1C1C1F;
+  --secondary-foreground: #ECECEF;
+  --muted: #1C1C1F;
+  --muted-foreground: #787882;
+  --accent: #E5A84B;
+  --accent-foreground: #111113;
+  --destructive: #EF4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #D4844C;
+  --chart-1: #D4844C;
+  --chart-2: #E5A84B;
+  --chart-3: #60A5FA;
+  --chart-4: #787882;
+  --chart-5: #ECECEF;
   --radius: 0.625rem;
-  --sidebar: #0F3460;
-  --sidebar-foreground: #E8E8F0;
-  --sidebar-primary: #E94560;
-  --sidebar-primary-foreground: #E8E8F0;
-  --sidebar-accent: #F5A623;
-  --sidebar-accent-foreground: #1A1A2E;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #E94560;
+  --sidebar: #1C1C1F;
+  --sidebar-foreground: #ECECEF;
+  --sidebar-primary: #D4844C;
+  --sidebar-primary-foreground: #ECECEF;
+  --sidebar-accent: #E5A84B;
+  --sidebar-accent-foreground: #111113;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #D4844C;
 }
 
 /* Force dark mode — no light mode */
 .dark {
-  --background: #1A1A2E;
-  --foreground: #E8E8F0;
-  --card: #0F3460;
-  --card-foreground: #E8E8F0;
-  --popover: #0F3460;
-  --popover-foreground: #E8E8F0;
-  --primary: #E94560;
-  --primary-foreground: #E8E8F0;
-  --secondary: #0F3460;
-  --secondary-foreground: #E8E8F0;
-  --muted: #0F3460;
-  --muted-foreground: #9AA0B4;
-  --accent: #F5A623;
-  --accent-foreground: #1A1A2E;
-  --destructive: #E94560;
-  --border: rgba(255, 255, 255, 0.1);
-  --input: rgba(255, 255, 255, 0.1);
-  --ring: #E94560;
-  --chart-1: #E94560;
-  --chart-2: #F5A623;
-  --chart-3: #0F3460;
-  --chart-4: #9AA0B4;
-  --chart-5: #E8E8F0;
-  --sidebar: #0F3460;
-  --sidebar-foreground: #E8E8F0;
-  --sidebar-primary: #E94560;
-  --sidebar-primary-foreground: #E8E8F0;
-  --sidebar-accent: #F5A623;
-  --sidebar-accent-foreground: #1A1A2E;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #E94560;
+  --background: #111113;
+  --foreground: #ECECEF;
+  --card: #1C1C1F;
+  --card-foreground: #ECECEF;
+  --popover: #1C1C1F;
+  --popover-foreground: #ECECEF;
+  --primary: #D4844C;
+  --primary-foreground: #ECECEF;
+  --secondary: #1C1C1F;
+  --secondary-foreground: #ECECEF;
+  --muted: #1C1C1F;
+  --muted-foreground: #787882;
+  --accent: #E5A84B;
+  --accent-foreground: #111113;
+  --destructive: #EF4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #D4844C;
+  --chart-1: #D4844C;
+  --chart-2: #E5A84B;
+  --chart-3: #60A5FA;
+  --chart-4: #787882;
+  --chart-5: #ECECEF;
+  --sidebar: #1C1C1F;
+  --sidebar-foreground: #ECECEF;
+  --sidebar-primary: #D4844C;
+  --sidebar-primary-foreground: #ECECEF;
+  --sidebar-accent: #E5A84B;
+  --sidebar-accent-foreground: #111113;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #D4844C;
 }
 
 @layer base {
@@ -141,11 +141,68 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-color: #1A1A2E;
-    color: #E8E8F0;
+    background-color: #111113;
+    color: #ECECEF;
   }
   html {
     @apply font-sans;
-    background-color: #1A1A2E;
+    background-color: #111113;
   }
 }
+
+/* ── Page transitions ────────────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  from { opacity: 0.5; }
+  to   { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out both;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out both;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.25s ease-out both;
+}
+
+/* Staggered children — apply .stagger-children to parent */
+.stagger-children > * {
+  animation: fadeInUp 0.35s ease-out both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-children > *:nth-child(9) { animation-delay: 400ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 450ms; }

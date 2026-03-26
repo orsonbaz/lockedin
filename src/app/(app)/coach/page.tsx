@@ -695,7 +695,7 @@ export default function CoachPage() {
   // ── Main chat interface ───────────────────────────────────────────────────
   return (
     <div
-      className="flex flex-col overflow-hidden"
+      className="flex flex-col overflow-hidden animate-fade-in"
       style={{ height: '100dvh', backgroundColor: C.bg, color: C.text }}
     >
       {/* ── HEADER ──────────────────────────────────────────────────────── */}

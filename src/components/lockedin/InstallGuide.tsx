@@ -50,16 +50,16 @@ export function InstallGuide() {
       <SheetContent
         side="bottom"
         className="px-6 pb-10 rounded-t-3xl"
-        style={{ backgroundColor: '#1A1A2E', border: '1px solid #1E3A5F', color: '#E8E8F0' }}
+        style={{ backgroundColor: '#111113', border: '1px solid #2E2E33', color: '#ECECEF' }}
       >
         <SheetHeader className="mb-6">
           <SheetTitle
             className="text-xl font-bold text-center"
-            style={{ color: '#E8E8F0' }}
+            style={{ color: '#ECECEF' }}
           >
             Install Lockedin on your iPhone
           </SheetTitle>
-          <p className="text-sm text-center" style={{ color: '#9AA0B4' }}>
+          <p className="text-sm text-center" style={{ color: '#787882' }}>
             Run like a native app — works offline, no App Store needed.
           </p>
         </SheetHeader>
@@ -69,26 +69,26 @@ export function InstallGuide() {
           {/* Step 1 */}
           <div
             className="flex items-start gap-4 p-4 rounded-2xl"
-            style={{ backgroundColor: '#0F3460', border: '1px solid #1E3A5F' }}
+            style={{ backgroundColor: '#1C1C1F', border: '1px solid #2E2E33' }}
           >
             {/* Share icon */}
             <div
               className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-              style={{ backgroundColor: '#1A3A6A' }}
+              style={{ backgroundColor: '#252529' }}
             >
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#E94560" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#D4844C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
                 <polyline points="16 6 12 2 8 6" />
                 <line x1="12" y1="2" x2="12" y2="15" />
               </svg>
             </div>
             <div>
-              <p className="text-sm font-bold mb-0.5" style={{ color: '#E8E8F0' }}>
+              <p className="text-sm font-bold mb-0.5" style={{ color: '#ECECEF' }}>
                 Step 1 — Tap the Share button
               </p>
-              <p className="text-xs leading-relaxed" style={{ color: '#9AA0B4' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#787882' }}>
                 At the bottom of Safari, tap the{' '}
-                <span style={{ color: '#E8E8F0' }}>↑ Share</span>{' '}
+                <span style={{ color: '#ECECEF' }}>↑ Share</span>{' '}
                 icon in the middle of the toolbar.
               </p>
             </div>
@@ -97,14 +97,14 @@ export function InstallGuide() {
           {/* Step 2 */}
           <div
             className="flex items-start gap-4 p-4 rounded-2xl"
-            style={{ backgroundColor: '#0F3460', border: '1px solid #1E3A5F' }}
+            style={{ backgroundColor: '#1C1C1F', border: '1px solid #2E2E33' }}
           >
             {/* Home screen icon */}
             <div
               className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: '#1A3A6A' }}
+              style={{ backgroundColor: '#252529' }}
             >
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#F5A623" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#E5A84B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="7" height="7" rx="1" />
                 <rect x="14" y="3" width="7" height="7" rx="1" />
                 <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -113,12 +113,12 @@ export function InstallGuide() {
               </svg>
             </div>
             <div>
-              <p className="text-sm font-bold mb-0.5" style={{ color: '#E8E8F0' }}>
+              <p className="text-sm font-bold mb-0.5" style={{ color: '#ECECEF' }}>
                 Step 2 — Add to Home Screen
               </p>
-              <p className="text-xs leading-relaxed" style={{ color: '#9AA0B4' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#787882' }}>
                 Scroll down the share sheet and tap{' '}
-                <span style={{ color: '#E8E8F0' }}>Add to Home Screen</span>.
+                <span style={{ color: '#ECECEF' }}>Add to Home Screen</span>.
               </p>
             </div>
           </div>
@@ -126,24 +126,24 @@ export function InstallGuide() {
           {/* Step 3 */}
           <div
             className="flex items-start gap-4 p-4 rounded-2xl"
-            style={{ backgroundColor: '#0F3460', border: '1px solid #1E3A5F' }}
+            style={{ backgroundColor: '#1C1C1F', border: '1px solid #2E2E33' }}
           >
             {/* Checkmark icon */}
             <div
               className="flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: '#1A3A6A' }}
+              style={{ backgroundColor: '#252529' }}
             >
               <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
             <div>
-              <p className="text-sm font-bold mb-0.5" style={{ color: '#E8E8F0' }}>
+              <p className="text-sm font-bold mb-0.5" style={{ color: '#ECECEF' }}>
                 Step 3 — Tap Add
               </p>
-              <p className="text-xs leading-relaxed" style={{ color: '#9AA0B4' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#787882' }}>
                 Tap{' '}
-                <span style={{ color: '#E8E8F0' }}>Add</span>{' '}
+                <span style={{ color: '#ECECEF' }}>Add</span>{' '}
                 in the top-right corner. Lockedin appears on your home screen.
               </p>
             </div>
@@ -151,7 +151,7 @@ export function InstallGuide() {
         </div>
 
         {/* Callout */}
-        <p className="text-xs text-center mb-6" style={{ color: '#9AA0B4' }}>
+        <p className="text-xs text-center mb-6" style={{ color: '#787882' }}>
           Once installed, Lockedin runs like a native app — offline, full-screen, no browser chrome.
         </p>
 
@@ -160,7 +160,7 @@ export function InstallGuide() {
           type="button"
           onClick={dismiss}
           className="w-full py-4 rounded-2xl text-base font-bold transition-all active:scale-[0.98]"
-          style={{ backgroundColor: '#E94560', color: '#fff' }}
+          style={{ backgroundColor: '#D4844C', color: '#fff' }}
         >
           Got it
         </button>

@@ -41,11 +41,11 @@ export default function TodaySessionPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center"
-      style={{ backgroundColor: '#1A1A2E' }}
+      style={{ backgroundColor: '#111113' }}
     >
       <div
         className="w-10 h-10 rounded-full border-4 animate-spin"
-        style={{ borderColor: '#E94560 transparent transparent transparent' }}
+        style={{ borderColor: '#D4844C transparent transparent transparent' }}
       />
     </div>
   );

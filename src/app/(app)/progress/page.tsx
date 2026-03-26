@@ -440,7 +440,7 @@ export default function ProgressPage() {
   };
 
   return (
-    <div className="min-h-screen pb-4" style={{ backgroundColor: C.bg, color: C.text }}>
+    <div className="min-h-screen pb-4 animate-fade-in" style={{ backgroundColor: C.bg, color: C.text }}>
       <div className="max-w-lg mx-auto px-4">
 
         <div className="pt-8 pb-5">

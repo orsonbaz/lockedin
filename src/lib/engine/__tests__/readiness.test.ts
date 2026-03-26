@@ -163,7 +163,7 @@ describe('readinessLabel', () => {
   it('80+ is Excellent (green)', () => {
     const r = readinessLabel(85);
     expect(r.label).toBe('Excellent');
-    expect(r.colour).toBe('#1A7A4A');
+    expect(r.colour).toBe('#22C55E');
   });
 
   it('boundary: 80 is Excellent', () => {

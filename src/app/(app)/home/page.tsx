@@ -213,8 +213,8 @@ export default function HomePage() {
   const estDuration = estimateDuration(exercises);
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: C.bg, color: C.text }}>
-      <div className="max-w-lg mx-auto px-4">
+    <div className="min-h-screen animate-fade-in" style={{ backgroundColor: C.bg, color: C.text }}>
+      <div className="max-w-lg mx-auto px-4 stagger-children">
 
         {/* ── 1. HEADER ────────────────────────────────────────────────── */}
         <div className="pt-8 pb-4 flex items-start justify-between">

@@ -124,11 +124,11 @@ function HrvDeviationBadge({ deviation }: { deviation: number }) {
   let colour: string;
   let bg: string;
 
-  if (deviation > 15)       { colour = '#1A7A4A'; bg = 'rgba(26,122,74,0.15)';  }
-  else if (deviation > 5)   { colour = '#1A7A4A'; bg = 'rgba(26,122,74,0.10)';  }
-  else if (deviation >= -5) { colour = MUTED;     bg = 'rgba(154,160,180,0.10)'; }
-  else if (deviation >= -15){ colour = GOLD;      bg = 'rgba(245,166,35,0.15)';  }
-  else                      { colour = ACCENT;    bg = 'rgba(233,69,96,0.15)';   }
+  if (deviation > 15)       { colour = '#22C55E'; bg = 'rgba(34,197,94,0.15)';  }
+  else if (deviation > 5)   { colour = '#22C55E'; bg = 'rgba(34,197,94,0.10)';  }
+  else if (deviation >= -5) { colour = MUTED;     bg = 'rgba(120,120,130,0.10)'; }
+  else if (deviation >= -15){ colour = GOLD;      bg = 'rgba(229,168,75,0.15)';  }
+  else                      { colour = ACCENT;    bg = 'rgba(212,132,76,0.15)';  }
 
   const sign = deviation > 0 ? '+' : '';
   return (
@@ -424,7 +424,7 @@ export default function CheckInPage() {
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div
-      className="min-h-screen pb-12"
+      className="min-h-screen pb-12 animate-fade-in"
       style={{ backgroundColor: BG, color: TEXT }}
     >
       <div className="max-w-lg mx-auto px-4">
@@ -588,7 +588,7 @@ export default function CheckInPage() {
                 className="w-full h-2 rounded-full cursor-pointer appearance-none"
                 style={{
                   accentColor:     ACCENT,
-                  backgroundColor: '#2A2A4A',
+                  backgroundColor: '#252529',
                 }}
                 aria-label="Hours of sleep"
               />

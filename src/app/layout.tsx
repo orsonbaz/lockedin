@@ -31,7 +31,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#1A1A2E",
+  themeColor: "#111113",
 };
 
 export default function RootLayout({
@@ -43,7 +43,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
-      style={{ backgroundColor: "#1A1A2E" }}
+      style={{ backgroundColor: "#111113" }}
     >
       <head>
         <link rel="manifest" href="/manifest.json" />
@@ -57,7 +57,7 @@ export default function RootLayout({
       </head>
       <body
         className="min-h-full flex flex-col"
-        style={{ backgroundColor: "#1A1A2E", color: "#E8E8F0" }}
+        style={{ backgroundColor: "#111113", color: "#ECECEF" }}
       >
         <ServiceWorkerRegistration />
         <DbSeedInitializer />
