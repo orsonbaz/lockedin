@@ -109,59 +109,8 @@ export async function seedIfEmpty(): Promise<void> {
     coachNote: 'Week 1 — focus on bar path and bracing. Keep RPE honest.',
   });
 
-  // Seed exercises for today's session
-  await db.exercises.bulkPut([
-    {
-      id: newId(),
-      sessionId,
-      name: 'Competition Squat',
-      exerciseType: 'COMPETITION',
-      setStructure: 'STRAIGHT',
-      sets: 4,
-      reps: 4,
-      rpeTarget: 7.5,
-      estimatedLoadKg: 140,
-      order: 1,
-      notes: '~77% 1RM. Treat as technique work.',
-    },
-    {
-      id: newId(),
-      sessionId,
-      name: 'Pause Squat',
-      exerciseType: 'VARIATION',
-      setStructure: 'STRAIGHT',
-      sets: 3,
-      reps: 3,
-      rpeTarget: 7,
-      estimatedLoadKg: 110,
-      order: 2,
-      notes: '2-second pause in hole.',
-    },
-    {
-      id: newId(),
-      sessionId,
-      name: 'Romanian Deadlift',
-      exerciseType: 'ACCESSORY',
-      setStructure: 'STRAIGHT',
-      sets: 3,
-      reps: 8,
-      rpeTarget: 7,
-      estimatedLoadKg: 100,
-      order: 3,
-    },
-    {
-      id: newId(),
-      sessionId,
-      name: 'Leg Press',
-      exerciseType: 'ACCESSORY',
-      setStructure: 'STRAIGHT',
-      sets: 3,
-      reps: 10,
-      rpeTarget: 7,
-      estimatedLoadKg: 160,
-      order: 4,
-    },
-  ]);
+  // Exercises will be generated from the user's actual maxes after onboarding completes
+  // via the generateSession() call in the onboarding submit handler.
 
   // Seed a readiness record for today
   await db.readiness.put({

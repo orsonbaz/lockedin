@@ -13,7 +13,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { db }        from '@/lib/db/database';
 import { C }         from '@/lib/theme';
-import type { Sex, Federation, WeighIn, Equipment } from '@/lib/db/types';
+import type { Sex, Federation, WeighIn, Equipment, Bottleneck, Responder } from '@/lib/db/types';
+import { generateSession } from '@/lib/engine/session';
+import { newId } from '@/lib/db/database';
 
 // ── Option sets ───────────────────────────────────────────────────────────────
 const FEDERATIONS: Federation[]  = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
@@ -146,6 +148,11 @@ export default function OnboardingStep1() {
   const [weighIn,      setWeighIn]      = useState<WeighIn>('TWO_HOUR');
   const [frequency,    setFrequency]    = useState('4');
 
+  const [bottleneck,    setBottleneck]    = useState<Bottleneck>('BALANCED');
+  const [responder,     setResponder]     = useState<Responder>('STANDARD');
+  const [overshooter,   setOvershooter]   = useState(false);
+  const [trainingYears, setTrainingYears] = useState('1');
+
   const [saving, setSaving]   = useState(false);
   const [error,  setError]    = useState('');
 
@@ -165,6 +172,8 @@ export default function OnboardingStep1() {
     if (isNaN(bench)    || bench    <= 0) { setError('Enter your competition bench max.'); return; }
     if (isNaN(deadlift) || deadlift <= 0) { setError('Enter your competition deadlift max.'); return; }
     if (isNaN(weight)   || weight   <= 0) { setError('Enter your body weight.'); return; }
+
+    const trainingAgeMonths = Math.round(parseFloat(trainingYears || '1') * 12);
 
     setError('');
     setSaving(true);
@@ -207,6 +216,11 @@ export default function OnboardingStep1() {
         equipment,
         weighIn,
         weeklyFrequency:    isNaN(freq) ? 4 : Math.max(2, Math.min(6, freq)),
+        bottleneck,
+        rewardSystem:       'CONSISTENCY' as const,
+        responder,
+        overshooter,
+        trainingAgeMonths,
         onboardingComplete: true,
         updatedAt:          now,
       });
@@ -219,6 +233,60 @@ export default function OnboardingStep1() {
       await db.cycles
         .filter((c) => c.status === 'ACTIVE')
         .modify({ meetId: undefined });
+
+      // Regenerate today's seeded session with actual user maxes
+      const todayStr = new Date().toISOString().split('T')[0];  // YYYY-MM-DD
+      const todaySession = await db.sessions.where('scheduledDate').equals(todayStr).first();
+      if (todaySession) {
+        const block = await db.blocks.get(todaySession.blockId);
+        if (block) {
+          const generated = generateSession({
+            profile: {
+              ...base,
+              name: name.trim(), sex, weightKg: weight, targetWeightClass: weightClass,
+              maxSquat: squat, maxBench: bench, maxDeadlift: deadlift,
+              gymSquat: squat, gymBench: bench, gymDeadlift: deadlift,
+              federation, equipment, weighIn,
+              weeklyFrequency: isNaN(freq) ? 4 : Math.max(2, Math.min(6, freq)),
+              bottleneck, responder, overshooter,
+              trainingAgeMonths,
+              onboardingComplete: true,
+              updatedAt: now,
+            },
+            block,
+            readinessScore: 75,  // neutral default — no check-in yet
+            sessionNumber: 1,
+            weekWithinBlock: 1,
+            weekDayOfWeek: new Date().getDay(),
+          });
+
+          // Replace seeded exercises with generated ones
+          await db.exercises.where('sessionId').equals(todaySession.id).delete();
+          const freshExercises = generated.exercises.map((ex) => ({
+            id: newId(),
+            sessionId: todaySession.id,
+            name: ex.name,
+            exerciseType: ex.exerciseType,
+            setStructure: ex.setStructure,
+            sets: ex.sets,
+            reps: ex.reps,
+            rpeTarget: ex.rpeTarget,
+            estimatedLoadKg: ex.estimatedLoadKg,
+            order: ex.order,
+            notes: ex.notes,
+            ...(ex.libraryExerciseId ? { libraryExerciseId: ex.libraryExerciseId } : {}),
+          }));
+          await db.exercises.bulkAdd(freshExercises);
+
+          // Update session with generated coaching note
+          await db.sessions.update(todaySession.id, {
+            coachNote: generated.coachNote,
+            aiModifications: generated.modifications.length > 0
+              ? JSON.stringify(generated.modifications)
+              : undefined,
+          });
+        }
+      }
 
       // Mark onboarding done
       localStorage.setItem('lockedin_onboarding_complete', '1');
@@ -432,6 +500,85 @@ export default function OnboardingStep1() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── SECTION 4: TRAINING PROFILE ──────────────────────────────── */}
+        <div
+          className="rounded-3xl p-5 mb-4"
+          style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+        >
+          <SectionTitle n={4} title="Your Training Profile" sub="Helps us personalise your programming" />
+
+          <div className="flex flex-col gap-4">
+            {/* Training age */}
+            <div>
+              <FieldLabel
+                label="Years powerlifting"
+                hint="Counts from your first competition or dedicated powerlifting training"
+                htmlFor="ob-training-years"
+              />
+              <NumberInput
+                id="ob-training-years"
+                value={trainingYears}
+                onChange={setTrainingYears}
+                min={0}
+                step={0.5}
+                suffix="yrs"
+              />
+            </div>
+
+            {/* Responder type */}
+            <div>
+              <FieldLabel
+                label="How do you respond to training volume?"
+                hint={
+                  responder === 'HIGH'
+                    ? '(I grow fast and handle lots of volume)'
+                    : responder === 'LOW'
+                    ? '(I need extra recovery, accumulate fatigue fast)'
+                    : '(Steady progress, need normal rest)'
+                }
+              />
+              <SegmentedControl<Responder>
+                options={['HIGH', 'STANDARD', 'LOW']}
+                value={responder}
+                onChange={setResponder}
+                labelFn={(v) =>
+                  v === 'HIGH' ? 'Fast responder' : v === 'STANDARD' ? 'Average' : 'Slow to recover'
+                }
+              />
+            </div>
+
+            {/* Bottleneck */}
+            <div>
+              <FieldLabel
+                label="What limits your total most?"
+                hint="Affects rep ranges — size = higher reps, neural = lower reps"
+              />
+              <SegmentedControl<Bottleneck>
+                options={['HYPERTROPHY', 'NEURAL', 'BALANCED']}
+                value={bottleneck}
+                onChange={setBottleneck}
+                labelFn={(v) =>
+                  v === 'HYPERTROPHY' ? 'Need more size' : v === 'NEURAL' ? 'Need more skill/efficiency' : 'Both equally'
+                }
+              />
+            </div>
+
+            {/* Overshooter */}
+            <div>
+              <FieldLabel
+                label="How do you handle prescribed RPE?"
+                hint="If you tend to overshoot RPE, we'll dial back targets slightly"
+              />
+              <SegmentedControl<string>
+                options={['false', 'true']}
+                value={String(overshooter)}
+                onChange={(v) => setOvershooter(v === 'true')}
+                labelFn={(v) => v === 'false' ? 'I stick close to it' : 'I often go harder than prescribed'}
+              />
             </div>
           </div>
         </div>

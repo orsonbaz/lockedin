@@ -111,9 +111,10 @@ export function generateSession(input: SessionInput): GeneratedSession {
  *   3-day (or fewer): S1=Squat  S2=Bench      S3=Deadlift
  *   4-day:            S1=Squat  S2=Bench      S3=Deadlift  S4=Bench (lighter)
  *   5-day:            S1=Squat  S2=Bench      S3=Deadlift  S4=Upper S5=Squat (variation)
+ *   6-day:            S1=Squat  S2=Bench      S3=Deadlift  S4=Upper S5=Squat  S6=Deadlift (variation)
  */
 function selectPrimaryLift(sessionNumber: number, weeklyFrequency: number): Lift {
-  const freq = Math.min(5, Math.max(1, weeklyFrequency));
+  const freq = Math.min(6, Math.max(1, weeklyFrequency));
   const idx  = (sessionNumber - 1) % freq;
 
   const rotations: Record<number, Lift[]> = {
@@ -122,6 +123,7 @@ function selectPrimaryLift(sessionNumber: number, weeklyFrequency: number): Lift
     3: ['SQUAT', 'BENCH', 'DEADLIFT'],
     4: ['SQUAT', 'BENCH', 'DEADLIFT', 'BENCH'],
     5: ['SQUAT', 'BENCH', 'DEADLIFT', 'UPPER', 'SQUAT'],
+    6: ['SQUAT', 'BENCH', 'DEADLIFT', 'UPPER', 'SQUAT', 'DEADLIFT'],
   };
 
   return rotations[freq][idx];
@@ -318,70 +320,82 @@ function buildAccessories(
   startOrder: number,
 ): GeneratedExercise[] {
   const accRpe   = clampRpe(7.5 + rpeOffset);
+  const lightRpe = clampRpe(7.0 + rpeOffset);
   const accSets  = Math.max(1, Math.floor(3 * volMult));
   const isDeload = blockType === 'DELOAD';
 
-  const squatMax = profile.maxSquat;
-  const benchMax = profile.maxBench;
-  const dlMax    = profile.maxDeadlift;
+  const sq  = profile.maxSquat;
+  const bp  = profile.maxBench;
+  const dl  = profile.maxDeadlift;
 
-  /**
-   * Accessory factory — each item is a [name, reps, loadKg] tuple.
-   * Load is a fraction of the relevant primary-lift max for that day.
-   */
-  type AccDef = [string, number, number];
+  type AccDef = [string, number, number, number?]; // [name, reps, loadKg, rpeOverride?]
 
   let defs: AccDef[];
 
   switch (lift) {
+    // ── SQUAT DAY ─────────────────────────────────────────────────────────
+    // Standard in elite programs (Sheiko, GZCLP, Juggernaut):
+    // squat variation + upper back pull + posterior chain + core
     case 'SQUAT':
     case 'LOWER':
       defs = isDeload
         ? [
-            ['Romanian Deadlift', 12, dlMax * 0.40],
-            ['Leg Press',         15, squatMax * 0.75],
+            ['Romanian Deadlift',  12, dl  * 0.38],
+            ['Barbell Rows',        8, bp  * 0.55],
           ]
         : [
-            ['Romanian Deadlift', 10, dlMax * 0.45],
-            ['Leg Press',         12, squatMax * 0.85],
-            ['Walking Lunges',    12, squatMax * 0.15],
+            ['Romanian Deadlift',  10, dl  * 0.42],       // posterior chain
+            ['Barbell Rows',        8, bp  * 0.60],       // upper back (critical for squat bracing)
+            ['Leg Press',          12, sq  * 0.80],       // quad volume
+            ['Lat Pulldowns',      10, dl  * 0.22],       // lat engagement
           ];
       break;
 
+    // ── BENCH DAY ─────────────────────────────────────────────────────────
+    // Upper pressing volume + heavy rows (lats antagonist = shoulder health)
     case 'BENCH':
     case 'UPPER':
       defs = isDeload
         ? [
-            ['Overhead Press',    8,  benchMax * 0.55],
-            ['Tricep Pushdowns',  12, benchMax * 0.18],
+            ['Overhead Press',    8,  bp * 0.52],
+            ['Barbell Rows',      8,  bp * 0.55],
           ]
         : [
-            ['Close Grip Bench Press', 10, benchMax * 0.65],
-            ['Tricep Pushdowns',       12, benchMax * 0.20],
-            ['Barbell Rows',           10, benchMax * 0.65],
+            ['Close Grip Bench Press', 10, bp * 0.65],   // tricep/lockout
+            ['Barbell Rows',           10, bp * 0.65],   // upper back (shoulder health)
+            ['Overhead Press',          8, bp * 0.55],   // shoulder work
+            ['Tricep Pushdowns',       12, bp * 0.20],   // isolation lockout
           ];
       break;
 
+    // ── DEADLIFT DAY ──────────────────────────────────────────────────────
+    // Heavy lat/back work (lats are the primary stabiliser on DL)
+    // + RDL for hamstring/glute accessory
     case 'DEADLIFT':
       defs = isDeload
         ? [
-            ['Romanian Deadlift', 12, dlMax * 0.45],
-            ['Lat Pulldowns',     12, dlMax * 0.25],
+            ['Romanian Deadlift', 12, dl * 0.40],
+            ['Lat Pulldowns',     10, dl * 0.22],
           ]
         : [
-            ['Deficit Deadlift', 5,  dlMax * 0.70],
-            ['Lat Pulldowns',    12, dlMax * 0.28],
-            ['Barbell Rows',     10, dlMax * 0.45],
+            ['Romanian Deadlift',  10, dl  * 0.42],     // hamstrings/glutes
+            ['Lat Pulldowns',      10, dl  * 0.25],     // lats (bar path control)
+            ['Barbell Rows',       10, dl  * 0.40],     // upper back
+            ['Deficit Deadlift',    5, dl  * 0.68],     // off-the-floor strength
           ];
       break;
 
     default:
-      // FULL — general GPP accessories
+      // FULL — general GPP
       defs = [
-        ['Romanian Deadlift', 10, dlMax * 0.45],
-        ['Overhead Press',     8, benchMax * 0.55],
+        ['Romanian Deadlift', 10, dl  * 0.42],
+        ['Overhead Press',     8, bp  * 0.52],
+        ['Lat Pulldowns',     10, dl  * 0.22],
       ];
   }
+
+  // Suppress unused variable warning — lightRpe is available for rpeOverride use
+  void lightRpe;
 
   return defs.map(([name, reps, load], i) => ({
     name,
@@ -483,6 +497,7 @@ const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
   'Deficit Deadlift':       'deficit_deadlift',
   'Lat Pulldowns':          'lat_pulldown',
 };
+
 
 /** Default base RPE (before adjustments) for each block type. */
 function getBaseRpeForBlock(blockType: BlockType): number {
