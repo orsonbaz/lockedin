@@ -24,102 +24,20 @@ import {
   readinessLabel,
 } from '@/lib/engine/readiness';
 import { generateSession } from '@/lib/engine/session';
-import { C }                                          from '@/lib/theme';
+import { RingProgress }    from '@/components/lockedin/RingProgress';
+import { C }               from '@/lib/theme';
 import type { ReadinessRecord, SessionExercise, BodyweightEntry } from '@/lib/db/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const ACCENT      = C.accent;
-const SURFACE     = C.surface;
-const TEXT        = C.text;
-const MUTED       = C.muted;
-const BG          = C.bg;
-const GOLD        = C.gold;
+const ACCENT  = C.accent;
+const SURFACE = C.surface;
+const TEXT    = C.text;
+const MUTED   = C.muted;
+const BG      = C.bg;
+const GOLD    = C.gold;
 
 const SLEEP_EMOJIS = ['😩', '😕', '😐', '🙂', '😁'] as const;
-
-// ── Gauge SVG ─────────────────────────────────────────────────────────────────
-
-const GAUGE_R    = 48;
-const GAUGE_CIRC = 2 * Math.PI * GAUGE_R; // ≈ 301.6
-
-function ReadinessGauge({
-  score,
-  colour,
-  label,
-}: {
-  score: number;
-  colour: string;
-  label: string;
-}) {
-  const offset = GAUGE_CIRC * (1 - score / 100);
-
-  return (
-    <div className="flex flex-col items-center gap-3">
-      <svg
-        viewBox="0 0 120 120"
-        className="w-36 h-36"
-        aria-label={`Readiness score ${score} out of 100`}
-      >
-        {/* Track */}
-        <circle
-          cx="60"
-          cy="60"
-          r={GAUGE_R}
-          fill="none"
-          stroke="#2A2A4A"
-          strokeWidth="9"
-        />
-        {/* Filled arc */}
-        <circle
-          cx="60"
-          cy="60"
-          r={GAUGE_R}
-          fill="none"
-          stroke={colour}
-          strokeWidth="9"
-          strokeLinecap="round"
-          strokeDasharray={GAUGE_CIRC}
-          strokeDashoffset={offset}
-          transform="rotate(-90 60 60)"
-          style={{ transition: 'stroke-dashoffset 0.35s ease, stroke 0.35s ease' }}
-        />
-        {/* Score */}
-        <text
-          x="60"
-          y="55"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill={TEXT}
-          fontSize="28"
-          fontWeight="bold"
-          fontFamily="sans-serif"
-        >
-          {score}
-        </text>
-        {/* /100 */}
-        <text
-          x="60"
-          y="74"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill={MUTED}
-          fontSize="11"
-          fontFamily="sans-serif"
-        >
-          / 100
-        </text>
-      </svg>
-
-      <span
-        className="text-sm font-semibold tracking-wide uppercase"
-        style={{ color: colour }}
-      >
-        {label}
-      </span>
-    </div>
-  );
-}
 
 // ── Dot Rating Row ────────────────────────────────────────────────────────────
 
@@ -603,6 +521,7 @@ export default function CheckInPage() {
           {/* ── SECTION 1b: Bodyweight (optional) ───────────────────── */}
           <Section title="Bodyweight (optional)">
             <div className="flex items-center gap-3">
+              <label htmlFor="bw-input" className="sr-only">Bodyweight in kilograms</label>
               <div className="relative flex-1">
                 <input
                   id="bw-input"
@@ -765,10 +684,13 @@ export default function CheckInPage() {
             <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: MUTED }}>
               Today&apos;s Readiness
             </p>
-            <ReadinessGauge
+            <RingProgress
               score={readinessScore}
-              colour={rdColour}
+              color={rdColour}
               label={rdLabel}
+              strokeWidth={9}
+              size={120}
+              ariaLabel={`Readiness score ${readinessScore} out of 100`}
             />
             <p className="text-xs text-center mt-2 max-w-xs" style={{ color: MUTED }}>
               Updates live as you fill in the form above.

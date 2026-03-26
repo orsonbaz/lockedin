@@ -11,23 +11,19 @@
  *   5. Recent Training (horizontal scroll, last 3 sessions)
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter }                    from 'next/navigation';
 import { Skeleton }                     from '@/components/ui/skeleton';
 import { Settings, ChevronRight }       from 'lucide-react';
 import { db, today }                    from '@/lib/db/database';
 import { readinessLabel }               from '@/lib/engine/readiness';
+import { RingProgress }                 from '@/components/lockedin/RingProgress';
 import { C }                            from '@/lib/theme';
 import { greeting, daysUntil }          from '@/lib/date-utils';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
   SessionExercise, TrainingBlock, TrainingCycle, Meet,
 } from '@/lib/db/types';
-
-// ── Ring geometry ──────────────────────────────────────────────────────────────
-const RING_R    = 50;
-const RING_SIZE = 120;
-const CIRC      = 2 * Math.PI * RING_R; // ≈ 314.16
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDateFull(): string {
@@ -41,70 +37,6 @@ function estimateDuration(exercises: SessionExercise[]): number {
   return totalSets * 4 + exercises.length * 2;
 }
 
-// ── Readiness Ring ─────────────────────────────────────────────────────────────
-function ReadinessRing({
-  score, colour, label, hasData,
-}: {
-  score: number; colour: string; label: string; hasData: boolean;
-}) {
-  const [offset,  setOffset]  = useState(CIRC);
-  const triggered             = useRef(false);
-
-  useEffect(() => {
-    if (triggered.current) return;
-    triggered.current = true;
-    const t = setTimeout(() => {
-      setOffset(CIRC * (1 - score / 100));
-    }, 80);
-    return () => clearTimeout(t);
-  }, [score]);
-
-  const ringColour = hasData ? colour : '#3A3A5C';
-
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative" style={{ width: RING_SIZE, height: RING_SIZE }}>
-        <svg
-          width={RING_SIZE}
-          height={RING_SIZE}
-          viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
-          style={{ transform: 'rotate(-90deg)' }}
-        >
-          <circle cx={60} cy={60} r={RING_R} fill="none" stroke={C.dim} strokeWidth={10} />
-          <circle
-            cx={60} cy={60} r={RING_R}
-            fill="none"
-            stroke={ringColour}
-            strokeWidth={10}
-            strokeLinecap="round"
-            strokeDasharray={CIRC}
-            strokeDashoffset={offset}
-            style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(0.34,1.56,0.64,1)' }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ gap: 2 }}>
-          <span
-            className="font-black"
-            style={{
-              fontSize: '2rem', color: hasData ? ringColour : C.muted,
-              textShadow: hasData ? `0 0 20px ${ringColour}60` : 'none',
-              lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {hasData ? score : '--'}
-          </span>
-          <span className="text-xs font-semibold" style={{ color: C.muted }}>/100</span>
-        </div>
-      </div>
-      <p
-        className="text-xs font-bold uppercase tracking-widest mt-2"
-        style={{ color: hasData ? ringColour : C.muted }}
-      >
-        {hasData ? label : 'No check-in'}
-      </p>
-    </div>
-  );
-}
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 interface HomeData {
@@ -121,6 +53,7 @@ interface HomeData {
 export default function HomePage() {
   const router              = useRouter();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [data,    setData]    = useState<HomeData>({
     profile: null, readiness: null, session: null, exercises: [],
     block: null, cycle: null, upcomingMeet: null, recentSessions: [],
@@ -183,8 +116,35 @@ export default function HomePage() {
       });
       setLoading(false);
     }
-    void load();
+    load().catch((err) => {
+      console.error('[Home] load failed:', err);
+      setLoadError(true);
+      setLoading(false);
+    });
   }, []);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: C.bg }}>
+        <div className="text-center px-6">
+          <p className="text-lg font-semibold mb-2" style={{ color: C.text }}>
+            Couldn&apos;t load your data
+          </p>
+          <p className="text-sm mb-4" style={{ color: C.muted }}>
+            There was a problem reading from the local database.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="px-5 py-2.5 rounded-xl text-sm font-bold"
+            style={{ backgroundColor: C.accent, color: '#fff' }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -276,7 +236,13 @@ export default function HomePage() {
           className="rounded-3xl p-5 mb-4 flex items-center gap-5"
           style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
         >
-          <ReadinessRing score={rdScore} colour={rdInfo.colour} label={rdInfo.label} hasData={hasCheckin} />
+          <RingProgress
+            score={rdScore}
+            color={rdInfo.colour}
+            label={rdInfo.label}
+            hasData={hasCheckin}
+            animate
+          />
 
           <div className="flex-1">
             {hasCheckin ? (
