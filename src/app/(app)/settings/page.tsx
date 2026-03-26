@@ -18,9 +18,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter }                         from 'next/navigation';
 import { toast }                             from 'sonner';
 import { ArrowLeft, TriangleAlert, Check, Download, Upload }   from 'lucide-react';
-import { db, exportAll, importAll }           from '@/lib/db/database';
+import { db, exportAll, importAll, newId }    from '@/lib/db/database';
 import { C }                                  from '@/lib/theme';
 import type { AthleteProfile, Federation }    from '@/lib/db/types';
+import type { UserEquipmentProfile }          from '@/lib/exercises/types';
 
 const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -96,9 +97,17 @@ export default function SettingsPage() {
   const [importing,    setImporting]    = useState(false);
   const fileInputRef   = { current: null as HTMLInputElement | null };
 
+  // Equipment profile
+  const [hasBelt,          setHasBelt]          = useState(false);
+  const [hasKneeSleeves,   setHasKneeSleeves]   = useState(false);
+  const [hasWristWraps,    setHasWristWraps]     = useState(false);
+
   useEffect(() => {
     async function load() {
-      const p = await db.profile.get('me');
+      const [p, eq] = await Promise.all([
+        db.profile.get('me'),
+        db.equipmentProfile.get('me'),
+      ]);
       if (p) {
         setProfile(p);
         setName(p.name);
@@ -111,6 +120,11 @@ export default function SettingsPage() {
         setUnitSystem(p.unitSystem);
         setPeakDay(p.peakDayOfWeek);
         setGroqKey(p.groqApiKey ?? '');
+      }
+      if (eq) {
+        setHasBelt(eq.hasBelt);
+        setHasKneeSleeves(eq.hasKneeSleeves);
+        setHasWristWraps(eq.hasWristWraps);
       }
       setLoading(false);
     }
@@ -132,6 +146,25 @@ export default function SettingsPage() {
     }
   }, [profile]);
 
+  // ── Save equipment profile ────────────────────────────────────────────────────
+  const saveEquipment = useCallback(async (patch: Partial<Pick<UserEquipmentProfile, 'hasBelt' | 'hasKneeSleeves' | 'hasWristWraps'>>) => {
+    const now = new Date().toISOString();
+    const existing = await db.equipmentProfile.get('me');
+    if (existing) {
+      await db.equipmentProfile.update('me', { ...patch, updatedAt: now });
+    } else {
+      const newProfile: UserEquipmentProfile = {
+        id: 'me',
+        availableEquipment: ['BARBELL', 'DUMBBELL', 'CABLE', 'MACHINE', 'BODYWEIGHT'],
+        hasBelt:          patch.hasBelt          ?? false,
+        hasKneeSleeves:   patch.hasKneeSleeves   ?? false,
+        hasWristWraps:    patch.hasWristWraps     ?? false,
+        updatedAt: now,
+      };
+      await db.equipmentProfile.add(newProfile);
+    }
+  }, []);
+
   // ── Reset ────────────────────────────────────────────────────────────────────
   const handleReset = useCallback(async () => {
     if (resetConfirm !== 'DELETE') return;
@@ -149,6 +182,8 @@ export default function SettingsPage() {
         db.attempts.clear(),
         db.bodyweight.clear(),
         db.chat.clear(),
+        db.equipmentProfile.clear(),
+        db.customExercises.clear(),
       ]);
       localStorage.removeItem('lockedin_onboarding_complete');
       toast('All data erased.', { duration: 2000 });
@@ -377,7 +412,84 @@ export default function SettingsPage() {
           </Row>
         </SettingsCard>
 
-        {/* ── 4. AI ──────────────────────────────────────────────────────── */}
+        {/* ── 4. EQUIPMENT & GEAR ────────────────────────────────────────── */}
+        <SectionHeader title="Gym Equipment & Gear" />
+        <SettingsCard>
+          <Row>
+            <RowLabel
+              label="Powerlifting Belt"
+              sub="Increases effective squat and deadlift max by ~7%"
+            />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={hasBelt}
+              onClick={async () => {
+                const v = !hasBelt;
+                setHasBelt(v);
+                await saveEquipment({ hasBelt: v });
+                toast(v ? 'Belt enabled' : 'Belt disabled', { duration: 1500 });
+              }}
+              className="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors"
+              style={{ backgroundColor: hasBelt ? C.accent : C.dim }}
+            >
+              <span
+                className="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform"
+                style={{ transform: hasBelt ? 'translateX(22px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
+              label="Knee Sleeves"
+              sub="Increases effective squat max by ~3%"
+            />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={hasKneeSleeves}
+              onClick={async () => {
+                const v = !hasKneeSleeves;
+                setHasKneeSleeves(v);
+                await saveEquipment({ hasKneeSleeves: v });
+                toast(v ? 'Sleeves enabled' : 'Sleeves disabled', { duration: 1500 });
+              }}
+              className="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors"
+              style={{ backgroundColor: hasKneeSleeves ? C.accent : C.dim }}
+            >
+              <span
+                className="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform"
+                style={{ transform: hasKneeSleeves ? 'translateX(22px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
+              label="Wrist Wraps"
+              sub="Noted on bench press and overhead press — no strength modifier"
+            />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={hasWristWraps}
+              onClick={async () => {
+                const v = !hasWristWraps;
+                setHasWristWraps(v);
+                await saveEquipment({ hasWristWraps: v });
+                toast(v ? 'Wrist wraps enabled' : 'Wrist wraps disabled', { duration: 1500 });
+              }}
+              className="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors"
+              style={{ backgroundColor: hasWristWraps ? C.accent : C.dim }}
+            >
+              <span
+                className="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform"
+                style={{ transform: hasWristWraps ? 'translateX(22px)' : 'translateX(2px)' }}
+              />
+            </button>
+          </Row>
+        </SettingsCard>
+
+        {/* ── 5. AI ──────────────────────────────────────────────────────── */}
         <SectionHeader title="AI Coach" />
         <SettingsCard>
           <Row>
