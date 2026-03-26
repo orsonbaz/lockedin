@@ -18,7 +18,7 @@ import { toast }                                          from 'sonner';
 import { db, today, newId }                               from '@/lib/db/database';
 import { readinessLabel }                                 from '@/lib/engine/readiness';
 import { C as _C }                                        from '@/lib/theme';
-import type { TrainingSession, SessionExercise, SetLog }  from '@/lib/db/types';
+import type { TrainingSession, TrainingBlock, SessionExercise, SetLog }  from '@/lib/db/types';
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
@@ -188,6 +188,7 @@ export default function SessionPage({
   // ── Data ────────────────────────────────────────────────────────────────
   const [loading,          setLoading]          = useState(true);
   const [session,          setSession]          = useState<TrainingSession | null>(null);
+  const [sessionBlock,     setSessionBlock]     = useState<TrainingBlock | null>(null);
   const [exercises,        setExercises]        = useState<SessionExercise[]>([]);
   const [setLogs,          setSetLogs]          = useState<SetLog[]>([]);
   const [todayReadiness,   setTodayReadiness]   = useState<number | undefined>();
@@ -242,6 +243,11 @@ export default function SessionPage({
       setSetLogs(sets);
       setTodayReadiness(readiness?.readinessScore);
       setEquipmentProfile(eqProfile ?? null);
+      // Fetch the block so we can use its blockType for swap suggestions
+      if (sess?.blockId) {
+        const blk = await db.blocks.get(sess.blockId);
+        if (!cancelled) setSessionBlock(blk ?? null);
+      }
       if (exs.length > 0) {
         const first = exs[0];
         setDraftLoad(first.estimatedLoadKg);
@@ -342,10 +348,9 @@ export default function SessionPage({
     }
     const profile = equipmentProfile;
     const avail = profile?.availableEquipment ?? ['BARBELL', 'DUMBBELL', 'BODYWEIGHT', 'CABLE', 'MACHINE'];
-    const block = session; // used for blockType below — we'll pull from the session's block
-    // We don't have the block type easily here — default to ACCUMULATION as fallback
+    const blockType = sessionBlock?.blockType ?? 'ACCUMULATION';
     const candidates = suggestSwaps(libEx, {
-      blockType:          'ACCUMULATION',
+      blockType,
       availableEquipment: avail,
       wearingBelt:        profile?.hasBelt ?? false,
       wearingKneeSleeves: profile?.hasKneeSleeves ?? false,
@@ -356,7 +361,7 @@ export default function SessionPage({
     setSwapCandidates(candidates);
     setSwapForExId(ex.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equipmentProfile, session]);
+  }, [equipmentProfile, sessionBlock]);
 
   /** Replace an exercise with the chosen swap candidate. */
   const confirmSwap = useCallback(async (candidate: SwapCandidate) => {

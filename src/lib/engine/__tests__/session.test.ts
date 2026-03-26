@@ -87,6 +87,18 @@ describe('generateSession — primary lift rotation', () => {
     it('S4 = UPPER',    () => expect(generateSession({ profile: freq5, block, weekDayOfWeek: 4, readinessScore: 80, sessionNumber: 4 }).primaryLift).toBe('UPPER'));
     it('S5 = SQUAT',    () => expect(generateSession({ profile: freq5, block, weekDayOfWeek: 5, readinessScore: 80, sessionNumber: 5 }).primaryLift).toBe('SQUAT'));
   });
+
+  describe('6-day week', () => {
+    const freq6 = { ...baseProfile, weeklyFrequency: 6 };
+    it('S1 = SQUAT',    () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 1, readinessScore: 80, sessionNumber: 1 }).primaryLift).toBe('SQUAT'));
+    it('S2 = BENCH',    () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 2, readinessScore: 80, sessionNumber: 2 }).primaryLift).toBe('BENCH'));
+    it('S3 = DEADLIFT', () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 3, readinessScore: 80, sessionNumber: 3 }).primaryLift).toBe('DEADLIFT'));
+    it('S4 = UPPER',    () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 4, readinessScore: 80, sessionNumber: 4 }).primaryLift).toBe('UPPER'));
+    it('S5 = SQUAT',    () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 5, readinessScore: 80, sessionNumber: 5 }).primaryLift).toBe('SQUAT'));
+    it('S6 = DEADLIFT', () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 6, readinessScore: 80, sessionNumber: 6 }).primaryLift).toBe('DEADLIFT'));
+    // Rotation wraps on session 7
+    it('S7 wraps to SQUAT', () => expect(generateSession({ profile: freq6, block, weekDayOfWeek: 1, readinessScore: 80, sessionNumber: 7 }).primaryLift).toBe('SQUAT'));
+  });
 });
 
 // ── Session type mapping ──────────────────────────────────────────────────────
@@ -483,5 +495,48 @@ describe('generateSession — deadlift day (S3)', () => {
   it('accessories include a pull movement (lat pulldowns or rows)', () => {
     const names = s.exercises.map((e) => e.name.toLowerCase());
     expect(names.some((n) => n.includes('pulldown') || n.includes('row'))).toBe(true);
+  });
+});
+
+describe('generateSession — squat day includes upper back pulling', () => {
+  const s = generateSession({
+    profile: baseProfile,
+    block: makeBlock('ACCUMULATION'),
+    weekDayOfWeek: mondayDOW,
+    readinessScore: goodReadiness,
+    sessionNumber: 1,
+  });
+
+  it('accessories include a row or pulldown movement', () => {
+    const names = s.exercises.map((e) => e.name.toLowerCase());
+    expect(names.some((n) => n.includes('row') || n.includes('pulldown'))).toBe(true);
+  });
+
+  it('has 5 or more exercises total (comp + variation + ≥3 accessories)', () => {
+    expect(s.exercises.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe('generateSession — UPPER day (5-day or 6-day rotation)', () => {
+  const freq5 = { ...baseProfile, weeklyFrequency: 5 };
+  const s = generateSession({
+    profile: freq5,
+    block: makeBlock('ACCUMULATION'),
+    weekDayOfWeek: 4,
+    readinessScore: goodReadiness,
+    sessionNumber: 4, // UPPER day in 5-day rotation
+  });
+
+  it('primary lift is UPPER', () => {
+    expect(s.primaryLift).toBe('UPPER');
+  });
+
+  it('first exercise is a bench or press variant', () => {
+    expect(s.exercises[0].name).toMatch(/bench|press/i);
+  });
+
+  it('accessories include a row or pulldown movement', () => {
+    const names = s.exercises.map((e) => e.name.toLowerCase());
+    expect(names.some((n) => n.includes('row') || n.includes('pulldown'))).toBe(true);
   });
 });
