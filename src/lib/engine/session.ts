@@ -92,9 +92,10 @@ export function generateSession(input: SessionInput): GeneratedSession {
   }
 
   // ── 4. Build exercises ─────────────────────────────────────────────────────
-  const weekInBlock = input.weekWithinBlock ?? 1;
+  const weekInBlock  = input.weekWithinBlock ?? 1;
+  const isDupRepeat  = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
   const exercises = buildSessionExercises(
-    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock,
+    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock, isDupRepeat,
   );
 
   // ── 5. Coach note ──────────────────────────────────────────────────────────
@@ -152,6 +153,7 @@ function buildSessionExercises(
   volMult: number,
   rpeOffset: number,
   weekWithinBlock = 1,
+  isDupRepeat = false,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
 
@@ -159,7 +161,7 @@ function buildSessionExercises(
   const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
-    weekWithinBlock, totalBlockWeeks,
+    weekWithinBlock, totalBlockWeeks, isDupRepeat,
   );
   exercises.push(...primaryExercises);
 
@@ -185,6 +187,7 @@ function buildPrimaryExercises(
   rpeOffset: number,
   weekInBlock = 1,
   totalBlockWeeks = 1,
+  isDupRepeat = false,
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
   const baseRpe = getBaseRpeForBlock(blockType);
@@ -270,7 +273,15 @@ function buildPrimaryExercises(
   const rawSets   = blockToSets(blockType) * respMult * volMult;
   const finalSets = Math.max(1, Math.floor(rawSets));
 
-  const compLoad = roundLoad(prescribeLoad(maxKg, adjustedRpe, baseReps));
+  // DUP: second appearance of the same lift in a week is a volume day.
+  // Slightly lower RPE + one extra rep differentiates the stimulus from
+  // the first (intensity) day — per Stanek mini-peaks / Noriega DUP.
+  const dupRpeAdj = isDupRepeat ? -0.5 : 0;
+  const dupRepAdj = isDupRepeat ? 1    : 0;
+  const finalRpe  = clampRpe(adjustedRpe + dupRpeAdj);
+  const finalReps = baseReps + dupRepAdj;
+
+  const compLoad = roundLoad(prescribeLoad(maxKg, finalRpe, finalReps));
 
   const result: GeneratedExercise[] = [
     {
@@ -278,8 +289,8 @@ function buildPrimaryExercises(
       exerciseType:      'COMPETITION',
       setStructure:      'STRAIGHT',
       sets:              finalSets,
-      reps:              baseReps,
-      rpeTarget:         adjustedRpe,
+      reps:              finalReps,
+      rpeTarget:         finalRpe,
       estimatedLoadKg:   compLoad,
       order:             1,
       libraryExerciseId: compLibraryId,
@@ -291,7 +302,10 @@ function buildPrimaryExercises(
     const varRpe    = clampRpe(adjustedRpe - 0.5);
     const varReps   = baseReps + 1;
     const varSets   = Math.max(1, Math.floor(3 * volMult));
-    const varLoad   = roundLoad(prescribeLoad(maxKg, varRpe, varReps));
+    // Discount the reference max — pause squat/bench/deficit DL are weaker
+    // than the competition lift. Without this, loads land 15-20 kg too heavy.
+    const varCoeff  = VARIATION_MAX_COEFFICIENT[variationName ?? ''] ?? 1.0;
+    const varLoad   = roundLoad(prescribeLoad(maxKg * varCoeff, varRpe, varReps));
 
     result.push({
       name:              variationName,
@@ -319,95 +333,98 @@ function buildAccessories(
   rpeOffset: number,
   startOrder: number,
 ): GeneratedExercise[] {
-  const accRpe   = clampRpe(7.5 + rpeOffset);
-  const lightRpe = clampRpe(7.0 + rpeOffset);
-  const accSets  = Math.max(1, Math.floor(3 * volMult));
+  const accRpe  = clampRpe(7.5 + rpeOffset);
+  const accSets = Math.max(1, Math.floor(3 * volMult));
   const isDeload = blockType === 'DELOAD';
 
-  const sq  = profile.maxSquat;
-  const bp  = profile.maxBench;
-  const dl  = profile.maxDeadlift;
+  const sq = profile.maxSquat;
+  const bp = profile.maxBench;
+  const dl = profile.maxDeadlift;
 
-  type AccDef = [string, number, number, number?]; // [name, reps, loadKg, rpeOverride?]
+  // [name, reps, refMaxKg]
+  // refMaxKg = the relevant competition max (sq/bp/dl).
+  // ACCESSORY_REF_COEFFICIENT[name] is then multiplied to get the accessory
+  // effective 1RM, then prescribeLoad() computes the training load.
+  // Note: Barbell Rows always reference bp (bench) regardless of session day.
+  type AccDef = [string, number, number];
 
   let defs: AccDef[];
 
   switch (lift) {
     // ── SQUAT DAY ─────────────────────────────────────────────────────────
-    // Standard in elite programs (Sheiko, GZCLP, Juggernaut):
-    // squat variation + upper back pull + posterior chain + core
+    // Upper back pull included on every session (Sheiko, Juggernaut standard)
     case 'SQUAT':
     case 'LOWER':
       defs = isDeload
         ? [
-            ['Romanian Deadlift',  12, dl  * 0.38],
-            ['Barbell Rows',        8, bp  * 0.55],
+            ['Romanian Deadlift', 12, dl],
+            ['Barbell Rows',       8, bp],
           ]
         : [
-            ['Romanian Deadlift',  10, dl  * 0.42],       // posterior chain
-            ['Barbell Rows',        8, bp  * 0.60],       // upper back (critical for squat bracing)
-            ['Leg Press',          12, sq  * 0.80],       // quad volume
-            ['Lat Pulldowns',      10, dl  * 0.22],       // lat engagement
+            ['Romanian Deadlift', 10, dl],  // posterior chain
+            ['Barbell Rows',       8, bp],  // upper back (critical for squat bracing)
+            ['Leg Press',         12, sq],  // quad volume
+            ['Lat Pulldowns',     10, dl],  // lat engagement
           ];
       break;
 
     // ── BENCH DAY ─────────────────────────────────────────────────────────
-    // Upper pressing volume + heavy rows (lats antagonist = shoulder health)
+    // Upper pressing + rows (antagonist work = shoulder health)
     case 'BENCH':
     case 'UPPER':
       defs = isDeload
         ? [
-            ['Overhead Press',    8,  bp * 0.52],
-            ['Barbell Rows',      8,  bp * 0.55],
+            ['Overhead Press', 8, bp],
+            ['Barbell Rows',   8, bp],
           ]
         : [
-            ['Close Grip Bench Press', 10, bp * 0.65],   // tricep/lockout
-            ['Barbell Rows',           10, bp * 0.65],   // upper back (shoulder health)
-            ['Overhead Press',          8, bp * 0.55],   // shoulder work
-            ['Tricep Pushdowns',       12, bp * 0.20],   // isolation lockout
+            ['Close Grip Bench Press', 10, bp],  // tricep/lockout
+            ['Barbell Rows',           10, bp],  // upper back (shoulder health)
+            ['Overhead Press',          8, bp],  // shoulder work
+            ['Tricep Pushdowns',       12, bp],  // isolation lockout
           ];
       break;
 
     // ── DEADLIFT DAY ──────────────────────────────────────────────────────
-    // Heavy lat/back work (lats are the primary stabiliser on DL)
-    // + RDL for hamstring/glute accessory
+    // Lats are the primary DL stabiliser; RDL for hamstring/glute volume
     case 'DEADLIFT':
       defs = isDeload
         ? [
-            ['Romanian Deadlift', 12, dl * 0.40],
-            ['Lat Pulldowns',     10, dl * 0.22],
+            ['Romanian Deadlift', 12, dl],
+            ['Lat Pulldowns',     10, dl],
           ]
         : [
-            ['Romanian Deadlift',  10, dl  * 0.42],     // hamstrings/glutes
-            ['Lat Pulldowns',      10, dl  * 0.25],     // lats (bar path control)
-            ['Barbell Rows',       10, dl  * 0.40],     // upper back
-            ['Deficit Deadlift',    5, dl  * 0.68],     // off-the-floor strength
+            ['Romanian Deadlift', 10, dl],  // hamstrings/glutes
+            ['Lat Pulldowns',     10, dl],  // lats (bar path control)
+            ['Barbell Rows',      10, bp],  // upper back — bp reference, not dl
+            ['Deficit Deadlift',   5, dl],  // off-the-floor strength
           ];
       break;
 
     default:
       // FULL — general GPP
       defs = [
-        ['Romanian Deadlift', 10, dl  * 0.42],
-        ['Overhead Press',     8, bp  * 0.52],
-        ['Lat Pulldowns',     10, dl  * 0.22],
+        ['Romanian Deadlift', 10, dl],
+        ['Overhead Press',     8, bp],
+        ['Lat Pulldowns',     10, dl],
       ];
   }
 
-  // Suppress unused variable warning — lightRpe is available for rpeOverride use
-  void lightRpe;
-
-  return defs.map(([name, reps, load], i) => ({
-    name,
-    exerciseType:      'ACCESSORY' as ExerciseType,
-    setStructure:      'STRAIGHT' as SetStructure,
-    sets:              accSets,
-    reps,
-    rpeTarget:         accRpe,
-    estimatedLoadKg:   roundLoad(load),
-    order:             startOrder + i,
-    libraryExerciseId: ACCESSORY_LIBRARY_IDS[name],
-  }));
+  return defs.map(([name, reps, refMaxKg], i) => {
+    const coeff = ACCESSORY_REF_COEFFICIENT[name] ?? 0.6;
+    const load  = roundLoad(prescribeLoad(refMaxKg * coeff, accRpe, reps));
+    return {
+      name,
+      exerciseType:      'ACCESSORY' as ExerciseType,
+      setStructure:      'STRAIGHT' as SetStructure,
+      sets:              accSets,
+      reps,
+      rpeTarget:         accRpe,
+      estimatedLoadKg:   load,
+      order:             startOrder + i,
+      libraryExerciseId: ACCESSORY_LIBRARY_IDS[name],
+    };
+  });
 }
 
 // ── Coach Note (Rule-Based) ────────────────────────────────────────────────────
@@ -498,6 +515,42 @@ const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
   'Lat Pulldowns':          'lat_pulldown',
 };
 
+/**
+ * Variation exercise effective 1RM as a fraction of the competition lift 1RM.
+ * Pause squat max ≈ 87% of comp squat (Tuchscherer/Noriega programming notes).
+ * Pause bench max ≈ 85% of comp bench (widespread coach consensus).
+ * Deficit DL max  ≈ 88% of comp DL   (harder off floor, similar top end).
+ *
+ * Without this discount, prescribeLoad() uses the full competition max and
+ * produces loads 15–20 kg too heavy for the variation in an accumulation block.
+ */
+const VARIATION_MAX_COEFFICIENT: Partial<Record<string, number>> = {
+  'Pause Squat':       0.87,
+  'Pause Bench Press': 0.85,
+  'Deficit Deadlift':  0.88,
+};
+
+/**
+ * Accessory exercise effective 1RM as a fraction of the relevant competition
+ * lift's 1RM. Multiplied by the competition max before calling prescribeLoad()
+ * so that: (a) loads land in the correct range, and (b) accessories respond to
+ * readiness changes (since load flows through prescribeLoad with the adjusted
+ * accRpe, not a flat percentage).
+ *
+ * Sources: Tuchscherer, Noriega, Stanek, Swolefessor programming references
+ * for intermediate-to-advanced raw powerlifters.
+ */
+const ACCESSORY_REF_COEFFICIENT: Record<string, number> = {
+  'Romanian Deadlift':      0.85,  // of DL — strong hinge, shorter ROM
+  'Deficit Deadlift':       0.88,  // of DL — harder off floor
+  'Barbell Rows':           0.95,  // of BP — most lifters row close to bench
+  'Leg Press':              1.25,  // of SQ — favourable leverage, no bracing
+  'Lat Pulldowns':          0.45,  // of DL — upper-body pull fraction of DL
+  'Close Grip Bench Press': 0.90,  // of BP — slight ROM assist
+  'Overhead Press':         0.65,  // of BP — strict press limited by delts
+  'Tricep Pushdowns':       0.48,  // of BP — cable isolation
+};
+
 
 /** Default base RPE (before adjustments) for each block type. */
 function getBaseRpeForBlock(blockType: BlockType): number {
@@ -541,4 +594,25 @@ function computeOvershootOffset(overshootHistory?: number): number {
 /** Clamp RPE to the valid [5, 10] range. */
 function clampRpe(rpe: number): number {
   return Math.max(5, Math.min(10, rpe));
+}
+
+/**
+ * Returns true when this session is a second (or later) appearance of the
+ * same lift in the weekly rotation. Used to apply DUP variation: the second
+ * squat or deadlift day becomes a volume day (+1 rep, −0.5 RPE) rather than
+ * a clone of the intensity day. Informed by Stanek "mini-peaks" and Noriega
+ * DUP methodology.
+ *
+ * Repeat positions (0-indexed in the rotation):
+ *   5-day: index 4  (S5 = SQUAT, second appearance)
+ *   6-day: index 4  (S5 = SQUAT) and index 5 (S6 = DEADLIFT)
+ */
+function detectDupRepeat(sessionNumber: number, weeklyFrequency: number): boolean {
+  const freq = Math.min(6, Math.max(1, weeklyFrequency));
+  const idx  = (sessionNumber - 1) % freq;
+  const repeatIndices: Partial<Record<number, number[]>> = {
+    5: [4],
+    6: [4, 5],
+  };
+  return (repeatIndices[freq] ?? []).includes(idx);
 }

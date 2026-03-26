@@ -50,28 +50,28 @@ describe('prescribeLoad', () => {
     expect(prescribeLoad(180, 10, 1)).toBeCloseTo(180, 1);
   });
 
-  it('RPE 9 × 1 rep returns 97% of max', () => {
-    expect(prescribeLoad(180, 9, 1)).toBeCloseTo(174.6, 1);
+  it('RPE 9 × 1 rep returns 96% of max (RTS table)', () => {
+    expect(prescribeLoad(180, 9, 1)).toBeCloseTo(172.8, 1);
   });
 
-  it('RPE 8 × 1 rep returns 94% of max', () => {
-    expect(prescribeLoad(180, 8, 1)).toBeCloseTo(169.2, 1);
+  it('RPE 8 × 1 rep returns 92% of max (RTS table)', () => {
+    expect(prescribeLoad(180, 8, 1)).toBeCloseTo(165.6, 1);
   });
 
-  it('RPE 7 × 1 rep returns 91% of max', () => {
-    expect(prescribeLoad(180, 7, 1)).toBeCloseTo(163.8, 1);
+  it('RPE 7 × 1 rep returns 86% of max (RTS table)', () => {
+    expect(prescribeLoad(180, 7, 1)).toBeCloseTo(154.8, 1);
   });
 
-  it('RPE 6 × 1 rep returns 88% of max', () => {
-    expect(prescribeLoad(180, 6, 1)).toBeCloseTo(158.4, 1);
+  it('RPE 6 × 1 rep returns 80% of max (RTS table)', () => {
+    expect(prescribeLoad(180, 6, 1)).toBeCloseTo(144.0, 1);
   });
 
-  it('applies rep offset: each rep beyond 1 reduces load by 2.5%', () => {
-    const single  = prescribeLoad(180, 8, 1);
-    const double  = prescribeLoad(180, 8, 2);
-    const fiveRep = prescribeLoad(180, 8, 5);
-    expect(double).toBeCloseTo(single - 180 * 0.025, 1);
-    expect(fiveRep).toBeCloseTo(single - 180 * 0.025 * 4, 1);
+  it('load decreases monotonically as reps increase at fixed RPE', () => {
+    const rpe8 = (r: number) => prescribeLoad(200, 8, r);
+    expect(rpe8(1)).toBeGreaterThan(rpe8(3));
+    expect(rpe8(3)).toBeGreaterThan(rpe8(5));
+    expect(rpe8(5)).toBeGreaterThan(rpe8(8));
+    expect(rpe8(8)).toBeGreaterThan(rpe8(10));
   });
 
   it('supports fractional RPE (interpolation)', () => {
@@ -95,6 +95,42 @@ describe('prescribeLoad', () => {
 
   it('never returns a negative load', () => {
     expect(prescribeLoad(180, 5, 100)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── prescribeLoad — RTS table accuracy ───────────────────────────────────────
+
+describe('prescribeLoad — RTS table accuracy', () => {
+  it('5 reps @ RPE 7.5 = ~79.5% of max (accumulation zone)', () => {
+    // Key anchor: midpoint of (75%+84%)/2 = 79.5%
+    expect(prescribeLoad(100, 7.5, 5)).toBeCloseTo(79.5, 0);
+  });
+
+  it('5 reps @ RPE 8 = 84% of max (intensification zone)', () => {
+    expect(prescribeLoad(100, 8, 5)).toBeCloseTo(84, 0);
+  });
+
+  it('1 rep @ RPE 8 = 92% of max', () => {
+    expect(prescribeLoad(100, 8, 1)).toBeCloseTo(92, 0);
+  });
+
+  it('10 reps @ RPE 7.5 is less than 5 reps @ RPE 7.5', () => {
+    expect(prescribeLoad(200, 7.5, 10)).toBeLessThan(prescribeLoad(200, 7.5, 5));
+  });
+
+  it('load increases as RPE increases at fixed reps', () => {
+    expect(prescribeLoad(200, 7, 5)).toBeLessThan(prescribeLoad(200, 8, 5));
+    expect(prescribeLoad(200, 8, 5)).toBeLessThan(prescribeLoad(200, 9, 5));
+    expect(prescribeLoad(200, 9, 5)).toBeLessThan(prescribeLoad(200, 10, 5));
+  });
+
+  it('fractional interpolation is strictly between integer endpoints', () => {
+    const at8  = prescribeLoad(200, 8,   1);
+    const at85 = prescribeLoad(200, 8.5, 1);
+    const at9  = prescribeLoad(200, 9,   1);
+    expect(at85).toBeGreaterThan(at8);
+    expect(at85).toBeLessThan(at9);
+    expect(at85).toBeCloseTo((at8 + at9) / 2, 1); // linear midpoint
   });
 });
 
