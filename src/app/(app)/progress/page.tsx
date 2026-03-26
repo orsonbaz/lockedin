@@ -145,6 +145,7 @@ const LOAD_MORE_WEEKS = 12;
 
 export default function ProgressPage() {
   const [loading, setLoading]  = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [weeksBack, setWeeksBack] = useState(DEFAULT_WEEKS);
   const [loadingMore, setLoadingMore] = useState(false);
   const [chartData, setChartData] = useState<ProgressData>({
@@ -318,21 +319,55 @@ export default function ProgressPage() {
 
   // Initial load
   useEffect(() => {
-    loadData(weeksBack).then((data) => {
-      setChartData(data);
-      setLoading(false);
-    });
+    loadData(weeksBack)
+      .then((data) => {
+        setChartData(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('[Progress] load failed:', err);
+        setLoadError(true);
+        setLoading(false);
+      });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "Load More" handler
   const handleLoadMore = useCallback(async () => {
     const nextWeeks = weeksBack + LOAD_MORE_WEEKS;
     setLoadingMore(true);
-    const data = await loadData(nextWeeks);
-    setChartData(data);
-    setWeeksBack(nextWeeks);
-    setLoadingMore(false);
+    try {
+      const data = await loadData(nextWeeks);
+      setChartData(data);
+      setWeeksBack(nextWeeks);
+    } catch (err) {
+      console.error('[Progress] load more failed:', err);
+    } finally {
+      setLoadingMore(false);
+    }
   }, [weeksBack, loadData]);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: C.bg }}>
+        <div className="text-center px-6">
+          <p className="text-lg font-semibold mb-2" style={{ color: C.text }}>
+            Couldn&apos;t load progress data
+          </p>
+          <p className="text-sm mb-4" style={{ color: C.muted }}>
+            There was a problem reading from the local database.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="px-5 py-2.5 rounded-xl text-sm font-bold"
+            style={{ backgroundColor: C.accent, color: '#fff' }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
