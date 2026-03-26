@@ -147,8 +147,10 @@ export default function SettingsPage() {
         db.readiness.clear(),
         db.meets.clear(),
         db.attempts.clear(),
+        db.bodyweight.clear(),
         db.chat.clear(),
       ]);
+      localStorage.removeItem('lockedin_onboarding_complete');
       toast('All data erased.', { duration: 2000 });
       // Small delay so toast shows, then redirect to onboarding
       setTimeout(() => { window.location.href = '/'; }, 1500);
