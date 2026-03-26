@@ -343,7 +343,32 @@ export default function SessionPage({
     // Synchronous UI update
     setSetLogs((prev) => [...prev, newLog]);
 
-    // Start rest timer (duration by RPE)
+    // ── Intra-session autoregulation ───────────────────────────────────
+    // Compare logged RPE to target and suggest load adjustment for next set.
+    const rpeTarget = activeExercise.rpeTarget;
+    const rpeDiff = rpe - rpeTarget; // positive = overshooting, negative = undershooting
+
+    if (Math.abs(rpeDiff) >= 1) {
+      // Significant deviation — adjust load by 2.5 kg per 0.5 RPE difference
+      const adjustment = -Math.round(rpeDiff / 0.5) * 2.5;
+      const newLoad = Math.max(20, Math.round((load + adjustment) / 2.5) * 2.5);
+
+      if (newLoad !== load) {
+        setDraftLoad(newLoad);
+
+        if (rpeDiff >= 1.5) {
+          toast(`RPE ${rpe} vs target ${rpeTarget} — dropping to ${newLoad} kg. Don't grind.`, { duration: 3500 });
+        } else if (rpeDiff >= 1) {
+          toast(`Felt heavy — next set at ${newLoad} kg`, { duration: 2500 });
+        } else if (rpeDiff <= -1.5) {
+          toast(`Too easy — bumping to ${newLoad} kg`, { duration: 2500 });
+        } else {
+          toast(`Light for you — next set at ${newLoad} kg`, { duration: 2500 });
+        }
+      }
+    }
+
+    // Start rest timer (duration scaled by actual RPE, not target)
     const dur = rpe < 8 ? 180 : rpe < 9 ? 240 : 300;
     setRestTimerMax(dur);
     setRestTimerSecs(dur);
@@ -1069,6 +1094,34 @@ export default function SessionPage({
               {draftRpe}
             </div>
           </div>
+
+          {/* RPE deviation feedback — shows after first set if deviating from target */}
+          {activeExSets.length > 0 && (() => {
+            const loggedRpes = activeExSets
+              .filter((s) => s.rpeLogged !== undefined)
+              .map((s) => s.rpeLogged as number);
+            if (loggedRpes.length === 0) return null;
+            const avgRpe = loggedRpes.reduce((a, b) => a + b, 0) / loggedRpes.length;
+            const diff = avgRpe - (activeExercise?.rpeTarget ?? 8);
+            if (Math.abs(diff) < 0.75) return null;
+            const isOver = diff > 0;
+            return (
+              <div
+                className="rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-2"
+                style={{
+                  backgroundColor: isOver ? 'rgba(233,69,96,0.12)' : 'rgba(245,166,35,0.12)',
+                  color: isOver ? C.accent : C.gold,
+                }}
+              >
+                <span>{isOver ? '▲' : '▼'}</span>
+                <span>
+                  {isOver
+                    ? `Averaging RPE ${avgRpe.toFixed(1)} vs target ${activeExercise?.rpeTarget} — consider dropping weight`
+                    : `Averaging RPE ${avgRpe.toFixed(1)} vs target ${activeExercise?.rpeTarget} — you can push harder`}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Log Set button */}
           <button
