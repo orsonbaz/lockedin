@@ -18,7 +18,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter }                         from 'next/navigation';
 import { toast }                             from 'sonner';
 import { ArrowLeft, TriangleAlert, Check, Download, Upload }   from 'lucide-react';
-import { db, exportAll, importAll, newId }    from '@/lib/db/database';
+import { db, exportAll, importAll }           from '@/lib/db/database';
+import { ProfilePatchSchema }                 from '@/lib/db/schemas';
+import { SegmentedControl }                   from '@/components/lockedin/SegmentedControl';
 import { C }                                  from '@/lib/theme';
 import type { AthleteProfile, Federation }    from '@/lib/db/types';
 import type { UserEquipmentProfile }          from '@/lib/exercises/types';
@@ -134,6 +136,14 @@ export default function SettingsPage() {
   // ── Save helper ──────────────────────────────────────────────────────────────
   const save = useCallback(async (patch: Partial<AthleteProfile>) => {
     if (!profile) return;
+
+    const result = ProfilePatchSchema.safeParse(patch);
+    if (!result.success) {
+      const msg = result.error.issues[0]?.message ?? 'Invalid value';
+      toast(`Invalid input: ${msg}`, { duration: 3000 });
+      return;
+    }
+
     setSaving(true);
     try {
       await db.profile.update('me', { ...patch, updatedAt: new Date().toISOString() });
@@ -372,25 +382,14 @@ export default function SettingsPage() {
           {/* Unit system */}
           <Row>
             <RowLabel label="Unit System" />
-            <div className="flex gap-1 rounded-xl overflow-hidden border" style={{ borderColor: C.border }}>
-              {(['KG', 'LBS'] as const).map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => {
-                    setUnitSystem(u);
-                    void save({ unitSystem: u });
-                  }}
-                  className="px-4 py-2 text-sm font-semibold transition-all"
-                  style={{
-                    backgroundColor: unitSystem === u ? C.accent    : C.dim,
-                    color:           unitSystem === u ? '#fff'       : C.muted,
-                  }}
-                >
-                  {u}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              options={[{ value: 'KG', label: 'KG' }, { value: 'LBS', label: 'LBS' }]}
+              value={unitSystem}
+              onChange={(u) => {
+                setUnitSystem(u);
+                void save({ unitSystem: u });
+              }}
+            />
           </Row>
 
           {/* Peak day of week */}

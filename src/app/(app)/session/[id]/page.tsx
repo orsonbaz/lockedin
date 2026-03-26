@@ -16,6 +16,7 @@ import { use, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter }                                      from 'next/navigation';
 import { toast }                                          from 'sonner';
 import { db, today, newId }                               from '@/lib/db/database';
+import { SetLogSchema }                                   from '@/lib/db/schemas';
 import { readinessLabel }                                 from '@/lib/engine/readiness';
 import { C as _C }                                        from '@/lib/theme';
 import type { TrainingSession, TrainingBlock, SessionExercise, SetLog }  from '@/lib/db/types';
@@ -55,6 +56,9 @@ function RestTimerOverlay({ secsRemaining, maxSecs, onSkip }: RestTimerProps) {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Rest timer"
       className="fixed inset-0 z-50 flex flex-col items-center justify-center"
       style={{ backgroundColor: 'rgba(26,26,46,0.92)', backdropFilter: 'blur(4px)' }}
     >
@@ -300,6 +304,17 @@ export default function SessionPage({
     const reps = draftRepsRef.current;
     const rpe  = draftRpeRef.current;
     const setNumber = setLogs.filter((sl) => sl.exerciseId === activeExercise.id).length + 1;
+
+    // Validate user-supplied values before writing
+    const validation = SetLogSchema.pick({ loadKg: true, reps: true, rpeLogged: true }).safeParse({
+      loadKg:    load,
+      reps,
+      rpeLogged: rpe,
+    });
+    if (!validation.success) {
+      toast(`Invalid set: ${validation.error.issues[0]?.message ?? 'check your inputs'}`, { duration: 2500 });
+      return;
+    }
 
     const newLog: SetLog = {
       id:         newId(),
