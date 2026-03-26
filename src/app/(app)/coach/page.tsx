@@ -38,14 +38,15 @@ import {
   type ChatMessage,
   type ProgressPayload,
 } from '@/lib/ai/coach';
+import { parseActions, executeAction, type CoachAction, type ActionResult } from '@/lib/ai/coach-actions';
 import { C }                                            from '@/lib/theme';
 
 // ── Suggested quick-prompts ───────────────────────────────────────────────────
 const DEFAULT_PROMPTS = [
-  'Why is my program structured this way right now?',
-  'How is my peaking looking?',
-  'I only have time for a 45-minute session today.',
-  'What should my attempts be based on my current training?',
+  'What should I eat today for my training?',
+  'I only have 45 minutes — adjust my session.',
+  'Why is my program structured this way?',
+  'How should I warm up for squats today?',
 ];
 
 interface CoachContext {
@@ -63,19 +64,23 @@ function getContextualPrompts(ctx: CoachContext): string[] {
   const prompts: string[] = [];
 
   if (ctx.meetInDays !== undefined && ctx.meetInDays <= 14) {
-    prompts.push('What should my final week look like before the meet?');
+    prompts.push('Help me plan my attempt selections for the meet.');
+  }
+
+  if (ctx.meetInDays !== undefined && ctx.meetInDays <= 7) {
+    prompts.push('What should I eat the day before the meet?');
   }
 
   if (ctx.blockType === 'DELOAD') {
-    prompts.push('How should I approach this deload?');
+    prompts.push('What should my deload nutrition look like?');
   }
 
   if (ctx.overshooter) {
-    prompts.push('I keep overshooting RPE — what should I change?');
+    prompts.push('I keep overshooting RPE — adjust my session targets.');
   }
 
   if (ctx.lowReadinessTrend) {
-    prompts.push('My readiness has been low all week — should I adjust?');
+    prompts.push('My readiness has been low — reduce today\'s session.');
   }
 
   // Fill remaining slots with defaults (avoid duplicates)
@@ -421,6 +426,10 @@ export default function CoachPage() {
     el.style.height = Math.min(el.scrollHeight, 84) + 'px'; // max ~3 lines
   }
 
+  // ── Pending actions from AI responses ────────────────────────────────────
+  const [pendingActions,   setPendingActions]   = useState<CoachAction[]>([]);
+  const [executingAction,  setExecutingAction]  = useState<string | null>(null);
+
   // ── Send message ──────────────────────────────────────────────────────────
   const handleSend = useCallback(async (text?: string) => {
     const userText = (text ?? input).trim();
@@ -441,10 +450,13 @@ export default function CoachPage() {
     setMessages((prev) => [...prev, userMsg]);
     setIsGenerating(true);
     setStreamingText('');
+    setPendingActions([]);
+
+    const isGroq = Boolean(groqKey);
 
     // Build context (system prompt + last 10 messages + new user message)
     const [systemPrompt, allMsgs] = await Promise.all([
-      buildSystemPrompt(),
+      buildSystemPrompt(userText, isGroq),
       db.chat.orderBy('createdAt').reverse().limit(10).toArray(),
     ]);
     const context: ChatMessage[] = [
@@ -455,10 +467,10 @@ export default function CoachPage() {
       })),
     ];
 
-    // Stream response
+    // Stream response (increased token limit for richer responses)
     let fullResponse = '';
     try {
-      const gen = sendMessage(context, groqKey || undefined);
+      const gen = sendMessage(context, groqKey || undefined, 1024);
       for await (const token of gen) {
         if (abortRef.current) break;
         fullResponse += token;
@@ -467,25 +479,63 @@ export default function CoachPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[coach] generation error:', msg);
-      fullResponse = '⚠ Something went wrong. Check your connection or API key.';
+      fullResponse = 'Something went wrong. Check your connection or API key.';
     }
 
-    // Persist assistant message
-    if (fullResponse) {
+    // Parse actions from response and clean the display text
+    const { cleanText, actions } = parseActions(fullResponse);
+
+    // Persist assistant message (clean text without action tags)
+    if (cleanText) {
       const assistantMsg: DBChatMessage = {
         id:        newId(),
         role:      'assistant',
-        content:   fullResponse,
+        content:   cleanText,
         createdAt: isoNow(),
       };
       void db.chat.add(assistantMsg);
       setMessages((prev) => [...prev, assistantMsg]);
     }
 
+    // Set pending actions for the user to confirm
+    if (actions.length > 0) {
+      setPendingActions(actions);
+    }
+
     setStreamingText('');
     setIsGenerating(false);
     abortRef.current = false;
   }, [input, isGenerating, groqKey]);
+
+  // ── Execute a confirmed action ─────────────────────────────────────────────
+  const handleExecuteAction = useCallback(async (action: CoachAction) => {
+    setExecutingAction(action.type);
+    const result = await executeAction(action);
+
+    // Add a system message confirming the action
+    const statusMsg: DBChatMessage = {
+      id:        newId(),
+      role:      'assistant',
+      content:   result.success ? `✓ ${result.message}` : `✗ ${result.message}`,
+      createdAt: isoNow(),
+    };
+    void db.chat.add(statusMsg);
+    setMessages((prev) => [...prev, statusMsg]);
+
+    if (result.success) {
+      toast(result.message, { duration: 3000 });
+    } else {
+      toast(result.message, { duration: 4000 });
+    }
+
+    // Remove executed action from pending
+    setPendingActions((prev) => prev.filter((a) => a !== action));
+    setExecutingAction(null);
+  }, []);
+
+  const handleDismissAction = useCallback((action: CoachAction) => {
+    setPendingActions((prev) => prev.filter((a) => a !== action));
+  }, []);
 
   // ── Stop generation ───────────────────────────────────────────────────────
   const handleStop = useCallback(() => {
@@ -711,7 +761,7 @@ export default function CoachPage() {
               💪
             </div>
             <p className="text-sm text-center mb-2" style={{ color: C.muted }}>
-              Ask me anything about your training.
+              Ask about nutrition, technique, recovery — or ask me to adjust your session.
             </p>
             <div className="w-full max-w-sm grid gap-2">
               {suggestedPrompts.map((prompt) => (
@@ -745,6 +795,48 @@ export default function CoachPage() {
             content={streamingText}
             streaming
           />
+        )}
+
+        {/* Action cards — shown after the AI suggests a change */}
+        {pendingActions.length > 0 && !isGenerating && (
+          <div className="flex flex-col gap-2 mb-3 max-w-[85%]">
+            {pendingActions.map((action, i) => (
+              <div
+                key={`${action.type}-${i}`}
+                className="rounded-xl p-3 border"
+                style={{
+                  backgroundColor: `${C.gold}10`,
+                  borderColor: C.gold,
+                }}
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: C.gold }}>
+                  Suggested Change
+                </p>
+                <p className="text-sm mb-3" style={{ color: C.text }}>
+                  {action.displayText}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleExecuteAction(action)}
+                    disabled={executingAction !== null}
+                    className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all active:scale-[0.97] disabled:opacity-50"
+                    style={{ backgroundColor: C.gold, color: C.bg }}
+                  >
+                    {executingAction === action.type ? 'Applying...' : action.confirmText}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDismissAction(action)}
+                    className="px-4 py-2 rounded-lg text-sm transition-all active:scale-[0.97]"
+                    style={{ backgroundColor: C.dim, color: C.muted }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
 
         {/* Scroll anchor */}

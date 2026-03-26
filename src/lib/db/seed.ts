@@ -111,18 +111,6 @@ export async function seedIfEmpty(): Promise<void> {
 
   // Exercises will be generated from the user's actual maxes after onboarding completes
   // via the generateSession() call in the onboarding submit handler.
-
-  // Seed a readiness record for today
-  await db.readiness.put({
-    id: newId(),
-    date: today(),
-    sleepHours: 7.5,
-    sleepQuality: 4,
-    energy: 4,
-    motivation: 4,
-    soreness: 2,
-    stress: 2,
-    readinessScore: 78,
-    createdAt: new Date().toISOString(),
-  });
+  // No readiness record is seeded — the user should complete their first check-in
+  // via the /checkin page, which gates access to /home.
 }

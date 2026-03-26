@@ -226,6 +226,15 @@ export default function CheckInPage() {
 
   const { label: rdLabel, colour: rdColour } = readinessLabel(readinessScore);
 
+  // True once the user has touched at least one input beyond the sleep-hours default
+  const hasAnyInput =
+    hrv.trim() !== '' ||
+    sleepQuality !== undefined ||
+    energy !== undefined ||
+    motivation !== undefined ||
+    soreness !== undefined ||
+    stress !== undefined;
+
   // ── Helper: ISO week start (Monday) ───────────────────────────────────
   function getWeekStart(dateStr: string): string {
     // Use noon local time to avoid any DST-induced date boundary issues
@@ -685,15 +694,16 @@ export default function CheckInPage() {
               Today&apos;s Readiness
             </p>
             <RingProgress
-              score={readinessScore}
-              color={rdColour}
-              label={rdLabel}
+              score={hasAnyInput ? readinessScore : 0}
+              color={hasAnyInput ? rdColour : MUTED}
+              label={hasAnyInput ? rdLabel : '—'}
+              hasData={hasAnyInput}
               strokeWidth={9}
               size={120}
-              ariaLabel={`Readiness score ${readinessScore} out of 100`}
+              ariaLabel={hasAnyInput ? `Readiness score ${readinessScore} out of 100` : 'Fill in the form to see your readiness score'}
             />
             <p className="text-xs text-center mt-2 max-w-xs" style={{ color: MUTED }}>
-              Updates live as you fill in the form above.
+              {hasAnyInput ? 'Updates live as you fill in the form above.' : 'Fill in at least one field to see your score.'}
             </p>
           </div>
 

@@ -64,9 +64,16 @@ export default function HomePage() {
     async function load() {
       const todayStr = today();
 
+      // Gate: require daily check-in before showing the home screen
+      const existingCheckin = await db.readiness.where('date').equals(todayStr).first();
+      if (!existingCheckin) {
+        router.replace('/checkin');
+        return;
+      }
+
       const [profile, readiness, activeCycle, upcomingMeet] = await Promise.all([
         db.profile.get('me'),
-        db.readiness.where('date').equals(todayStr).first(),
+        Promise.resolve(existingCheckin),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
         db.meets.filter((m) => m.status === 'UPCOMING').first(),
       ]);
@@ -127,7 +134,7 @@ export default function HomePage() {
       setLoadError(true);
       setLoading(false);
     });
-  }, []);
+  }, [router]);
 
   if (loadError) {
     return (
