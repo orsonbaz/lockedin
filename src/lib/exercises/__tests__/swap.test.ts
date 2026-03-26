@@ -150,11 +150,10 @@ describe('suggestSwaps', () => {
     };
     const source = EXERCISE_BY_ID.get('competition_bench_press')!;
     const results = suggestSwaps(source, noBarbell);
-    const barbellOnlyEx = results.find(
-      (r) =>
-        r.exercise.equipment.every((e) => e === 'BARBELL') &&
-        !r.exercise.equipment.includes('BODYWEIGHT'),
-    );
+    const barbellOnlyEx = results.find((r) => {
+      const equipNames = (r.exercise.equipment as string[]).join(',');
+      return equipNames === 'BARBELL';  // only BARBELL, nothing else
+    });
     if (barbellOnlyEx) {
       expect(barbellOnlyEx.requiresEquipmentChange).toBe(true);
     }

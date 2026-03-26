@@ -19,6 +19,9 @@ import { db, today, newId }                               from '@/lib/db/databas
 import { readinessLabel }                                 from '@/lib/engine/readiness';
 import { C as _C }                                        from '@/lib/theme';
 import type { TrainingSession, SessionExercise, SetLog }  from '@/lib/db/types';
+import { suggestSwaps }                                   from '@/lib/exercises/swap';
+import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
+import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
 
 // ── Design tokens (extends shared theme with session-specific colours) ───────
 const C = { ..._C, amber: '#D97706', green: _C.greenDeep } as const;
@@ -188,6 +191,11 @@ export default function SessionPage({
   const [exercises,        setExercises]        = useState<SessionExercise[]>([]);
   const [setLogs,          setSetLogs]          = useState<SetLog[]>([]);
   const [todayReadiness,   setTodayReadiness]   = useState<number | undefined>();
+  const [equipmentProfile, setEquipmentProfile] = useState<UserEquipmentProfile | null>(null);
+
+  // ── Swap modal ───────────────────────────────────────────────────────────
+  const [swapForExId,      setSwapForExId]      = useState<string | null>(null);
+  const [swapCandidates,   setSwapCandidates]   = useState<SwapCandidate[]>([]);
 
   // ── Page flow ────────────────────────────────────────────────────────────
   const [pageState,        setPageState]        = useState<PageState>('overview');
@@ -221,17 +229,19 @@ export default function SessionPage({
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [sess, exs, sets, readiness] = await Promise.all([
+      const [sess, exs, sets, readiness, eqProfile] = await Promise.all([
         db.sessions.get(sessionId),
         db.exercises.where('sessionId').equals(sessionId).sortBy('order'),
         db.sets.where('sessionId').equals(sessionId).toArray(),
         db.readiness.where('date').equals(today()).first(),
+        db.equipmentProfile.get('me'),
       ]);
       if (cancelled) return;
       setSession(sess ?? null);
       setExercises(exs);
       setSetLogs(sets);
       setTodayReadiness(readiness?.readinessScore);
+      setEquipmentProfile(eqProfile ?? null);
       if (exs.length > 0) {
         const first = exs[0];
         setDraftLoad(first.estimatedLoadKg);
@@ -320,6 +330,55 @@ export default function SessionPage({
   const skipExercise = useCallback(() => {
     completeExercise();
   }, [completeExercise]);
+
+  /** Open swap modal for an exercise in the overview list. */
+  const openSwapModal = useCallback((ex: SessionExercise) => {
+    const libEx = ex.libraryExerciseId
+      ? EXERCISE_BY_ID.get(ex.libraryExerciseId)
+      : undefined;
+    if (!libEx) {
+      toast('No library entry for this exercise — can\'t suggest swaps.', { duration: 3000 });
+      return;
+    }
+    const profile = equipmentProfile;
+    const avail = profile?.availableEquipment ?? ['BARBELL', 'DUMBBELL', 'BODYWEIGHT', 'CABLE', 'MACHINE'];
+    const block = session; // used for blockType below — we'll pull from the session's block
+    // We don't have the block type easily here — default to ACCUMULATION as fallback
+    const candidates = suggestSwaps(libEx, {
+      blockType:          'ACCUMULATION',
+      availableEquipment: avail,
+      wearingBelt:        profile?.hasBelt ?? false,
+      wearingKneeSleeves: profile?.hasKneeSleeves ?? false,
+      wearingWristWraps:  profile?.hasWristWraps ?? false,
+      remainingSystemic:  180,
+      remainingLocal:     220,
+    });
+    setSwapCandidates(candidates);
+    setSwapForExId(ex.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [equipmentProfile, session]);
+
+  /** Replace an exercise with the chosen swap candidate. */
+  const confirmSwap = useCallback(async (candidate: SwapCandidate) => {
+    if (!swapForExId) return;
+    const ex = exercises.find((e) => e.id === swapForExId);
+    if (!ex) return;
+
+    const adjustedLoad = Math.round(ex.estimatedLoadKg * candidate.loadAdjustmentFactor / 2.5) * 2.5;
+    const updated: Partial<SessionExercise> = {
+      name:              candidate.exercise.name,
+      libraryExerciseId: candidate.exercise.id,
+      estimatedLoadKg:   adjustedLoad,
+    };
+
+    await db.exercises.update(swapForExId, updated);
+    setExercises((prev) =>
+      prev.map((e) => e.id === swapForExId ? { ...e, ...updated } : e),
+    );
+    setSwapForExId(null);
+    setSwapCandidates([]);
+    toast(`Swapped to ${candidate.exercise.name}`, { duration: 2000 });
+  }, [swapForExId, exercises]);
 
   const startSession = useCallback(() => {
     setSessionStartTime(new Date());
@@ -557,7 +616,19 @@ export default function SessionPage({
                     <span className="font-semibold text-base" style={{ color: C.text }}>
                       {ex.name}
                     </span>
-                    <ExerciseBadge type={ex.exerciseType} />
+                    <div className="flex items-center gap-2">
+                      <ExerciseBadge type={ex.exerciseType} />
+                      {ex.libraryExerciseId && (
+                        <button
+                          type="button"
+                          onClick={() => openSwapModal(ex)}
+                          className="text-xs px-2 py-0.5 rounded-full transition-colors active:opacity-70"
+                          style={{ backgroundColor: 'rgba(245,166,35,0.15)', color: C.gold }}
+                        >
+                          Swap ↕
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm" style={{ color: C.muted }}>
@@ -591,6 +662,93 @@ export default function SessionPage({
             Start Session
           </button>
         </div>
+
+        {/* ── Swap Modal ────────────────────────────────────────────────── */}
+        {swapForExId && (
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onClick={() => { setSwapForExId(null); setSwapCandidates([]); }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Exercise swap suggestions"
+          >
+            <div
+              className="rounded-t-3xl max-h-[80vh] overflow-y-auto pb-10"
+              style={{ backgroundColor: C.surface }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 px-5 pt-5 pb-3" style={{ backgroundColor: C.surface }}>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-lg font-bold" style={{ color: C.text }}>
+                    Swap Exercise
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => { setSwapForExId(null); setSwapCandidates([]); }}
+                    className="text-sm px-3 py-1 rounded-lg"
+                    style={{ color: C.muted, backgroundColor: C.dim }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <p className="text-xs" style={{ color: C.muted }}>
+                  Ranked by movement pattern, muscles, fatigue load, and available equipment
+                </p>
+              </div>
+
+              {swapCandidates.length === 0 ? (
+                <div className="px-5 py-8 text-center">
+                  <p className="text-sm" style={{ color: C.muted }}>
+                    No good swaps found in the library for this exercise.
+                  </p>
+                </div>
+              ) : (
+                <div className="px-4 space-y-3">
+                  {swapCandidates.map((c) => (
+                    <button
+                      key={c.exercise.id}
+                      type="button"
+                      onClick={() => void confirmSwap(c)}
+                      className="w-full text-left rounded-xl p-4 transition-colors active:opacity-70"
+                      style={{ backgroundColor: C.bg, border: `1px solid ${C.dim}` }}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <span className="font-semibold text-sm" style={{ color: C.text }}>
+                          {c.exercise.name}
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {c.requiresEquipmentChange && (
+                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(217,119,6,0.2)', color: C.amber }}>
+                              gear needed
+                            </span>
+                          )}
+                          <span
+                            className="text-xs font-bold px-2 py-0.5 rounded-full"
+                            style={{
+                              backgroundColor: c.score >= 70 ? 'rgba(72,199,142,0.2)' : 'rgba(154,160,180,0.15)',
+                              color: c.score >= 70 ? C.greenDeep : C.muted,
+                            }}
+                          >
+                            {c.score}%
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{ color: C.muted }}>
+                        {c.reason}
+                      </p>
+                      {c.loadAdjustmentFactor < 1 && (
+                        <p className="text-xs mt-1 font-medium" style={{ color: C.gold }}>
+                          Start at ~{Math.round(c.loadAdjustmentFactor * 100)}% of original load
+                        </p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
