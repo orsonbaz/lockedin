@@ -196,7 +196,7 @@ function buildPrimaryExercises(
   reward: RewardSystem = 'CONSISTENCY',
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
-  const baseRpe = getBaseRpeForBlock(blockType);
+  const baseRpe = getBaseRpeForBlock(blockType, weekInBlock, totalBlockWeeks);
 
   // Apply overshooter flag, then readiness/history offset
   const adjustedRpe = clampRpe(
@@ -589,9 +589,27 @@ const ACCESSORY_REF_COEFFICIENT: Record<string, number> = {
 };
 
 
-/** Default base RPE (before adjustments) for each block type. */
-function getBaseRpeForBlock(blockType: BlockType): number {
-  const map: Record<BlockType, number> = {
+/**
+ * Base RPE for each block type, with progressive weekly ramp.
+ *
+ * Within a multi-week block the RPE ramps up by +0.25 per week so that
+ * the athlete progressively overloads towards the next block transition.
+ *
+ * Example — 4-week ACCUMULATION:
+ *   Week 1: 7.0, Week 2: 7.25, Week 3: 7.5, Week 4: 7.75
+ *
+ * The first week starts *below* the old flat value so that by mid-block
+ * the athlete is at the familiar intensity, and by the final week they are
+ * slightly above — creating a natural within-block overload ramp.
+ */
+function getBaseRpeForBlock(
+  blockType: BlockType,
+  weekInBlock = 1,
+  totalBlockWeeks = 1,
+): number {
+  // Target RPE at the midpoint of the block (preserves old behaviour
+  // for single-week blocks or when weekInBlock defaults to 1).
+  const midRpe: Record<BlockType, number> = {
     ACCUMULATION:    7.5,
     INTENSIFICATION: 8.0,
     REALIZATION:     9.0,
@@ -599,7 +617,16 @@ function getBaseRpeForBlock(blockType: BlockType): number {
     PIVOT:           7.0,
     MAINTENANCE:     7.5,
   };
-  return map[blockType];
+  const mid = midRpe[blockType];
+
+  // No ramp for single-week blocks or deloads
+  if (totalBlockWeeks <= 1 || blockType === 'DELOAD') return mid;
+
+  // Ramp ±0.25 per week around the midpoint
+  const rampPerWeek = 0.25;
+  const midWeek = (totalBlockWeeks + 1) / 2;   // e.g. 2.5 for a 4-week block
+  const offset  = (weekInBlock - midWeek) * rampPerWeek;
+  return mid + offset;
 }
 
 /**

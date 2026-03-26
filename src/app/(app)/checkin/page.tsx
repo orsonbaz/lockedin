@@ -319,6 +319,39 @@ export default function CheckInPage() {
           const sessionNumber = sessionIdx >= 0 ? sessionIdx + 1 : 1;
           const weekDayOfWeek = new Date(`${dateStr}T12:00:00`).getDay();
 
+          // Compute weekWithinBlock from cycle's currentWeek and block boundaries
+          const cycle = await db.cycles.get(session.cycleId);
+          const cycleWeek      = cycle?.currentWeek ?? 1;
+          const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
+
+          // Compute overshootHistory: avg RPE overshoot from recent competition sets
+          let overshootHistory: number | undefined;
+          try {
+            const compExercises = await db.exercises
+              .filter((e) => e.exerciseType === 'COMPETITION')
+              .toArray();
+            const rpeTargetMap = new Map(compExercises.map((e) => [e.id, e.rpeTarget]));
+            const recentSets: Array<{ overshoot: number }> = [];
+            for (const ex of compExercises.slice(-30)) {
+              const exSets = await db.sets
+                .where('exerciseId').equals(ex.id)
+                .filter((s) => s.rpeLogged !== undefined)
+                .toArray();
+              for (const s of exSets) {
+                const target = rpeTargetMap.get(s.exerciseId);
+                if (target !== undefined && s.rpeLogged !== undefined) {
+                  recentSets.push({ overshoot: s.rpeLogged - target });
+                }
+              }
+            }
+            // Use the last 10 sets for the average
+            const last10 = recentSets.slice(-10);
+            if (last10.length >= 3) {
+              const avg = last10.reduce((sum, s) => sum + s.overshoot, 0) / last10.length;
+              if (avg > 0) overshootHistory = avg;
+            }
+          } catch { /* non-critical — fall back to undefined */ }
+
           // 4. Re-generate session with live readiness data
           const generated = generateSession({
             profile,
@@ -326,6 +359,8 @@ export default function CheckInPage() {
             weekDayOfWeek,
             readinessScore,
             sessionNumber,
+            weekWithinBlock,
+            overshootHistory,
           });
 
           // 5a. Update session metadata

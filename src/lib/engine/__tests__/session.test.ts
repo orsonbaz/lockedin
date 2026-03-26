@@ -815,3 +815,79 @@ describe('generateSession — rewardSystem', () => {
     });
   });
 });
+
+// ── Progressive RPE Ramp Within Blocks ────────────────────────────────────────
+
+describe('generateSession — progressive RPE ramp', () => {
+  it('RPE increases across weeks within a 4-week accumulation block', () => {
+    const block = makeBlock('ACCUMULATION', { weekStart: 1, weekEnd: 4 });
+
+    const week1 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1, weekWithinBlock: 1,
+    });
+    const week4 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1, weekWithinBlock: 4,
+    });
+
+    const comp1 = week1.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+    const comp4 = week4.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+
+    // Week 4 should have higher RPE than week 1
+    expect(comp4.rpeTarget).toBeGreaterThan(comp1.rpeTarget);
+    // And therefore heavier loads
+    expect(comp4.estimatedLoadKg).toBeGreaterThanOrEqual(comp1.estimatedLoadKg);
+  });
+
+  it('RPE is flat (no ramp) during deload blocks', () => {
+    const block = makeBlock('DELOAD', { weekStart: 1, weekEnd: 2 });
+
+    const week1 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1, weekWithinBlock: 1,
+    });
+    const week2 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1, weekWithinBlock: 2,
+    });
+
+    const comp1 = week1.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+    const comp2 = week2.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+
+    expect(comp1.rpeTarget).toBe(comp2.rpeTarget);
+  });
+
+  it('REALIZATION taper: meet week produces 1×1 opener rehearsal', () => {
+    const block = makeBlock('REALIZATION', { weekStart: 1, weekEnd: 4 });
+
+    const meetWeek = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1, weekWithinBlock: 4,
+    });
+
+    const comp = meetWeek.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+    expect(comp.sets).toBe(1);
+    expect(comp.reps).toBe(1);
+    expect(comp.notes).toContain('Opener rehearsal');
+  });
+
+  it('overshootHistory reduces RPE targets', () => {
+    const block = makeBlock('ACCUMULATION');
+
+    const normal = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1,
+    });
+    const overshooter = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness, sessionNumber: 1,
+      overshootHistory: 1.5,
+    });
+
+    const compNormal = normal.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+    const compOver   = overshooter.exercises.find(e => e.exerciseType === 'COMPETITION')!;
+
+    expect(compOver.rpeTarget).toBeLessThan(compNormal.rpeTarget);
+  });
+});
