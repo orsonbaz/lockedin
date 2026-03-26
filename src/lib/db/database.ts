@@ -12,6 +12,7 @@ import type {
   BodyweightEntry,
   ChatMessage,
 } from './types';
+import type { UserEquipmentProfile, CustomExercise } from '@/lib/exercises/types';
 
 export class LockedinDB extends Dexie {
   profile!: Table<AthleteProfile>;
@@ -25,6 +26,8 @@ export class LockedinDB extends Dexie {
   attempts!: Table<MeetAttempt>;
   bodyweight!: Table<BodyweightEntry>;
   chat!: Table<ChatMessage>;
+  equipmentProfile!: Table<UserEquipmentProfile>;
+  customExercises!: Table<CustomExercise>;
 
   constructor() {
     super('LockedinDB');
@@ -46,6 +49,14 @@ export class LockedinDB extends Dexie {
     // v2: add bodyweight table
     this.version(2).stores({
       bodyweight: 'id, date',
+    });
+
+    // v3: add equipment profile + custom exercise tables
+    this.version(3).stores({
+      // Singleton record (id = 'me') for the athlete's gym gear
+      equipmentProfile: 'id',
+      // User-authored exercises; multi-valued index on swapGroups for efficient lookup
+      customExercises:  'id, movementPattern, *swapGroups',
     });
   }
 }
@@ -69,14 +80,16 @@ export const newId = (): string => crypto.randomUUID();
 const TABLE_NAMES = [
   'profile', 'cycles', 'blocks', 'sessions', 'exercises',
   'sets', 'readiness', 'meets', 'attempts', 'bodyweight', 'chat',
+  'equipmentProfile', 'customExercises',
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
 
 interface BackupPayload {
-  version: 1;
+  /** v1 = original schema; v2 = added equipmentProfile + customExercises */
+  version: 1 | 2;
   exportedAt: string;
-  tables: Record<TableName, unknown[]>;
+  tables: Partial<Record<TableName, unknown[]>>;
 }
 
 /** Serialises every Dexie table into a single JSON-safe object. */
@@ -85,18 +98,19 @@ export async function exportAll(): Promise<BackupPayload> {
   for (const name of TABLE_NAMES) {
     tables[name] = await (db[name] as Table<unknown>).toArray();
   }
-  return { version: 1, exportedAt: new Date().toISOString(), tables };
+  return { version: 2, exportedAt: new Date().toISOString(), tables };
 }
 
 /**
  * Imports a previously exported backup, **replacing** all current data.
  * Wraps the write in a single transaction so it's all-or-nothing.
+ * Gracefully skips tables that don't exist in older backup versions.
  * Returns the record counts per table.
  */
 export async function importAll(
   payload: BackupPayload,
 ): Promise<Record<string, number>> {
-  if (payload.version !== 1) {
+  if (payload.version !== 1 && payload.version !== 2) {
     throw new Error(`Unsupported backup version: ${payload.version}`);
   }
 
@@ -109,7 +123,8 @@ export async function importAll(
       for (const name of TABLE_NAMES) {
         const table = db[name] as Table<unknown>;
         await table.clear();
-        const rows = payload.tables[name] ?? [];
+        // Gracefully handle v1 backups that lack newer tables.
+        const rows = (payload.tables as Record<string, unknown[]>)[name] ?? [];
         if (rows.length > 0) await table.bulkPut(rows);
         counts[name] = rows.length;
       }

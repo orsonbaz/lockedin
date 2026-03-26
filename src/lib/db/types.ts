@@ -128,6 +128,17 @@ export interface SessionExercise {
   estimatedLoadKg: number;
   order: number;
   notes?: string;
+  // Exercise library integration (optional for backward compat)
+  /** Stable library exercise id, e.g. 'competition_squat'. */
+  libraryExerciseId?: string;
+  /** For weighted calisthenics: kg added on top of bodyweight. estimatedLoadKg stores this value. */
+  addedLoadKg?: number;
+  /** Whether the athlete is wearing a belt for this exercise. */
+  usingBelt?: boolean;
+  /** Whether the athlete is wearing knee sleeves for this exercise. */
+  usingKneeSleeves?: boolean;
+  /** Whether the athlete is wearing wrist wraps for this exercise. */
+  usingWristWraps?: boolean;
 }
 
 export interface SetLog {
