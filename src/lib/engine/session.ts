@@ -45,6 +45,8 @@ export interface GeneratedExercise {
   estimatedLoadKg: number;
   order: number;
   notes?: string;
+  /** Stable library exercise id for swap suggestions. undefined = no library entry. */
+  libraryExerciseId?: string;
 }
 
 export interface GeneratedSession {
@@ -190,8 +192,10 @@ function buildPrimaryExercises(
     overshooterRpeAdjust(baseRpe, profile.overshooter) + rpeOffset,
   );
 
-  const compName      = getCompMovementName(lift);
-  const variationName = getVariationName(lift);
+  const compName        = getCompMovementName(lift);
+  const compLibraryId   = getCompMovementLibraryId(lift);
+  const variationName   = getVariationName(lift);
+  const variationLibId  = getVariationLibraryId(lift);
 
   // ── REALIZATION (with taper) ──────────────────────────────────────────────
   //   Week 1 of REAL: 3 sets of 2 (full ramp)
@@ -205,15 +209,16 @@ function buildPrimaryExercises(
       const openerLoad = roundLoad(prescribeLoad(maxKg, openerRpe, 1));
       return [
         {
-          name:            compName,
-          exerciseType:    'COMPETITION',
-          setStructure:    'STRAIGHT',
-          sets:            1,
-          reps:            1,
-          rpeTarget:       openerRpe,
-          estimatedLoadKg: openerLoad,
-          order:           1,
-          notes:           `Opener rehearsal only. Hit ${openerLoad}kg × 1 @RPE ${openerRpe} and call it.`,
+          name:              compName,
+          exerciseType:      'COMPETITION',
+          setStructure:      'STRAIGHT',
+          sets:              1,
+          reps:              1,
+          rpeTarget:         openerRpe,
+          estimatedLoadKg:   openerLoad,
+          order:             1,
+          notes:             `Opener rehearsal only. Hit ${openerLoad}kg × 1 @RPE ${openerRpe} and call it.`,
+          libraryExerciseId: compLibraryId,
         },
       ];
     }
@@ -223,15 +228,16 @@ function buildPrimaryExercises(
     const topLoad = roundLoad(prescribeLoad(maxKg, adjustedRpe, 1));
     return [
       {
-        name:            compName,
-        exerciseType:    'COMPETITION',
-        setStructure:    'ASCENDING',
+        name:              compName,
+        exerciseType:      'COMPETITION',
+        setStructure:      'ASCENDING',
         sets,
-        reps:            2,
-        rpeTarget:       adjustedRpe,
-        estimatedLoadKg: topLoad,
-        order:           1,
-        notes:           `Build to top single @RPE ${adjustedRpe}. Suggested: ${Math.round(topLoad * 0.85)}kg × 3, ${Math.round(topLoad * 0.93)}kg × 2, ${topLoad}kg × 1.`,
+        reps:              2,
+        rpeTarget:         adjustedRpe,
+        estimatedLoadKg:   topLoad,
+        order:             1,
+        notes:             `Build to top single @RPE ${adjustedRpe}. Suggested: ${Math.round(topLoad * 0.85)}kg × 3, ${Math.round(topLoad * 0.93)}kg × 2, ${topLoad}kg × 1.`,
+        libraryExerciseId: compLibraryId,
       },
     ];
   }
@@ -242,15 +248,16 @@ function buildPrimaryExercises(
     const deloadLoad = roundLoad(prescribeLoad(maxKg, deloadRpe, 5));
     return [
       {
-        name:            compName,
-        exerciseType:    'COMPETITION',
-        setStructure:    'STRAIGHT',
-        sets:            2,
-        reps:            5,
-        rpeTarget:       deloadRpe,
-        estimatedLoadKg: deloadLoad,
-        order:           1,
-        notes:           'Deload — move well, keep it comfortable.',
+        name:              compName,
+        exerciseType:      'COMPETITION',
+        setStructure:      'STRAIGHT',
+        sets:              2,
+        reps:              5,
+        rpeTarget:         deloadRpe,
+        estimatedLoadKg:   deloadLoad,
+        order:             1,
+        notes:             'Deload — move well, keep it comfortable.',
+        libraryExerciseId: compLibraryId,
       },
     ];
   }
@@ -265,14 +272,15 @@ function buildPrimaryExercises(
 
   const result: GeneratedExercise[] = [
     {
-      name:            compName,
-      exerciseType:    'COMPETITION',
-      setStructure:    'STRAIGHT',
-      sets:            finalSets,
-      reps:            baseReps,
-      rpeTarget:       adjustedRpe,
-      estimatedLoadKg: compLoad,
-      order:           1,
+      name:              compName,
+      exerciseType:      'COMPETITION',
+      setStructure:      'STRAIGHT',
+      sets:              finalSets,
+      reps:              baseReps,
+      rpeTarget:         adjustedRpe,
+      estimatedLoadKg:   compLoad,
+      order:             1,
+      libraryExerciseId: compLibraryId,
     },
   ];
 
@@ -284,14 +292,15 @@ function buildPrimaryExercises(
     const varLoad   = roundLoad(prescribeLoad(maxKg, varRpe, varReps));
 
     result.push({
-      name:            variationName,
-      exerciseType:    'VARIATION',
-      setStructure:    'STRAIGHT',
-      sets:            varSets,
-      reps:            varReps,
-      rpeTarget:       varRpe,
-      estimatedLoadKg: varLoad,
-      order:           2,
+      name:              variationName,
+      exerciseType:      'VARIATION',
+      setStructure:      'STRAIGHT',
+      sets:              varSets,
+      reps:              varReps,
+      rpeTarget:         varRpe,
+      estimatedLoadKg:   varLoad,
+      order:             2,
+      libraryExerciseId: variationLibId ?? undefined,
     });
   }
 
@@ -376,13 +385,14 @@ function buildAccessories(
 
   return defs.map(([name, reps, load], i) => ({
     name,
-    exerciseType:    'ACCESSORY' as ExerciseType,
-    setStructure:    'STRAIGHT' as SetStructure,
-    sets:            accSets,
+    exerciseType:      'ACCESSORY' as ExerciseType,
+    setStructure:      'STRAIGHT' as SetStructure,
+    sets:              accSets,
     reps,
-    rpeTarget:       accRpe,
-    estimatedLoadKg: roundLoad(load),
-    order:           startOrder + i,
+    rpeTarget:         accRpe,
+    estimatedLoadKg:   roundLoad(load),
+    order:             startOrder + i,
+    libraryExerciseId: ACCESSORY_LIBRARY_IDS[name],
   }));
 }
 
@@ -420,7 +430,7 @@ function getLiftMax(lift: Lift, profile: AthleteProfile): number {
 
 function getCompMovementName(lift: Lift): string {
   switch (lift) {
-    case 'SQUAT':     return 'Competition Squat';
+    case 'SQUAT':     return 'Competition Back Squat';
     case 'BENCH':     return 'Competition Bench Press';
     case 'DEADLIFT':  return 'Competition Deadlift';
     case 'UPPER':     return 'Overhead Press';
@@ -429,15 +439,50 @@ function getCompMovementName(lift: Lift): string {
   }
 }
 
+/** Returns the stable library exercise ID for the primary competition lift. */
+function getCompMovementLibraryId(lift: Lift): string {
+  switch (lift) {
+    case 'SQUAT':     return 'competition_squat';
+    case 'BENCH':     return 'competition_bench_press';
+    case 'DEADLIFT':  return 'competition_deadlift';
+    case 'UPPER':     return 'overhead_press';
+    case 'LOWER':     return 'romanian_deadlift';
+    case 'FULL':      return 'competition_deadlift';
+  }
+}
+
 /** Returns the variation exercise for ACCUMULATION blocks, or null if none. */
 function getVariationName(lift: Lift): string | null {
   switch (lift) {
     case 'SQUAT':     return 'Pause Squat';
-    case 'BENCH':     return 'Paused Bench Press';
+    case 'BENCH':     return 'Pause Bench Press';
     case 'DEADLIFT':  return 'Deficit Deadlift';
     default:          return null;
   }
 }
+
+/** Returns the stable library exercise ID for the ACCUMULATION variation, or null. */
+function getVariationLibraryId(lift: Lift): string | null {
+  switch (lift) {
+    case 'SQUAT':     return 'pause_squat';
+    case 'BENCH':     return 'pause_bench_press';
+    case 'DEADLIFT':  return 'deficit_deadlift';
+    default:          return null;
+  }
+}
+
+/** Maps accessory display names to stable library exercise IDs. */
+const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
+  'Romanian Deadlift':      'romanian_deadlift',
+  'Leg Press':              'leg_press',
+  'Walking Lunges':         'walking_lunge',
+  'Overhead Press':         'overhead_press',
+  'Tricep Pushdowns':       'tricep_pushdown',
+  'Close Grip Bench Press': 'close_grip_bench_press',
+  'Barbell Rows':           'barbell_row',
+  'Deficit Deadlift':       'deficit_deadlift',
+  'Lat Pulldowns':          'lat_pulldown',
+};
 
 /** Default base RPE (before adjustments) for each block type. */
 function getBaseRpeForBlock(blockType: BlockType): number {

@@ -413,17 +413,18 @@ export default function CheckInPage() {
           await db.exercises.where('sessionId').equals(session.id).delete();
 
           const freshExercises: SessionExercise[] = generated.exercises.map((ex) => ({
-            id:              newId(),
-            sessionId:       session.id,
-            name:            ex.name,
-            exerciseType:    ex.exerciseType,
-            setStructure:    ex.setStructure,
-            sets:            ex.sets,
-            reps:            ex.reps,
-            rpeTarget:       ex.rpeTarget,
-            estimatedLoadKg: ex.estimatedLoadKg,
-            order:           ex.order,
-            notes:           ex.notes,
+            id:                newId(),
+            sessionId:         session.id,
+            name:              ex.name,
+            exerciseType:      ex.exerciseType,
+            setStructure:      ex.setStructure,
+            sets:              ex.sets,
+            reps:              ex.reps,
+            rpeTarget:         ex.rpeTarget,
+            estimatedLoadKg:   ex.estimatedLoadKg,
+            order:             ex.order,
+            notes:             ex.notes,
+            ...(ex.libraryExerciseId ? { libraryExerciseId: ex.libraryExerciseId } : {}),
           }));
           await db.exercises.bulkAdd(freshExercises);
         }
