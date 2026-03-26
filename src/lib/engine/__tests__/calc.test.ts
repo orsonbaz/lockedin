@@ -14,6 +14,9 @@ import {
   calcWilks,
   calcIpfPoints,
   suggestAttempts,
+  estimateMaxFromRpe,
+  detectMaxUpdate,
+  detectNeuralGap,
 } from '../calc';
 
 // ── estimateMax ───────────────────────────────────────────────────────────────
@@ -430,5 +433,132 @@ describe('suggestAttempts', () => {
     expect(opener).toBe(165.5);
     expect(second).toBe(178);
     expect(third).toBe(185.5);
+  });
+});
+
+// ── estimateMaxFromRpe ──────────────────────────────────────────────────────
+
+describe('estimateMaxFromRpe', () => {
+  it('inverse of prescribeLoad: 5×140 @ RPE 8 → ~167 kg', () => {
+    // RPE_TABLE[5][8] = 0.84, so 140/0.84 ≈ 166.67
+    const e1rm = estimateMaxFromRpe(140, 5, 8);
+    expect(e1rm).not.toBeNull();
+    expect(e1rm!).toBeCloseTo(166.67, 0);
+  });
+
+  it('1 rep @ RPE 10 → load IS the max', () => {
+    const e1rm = estimateMaxFromRpe(180, 1, 10);
+    expect(e1rm).not.toBeNull();
+    expect(e1rm!).toBeCloseTo(180, 1);
+  });
+
+  it('1 rep @ RPE 9 → load / 0.96', () => {
+    const e1rm = estimateMaxFromRpe(172.8, 1, 9);
+    expect(e1rm).not.toBeNull();
+    expect(e1rm!).toBeCloseTo(180, 0);
+  });
+
+  it('handles fractional RPE (interpolation)', () => {
+    const at8 = estimateMaxFromRpe(140, 5, 8)!;
+    const at9 = estimateMaxFromRpe(140, 5, 9)!;
+    const at85 = estimateMaxFromRpe(140, 5, 8.5)!;
+    // 8.5 estimate should sit between 8 and 9
+    expect(at85).toBeGreaterThan(at9); // lower table % → higher estimated max
+    expect(at85).toBeLessThan(at8);
+  });
+
+  it('clamps reps to 1–10 range', () => {
+    // 0 reps → clamped to 1
+    expect(estimateMaxFromRpe(180, 0, 10)).toBeCloseTo(180, 1);
+    // 12 reps → clamped to 10
+    expect(estimateMaxFromRpe(100, 12, 8)).toBe(estimateMaxFromRpe(100, 10, 8));
+  });
+
+  it('clamps RPE to 6–10 (below 6 treated as 6)', () => {
+    expect(estimateMaxFromRpe(100, 5, 4)).toBe(estimateMaxFromRpe(100, 5, 6));
+  });
+});
+
+// ── detectMaxUpdate ─────────────────────────────────────────────────────────
+
+describe('detectMaxUpdate', () => {
+  it('returns suggestion when e1rm > 103% of current max', () => {
+    // 5 × 145 @ RPE 8 → e1rm = 145/0.84 ≈ 172.6 (current max: 160, 172.6 > 164.8)
+    const sets = [
+      { loadKg: 145, reps: 5, rpeLogged: 8 },
+      { loadKg: 147.5, reps: 5, rpeLogged: 8 },
+      { loadKg: 142.5, reps: 5, rpeLogged: 8 },
+      { loadKg: 140, reps: 5, rpeLogged: 8 },
+    ];
+    const result = detectMaxUpdate('SQUAT', 160, sets);
+    expect(result).not.toBeNull();
+    expect(result!.suggestedMax).toBeGreaterThan(160 * 1.03);
+    expect(result!.lift).toBe('SQUAT');
+    expect(result!.evidence).toContain('RPE 8');
+  });
+
+  it('returns null for insufficient data (< 3 sets)', () => {
+    const sets = [
+      { loadKg: 145, reps: 5, rpeLogged: 8 },
+      { loadKg: 147.5, reps: 5, rpeLogged: 8 },
+    ];
+    expect(detectMaxUpdate('SQUAT', 160, sets)).toBeNull();
+  });
+
+  it('returns null when improvement is marginal (< 3%)', () => {
+    // 5 × 136 @ RPE 8 → e1rm = 136/0.84 ≈ 161.9 (< 160 × 1.03 = 164.8)
+    const sets = [
+      { loadKg: 136, reps: 5, rpeLogged: 8 },
+      { loadKg: 135, reps: 5, rpeLogged: 8 },
+      { loadKg: 137, reps: 5, rpeLogged: 8 },
+    ];
+    expect(detectMaxUpdate('SQUAT', 160, sets)).toBeNull();
+  });
+
+  it('ignores sets without RPE logged', () => {
+    const sets = [
+      { loadKg: 200, reps: 1, rpeLogged: undefined },
+      { loadKg: 200, reps: 1, rpeLogged: undefined },
+      { loadKg: 200, reps: 1, rpeLogged: undefined },
+    ];
+    expect(detectMaxUpdate('BENCH', 160, sets)).toBeNull();
+  });
+
+  it('rounds suggestion to nearest 0.5 kg', () => {
+    const sets = [
+      { loadKg: 150, reps: 3, rpeLogged: 8 },
+      { loadKg: 152.5, reps: 3, rpeLogged: 8 },
+      { loadKg: 148, reps: 3, rpeLogged: 8 },
+      { loadKg: 151, reps: 3, rpeLogged: 8 },
+    ];
+    const result = detectMaxUpdate('DEADLIFT', 160, sets);
+    if (result) {
+      expect((result.suggestedMax * 2) % 1).toBeCloseTo(0, 5);
+    }
+  });
+});
+
+// ── detectNeuralGap ─────────────────────────────────────────────────────────
+
+describe('detectNeuralGap', () => {
+  it('returns positive gap when gym max is >5% above meet max', () => {
+    expect(detectNeuralGap(180, 195)).toBeGreaterThan(0);
+    expect(detectNeuralGap(180, 195)).toBeCloseTo(8, 0); // (195-180)/180 = 8.3%
+  });
+
+  it('returns 0 when gym max equals meet max', () => {
+    expect(detectNeuralGap(180, 180)).toBe(0);
+  });
+
+  it('returns 0 when gym max is within 5% of meet max', () => {
+    expect(detectNeuralGap(180, 188)).toBe(0); // 4.4% — within threshold
+  });
+
+  it('returns 0 when gym max is below meet max', () => {
+    expect(detectNeuralGap(180, 170)).toBe(0);
+  });
+
+  it('returns 0 when meet max is 0 (guard)', () => {
+    expect(detectNeuralGap(0, 200)).toBe(0);
   });
 });

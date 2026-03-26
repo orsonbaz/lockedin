@@ -15,9 +15,11 @@
 import { use, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter }                                      from 'next/navigation';
 import { toast }                                          from 'sonner';
-import { db, today, newId }                               from '@/lib/db/database';
+import { db, today, newId, advanceCycleWeek }              from '@/lib/db/database';
 import { SetLogSchema }                                   from '@/lib/db/schemas';
 import { readinessLabel }                                 from '@/lib/engine/readiness';
+import { detectMaxUpdate }                                from '@/lib/engine/calc';
+import type { MaxUpdateSuggestion }                       from '@/lib/engine/calc';
 import { C as _C }                                        from '@/lib/theme';
 import type { TrainingSession, TrainingBlock, SessionExercise, SetLog }  from '@/lib/db/types';
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
@@ -118,9 +120,10 @@ function RestTimerOverlay({ secsRemaining, maxSecs, onSkip }: RestTimerProps) {
 interface SetLogRowProps {
   setLog:    SetLog;
   rpeTarget: number;
+  onTap?:    () => void;
 }
 
-function SetLogRow({ setLog, rpeTarget }: SetLogRowProps) {
+function SetLogRow({ setLog, rpeTarget, onTap }: SetLogRowProps) {
   const overshoot = (setLog.rpeLogged ?? 0) - rpeTarget;
   const isCritical = setLog.rpeLogged !== undefined && overshoot > 2;
   const isWarning  = setLog.rpeLogged !== undefined && overshoot > 1 && !isCritical;
@@ -131,8 +134,10 @@ function SetLogRow({ setLog, rpeTarget }: SetLogRowProps) {
   if (isWarning)  { bg = 'rgba(217,119,6,0.15)'; border = C.amber;  }
 
   return (
-    <div
-      className="flex items-center justify-between rounded-lg px-4 py-3 text-sm border"
+    <button
+      type="button"
+      onClick={onTap}
+      className="flex items-center justify-between rounded-lg px-4 py-3 text-sm border w-full text-left transition-all active:scale-[0.98]"
       style={{ backgroundColor: bg, borderColor: border }}
     >
       <span className="w-12 font-bold" style={{ color: C.muted }}>
@@ -152,7 +157,7 @@ function SetLogRow({ setLog, rpeTarget }: SetLogRowProps) {
         {isCritical && ' ⚠'}
         {isWarning  && ' △'}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -229,6 +234,11 @@ export default function SessionPage({
   // ── Complete state ─────────────────────────────────────────────────────
   const [sessionNote,      setSessionNote]      = useState('');
   const [saving,           setSaving]           = useState(false);
+  const [maxSuggestion,    setMaxSuggestion]    = useState<MaxUpdateSuggestion | null>(null);
+  const [editingSetId,     setEditingSetId]     = useState<string | null>(null);
+  const [editLoad,         setEditLoad]         = useState(0);
+  const [editReps,         setEditReps]         = useState(0);
+  const [editRpe,          setEditRpe]          = useState(0);
 
   // ── Load data ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -352,6 +362,56 @@ export default function SessionPage({
     completeExercise();
   }, [completeExercise]);
 
+  /** Open the edit sheet for a logged set. */
+  const openEditSet = useCallback((sl: SetLog) => {
+    setEditingSetId(sl.id);
+    setEditLoad(sl.loadKg);
+    setEditReps(sl.reps);
+    setEditRpe(sl.rpeLogged ?? 0);
+  }, []);
+
+  /** Save edits to a logged set. */
+  const saveEditSet = useCallback(() => {
+    if (!editingSetId) return;
+    const patch = { loadKg: editLoad, reps: editReps, rpeLogged: editRpe || undefined };
+    void db.sets.update(editingSetId, patch);
+    setSetLogs((prev) =>
+      prev.map((sl) => (sl.id === editingSetId ? { ...sl, ...patch } : sl)),
+    );
+    setEditingSetId(null);
+    toast('Set updated', { duration: 2000 });
+  }, [editingSetId, editLoad, editReps, editRpe]);
+
+  /** Delete a logged set. */
+  const deleteEditSet = useCallback(() => {
+    if (!editingSetId) return;
+    void db.sets.delete(editingSetId);
+    setSetLogs((prev) => prev.filter((sl) => sl.id !== editingSetId));
+    setEditingSetId(null);
+    toast('Set deleted', { duration: 2000 });
+  }, [editingSetId]);
+
+  /** Save & Exit: mark session as MODIFIED and navigate home. */
+  const saveAndExit = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await db.sessions.update(sessionId, { status: 'MODIFIED' });
+      router.push('/home');
+    } catch (err) {
+      console.error('[Session] save & exit failed:', err);
+      setSaving(false);
+    }
+  }, [saving, sessionId, router]);
+
+  // Run auto-max detection when entering the complete state
+  useEffect(() => {
+    if (pageState === 'complete') {
+      void detectAndSuggestMaxUpdate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageState]);
+
   /** Open swap modal for an exercise in the overview list. */
   const openSwapModal = useCallback((ex: SessionExercise) => {
     const libEx = ex.libraryExerciseId
@@ -416,13 +476,28 @@ export default function SessionPage({
         ...(note ? { coachNote: note } : {}),
       });
       await checkOvershooter();
+
+      // ── Advance cycle week ──────────────────────────────────────────
+      if (session?.cycleId) {
+        try {
+          const result = await advanceCycleWeek(session.cycleId);
+          if (result.completed) {
+            toast('🏁 Training cycle complete! Time to plan the next one.', { duration: 5000 });
+          } else if (result.newBlockType) {
+            toast(`Week ${result.newWeek} — moving to ${result.newBlockType.charAt(0) + result.newBlockType.slice(1).toLowerCase()} block`, { duration: 4000 });
+          }
+        } catch (e) {
+          console.error('[Session] advanceCycleWeek failed:', e);
+        }
+      }
+
       router.push('/home');
     } catch (err) {
       console.error('[Session] finish failed:', err);
       setSaving(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, sessionId, sessionNote, router]);
+  }, [saving, sessionId, sessionNote, router, session]);
 
   async function checkOvershooter() {
     const compExercises = await db.exercises
@@ -467,6 +542,60 @@ export default function SessionPage({
         "Heads up — we noticed you're going harder than prescribed. Your coach will adjust future sessions.",
         { duration: 6000 },
       );
+    }
+  }
+
+  /**
+   * Check recent competition-lift sets and suggest a max update if the
+   * athlete's estimated 1RM has drifted >3% above their stored max.
+   */
+  async function detectAndSuggestMaxUpdate() {
+    if (!session) return;
+    const profile = await db.profile.get('me');
+    if (!profile) return;
+
+    const liftField = session.primaryLift as 'SQUAT' | 'BENCH' | 'DEADLIFT';
+    if (!['SQUAT', 'BENCH', 'DEADLIFT'].includes(liftField)) return;
+
+    const maxKey = `max${liftField.charAt(0) + liftField.slice(1).toLowerCase()}` as
+      'maxSquat' | 'maxBench' | 'maxDeadlift';
+    const currentMax = profile[maxKey];
+    if (!currentMax || currentMax <= 0) return;
+
+    // Gather recent sets for competition exercises across last 2 weeks
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const cutoff = twoWeeksAgo.toISOString();
+
+    const recentCompExercises = await db.exercises
+      .where('sessionId')
+      .anyOf(
+        (await db.sessions
+          .where('cycleId')
+          .equals(session.cycleId)
+          .toArray()
+        ).map((s) => s.id),
+      )
+      .filter((e) => e.exerciseType === 'COMPETITION')
+      .toArray();
+
+    const recentSets: Array<{ loadKg: number; reps: number; rpeLogged?: number }> = [];
+    for (const ex of recentCompExercises) {
+      const sets = await db.sets
+        .where('exerciseId')
+        .equals(ex.id)
+        .filter((s) => s.loggedAt >= cutoff)
+        .toArray();
+      recentSets.push(...sets.map((s) => ({
+        loadKg: s.loadKg,
+        reps: s.reps,
+        rpeLogged: s.rpeLogged,
+      })));
+    }
+
+    const suggestion = detectMaxUpdate(liftField, currentMax, recentSets);
+    if (suggestion) {
+      setMaxSuggestion(suggestion);
     }
   }
 
@@ -834,6 +963,7 @@ export default function SessionPage({
                 key={sl.id}
                 setLog={sl}
                 rpeTarget={activeExercise?.rpeTarget ?? 8}
+                onTap={() => openEditSet(sl)}
               />
             ))
           )}
@@ -970,7 +1100,107 @@ export default function SessionPage({
               {isLastExercise ? 'Finish Session' : 'Done with exercise →'}
             </button>
           </div>
+
+          {/* Save & Exit */}
+          <button
+            type="button"
+            onClick={() => void saveAndExit()}
+            disabled={saving}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold active:scale-[0.98] transition-all mt-1 disabled:opacity-50"
+            style={{ backgroundColor: 'transparent', color: C.muted, border: `1px solid ${C.dim}` }}
+          >
+            {saving ? 'Saving…' : 'Save & Exit'}
+          </button>
         </div>
+
+        {/* ── Edit Set Overlay ────────────────────────────────────────────── */}
+        {editingSetId && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit set"
+            className="fixed inset-0 z-50 flex items-end justify-center"
+            style={{ backgroundColor: 'rgba(26,26,46,0.85)' }}
+            onClick={() => setEditingSetId(null)}
+          >
+            <div
+              className="w-full max-w-lg rounded-t-2xl p-5 space-y-4"
+              style={{ backgroundColor: C.surface }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold" style={{ color: C.text }}>Edit Set</h3>
+
+              {/* Load */}
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold block mb-1" style={{ color: C.muted }}>
+                  Load (kg)
+                </label>
+                <input
+                  type="number"
+                  value={editLoad}
+                  onChange={(e) => setEditLoad(Number(e.target.value))}
+                  className="w-full rounded-lg border px-3 py-2 text-sm bg-transparent outline-none"
+                  style={{ borderColor: C.dim, color: C.text }}
+                  step={2.5}
+                  min={0}
+                />
+              </div>
+
+              {/* Reps */}
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold block mb-1" style={{ color: C.muted }}>
+                  Reps
+                </label>
+                <input
+                  type="number"
+                  value={editReps}
+                  onChange={(e) => setEditReps(Number(e.target.value))}
+                  className="w-full rounded-lg border px-3 py-2 text-sm bg-transparent outline-none"
+                  style={{ borderColor: C.dim, color: C.text }}
+                  min={1}
+                  max={30}
+                />
+              </div>
+
+              {/* RPE */}
+              <div>
+                <label className="text-xs uppercase tracking-wider font-semibold block mb-1" style={{ color: C.muted }}>
+                  RPE
+                </label>
+                <input
+                  type="number"
+                  value={editRpe}
+                  onChange={(e) => setEditRpe(Number(e.target.value))}
+                  className="w-full rounded-lg border px-3 py-2 text-sm bg-transparent outline-none"
+                  style={{ borderColor: C.dim, color: C.text }}
+                  step={0.5}
+                  min={0}
+                  max={10}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={saveEditSet}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold active:scale-[0.97] transition-transform"
+                  style={{ backgroundColor: C.accent, color: C.text }}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteEditSet}
+                  className="py-3 px-5 rounded-xl text-sm font-bold active:scale-[0.97] transition-transform"
+                  style={{ backgroundColor: 'rgba(153,27,27,0.3)', color: C.accent }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1068,6 +1298,53 @@ export default function SessionPage({
             {rpeMsg}
           </p>
         </div>
+
+        {/* Max update suggestion */}
+        {maxSuggestion && (
+          <div
+            className="rounded-xl p-4 mb-4"
+            style={{ backgroundColor: `${C.gold}15`, border: `1px solid ${C.gold}` }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.gold }}>
+              Max Update Suggested
+            </p>
+            <p className="text-sm mb-1" style={{ color: C.text }}>
+              Your recent training suggests a <strong>{maxSuggestion.lift.toLowerCase()}</strong> max of{' '}
+              <strong>{maxSuggestion.suggestedMax} kg</strong>{' '}
+              <span style={{ color: C.muted }}>(currently {maxSuggestion.currentMax} kg)</span>
+            </p>
+            <p className="text-xs mb-3" style={{ color: C.muted }}>
+              {maxSuggestion.evidence}
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all active:scale-[0.97]"
+                style={{ backgroundColor: C.gold, color: C.bg }}
+                onClick={() => {
+                  const key = `max${maxSuggestion.lift.charAt(0) + maxSuggestion.lift.slice(1).toLowerCase()}` as
+                    'maxSquat' | 'maxBench' | 'maxDeadlift';
+                  void db.profile.update('me', {
+                    [key]: maxSuggestion.suggestedMax,
+                    updatedAt: new Date().toISOString(),
+                  });
+                  toast(`${maxSuggestion.lift.toLowerCase()} max updated to ${maxSuggestion.suggestedMax} kg`, { duration: 3000 });
+                  setMaxSuggestion(null);
+                }}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all active:scale-[0.97]"
+                style={{ backgroundColor: C.surface, color: C.muted, border: `1px solid ${C.dim}` }}
+                onClick={() => setMaxSuggestion(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Session note */}
         <div

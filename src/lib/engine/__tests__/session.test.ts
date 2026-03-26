@@ -715,3 +715,103 @@ describe('generateSession — DUP second-occurrence volume day', () => {
     expect(freq4s5.exercises[0].rpeTarget).toBe(freq4s1.exercises[0].rpeTarget);
   });
 });
+
+// ── Reward System wiring ──────────────────────────────────────────────────────
+
+describe('generateSession — rewardSystem', () => {
+  // ── HIGH_VOLUME: +1 accessory set ──────────────────────────────────────────
+  describe('HIGH_VOLUME', () => {
+    const hvProfile = { ...baseProfile, rewardSystem: 'HIGH_VOLUME' as const };
+    const block = makeBlock('ACCUMULATION');
+
+    it('produces more accessory sets than CONSISTENCY', () => {
+      const standard = generateSession({ profile: baseProfile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const highVol  = generateSession({ profile: hvProfile,   block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+
+      const stdAccSets  = standard.exercises.filter(e => e.exerciseType === 'ACCESSORY').reduce((s, e) => s + e.sets, 0);
+      const hvAccSets   = highVol.exercises.filter(e => e.exerciseType === 'ACCESSORY').reduce((s, e) => s + e.sets, 0);
+
+      expect(hvAccSets).toBeGreaterThan(stdAccSets);
+    });
+
+    it('accessory set count is exactly 1 more per exercise', () => {
+      const standard = generateSession({ profile: baseProfile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const highVol  = generateSession({ profile: hvProfile,   block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+
+      const stdAcc = standard.exercises.filter(e => e.exerciseType === 'ACCESSORY');
+      const hvAcc  = highVol.exercises.filter(e => e.exerciseType === 'ACCESSORY');
+
+      expect(stdAcc.length).toBe(hvAcc.length); // same number of exercises
+      for (let i = 0; i < stdAcc.length; i++) {
+        expect(hvAcc[i].sets).toBe(stdAcc[i].sets + 1);
+      }
+    });
+  });
+
+  // ── HEAVY_SINGLES: top single in INTENSIFICATION ──────────────────────────
+  describe('HEAVY_SINGLES', () => {
+    const hsProfile = { ...baseProfile, rewardSystem: 'HEAVY_SINGLES' as const };
+    const intBlock  = makeBlock('INTENSIFICATION');
+    const accBlock  = makeBlock('ACCUMULATION');
+
+    it('adds a top single in INTENSIFICATION', () => {
+      const session = generateSession({ profile: hsProfile, block: intBlock, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const compExercises = session.exercises.filter(e => e.exerciseType === 'COMPETITION');
+      // First comp exercise should be the top single (1 rep)
+      expect(compExercises.length).toBeGreaterThanOrEqual(2);
+      expect(compExercises[0].reps).toBe(1);
+      expect(compExercises[0].sets).toBe(1);
+    });
+
+    it('does NOT add top single in ACCUMULATION', () => {
+      const session = generateSession({ profile: hsProfile, block: accBlock, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const compExercises = session.exercises.filter(e => e.exerciseType === 'COMPETITION');
+      // All comp exercises should have reps > 1 in accumulation
+      expect(compExercises[0].reps).toBeGreaterThan(1);
+    });
+
+    it('CONSISTENCY profile has no top single in INTENSIFICATION', () => {
+      const session = generateSession({ profile: baseProfile, block: intBlock, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const compExercises = session.exercises.filter(e => e.exerciseType === 'COMPETITION');
+      expect(compExercises.length).toBe(1);
+    });
+  });
+
+  // ── VARIETY: accessories rotate order by session number ────────────────────
+  describe('VARIETY', () => {
+    const varProfile = { ...baseProfile, rewardSystem: 'VARIETY' as const };
+    const block = makeBlock('ACCUMULATION');
+
+    it('changes accessory order between sessions with same lift', () => {
+      // Use 3-day frequency: sessionNumber 1 and 4 both map to SQUAT
+      const freq3Profile = { ...varProfile, weeklyFrequency: 3 };
+      const s1 = generateSession({ profile: freq3Profile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const s4 = generateSession({ profile: freq3Profile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 4 });
+
+      expect(s1.primaryLift).toBe('SQUAT');
+      expect(s4.primaryLift).toBe('SQUAT');
+
+      const acc1Names = s1.exercises.filter(e => e.exerciseType === 'ACCESSORY').map(e => e.name);
+      const acc4Names = s4.exercises.filter(e => e.exerciseType === 'ACCESSORY').map(e => e.name);
+
+      // Same exercises, different order
+      expect([...acc1Names].sort()).toEqual([...acc4Names].sort());
+      expect(acc1Names).not.toEqual(acc4Names);
+    });
+
+    it('CONSISTENCY keeps same order across sessions with same lift', () => {
+      // Use 3-day frequency: sessionNumber 1 and 4 both map to SQUAT
+      const freq3Profile = { ...baseProfile, weeklyFrequency: 3 };
+      const s1 = generateSession({ profile: freq3Profile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
+      const s4 = generateSession({ profile: freq3Profile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 4 });
+
+      expect(s1.primaryLift).toBe('SQUAT');
+      expect(s4.primaryLift).toBe('SQUAT');
+
+      const acc1Names = s1.exercises.filter(e => e.exerciseType === 'ACCESSORY').map(e => e.name);
+      const acc4Names = s4.exercises.filter(e => e.exerciseType === 'ACCESSORY').map(e => e.name);
+
+      expect(acc1Names).toEqual(acc4Names);
+    });
+  });
+});

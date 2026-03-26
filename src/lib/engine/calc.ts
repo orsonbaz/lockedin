@@ -278,6 +278,109 @@ export function calcIpfPoints(total: number, bodyweightKg: number, sex: Sex): nu
   return (total * 100) / denom;
 }
 
+// ── Inverse RPE: Estimate 1RM from a logged set ──────────────────────────────
+
+/**
+ * Inverse of `prescribeLoad`: given a performed set, estimate the athlete's
+ * 1RM using the Tuchscherer/RTS RPE percentage table.
+ *
+ *   e1RM = loadKg / RPE_TABLE[reps][rpe]
+ *
+ * Returns `null` if the lookup falls outside the table range or would produce
+ * a nonsensical value (e.g. zero divisor).
+ */
+export function estimateMaxFromRpe(
+  loadKg: number,
+  reps: number,
+  rpe: number,
+): number | null {
+  const clampedRpe  = Math.max(6, Math.min(10, rpe));
+  const clampedReps = Math.max(1, Math.min(10, reps));
+
+  const rpeFloor = Math.floor(clampedRpe);
+  const rpeCeil  = Math.ceil(clampedRpe);
+  const pctFloor = RPE_TABLE[clampedReps]?.[rpeFloor] ?? 0;
+  const pctCeil  = RPE_TABLE[clampedReps]?.[rpeCeil]  ?? 0;
+
+  const pct =
+    rpeFloor === rpeCeil
+      ? pctFloor
+      : pctFloor + (clampedRpe - rpeFloor) * (pctCeil - pctFloor);
+
+  if (pct <= 0) return null;
+  return loadKg / pct;
+}
+
+// ── Auto-Max Detection ───────────────────────────────────────────────────────
+
+export interface MaxUpdateSuggestion {
+  lift: 'SQUAT' | 'BENCH' | 'DEADLIFT';
+  currentMax: number;
+  suggestedMax: number;
+  evidence: string; // e.g. "5 × 140 @ RPE 8 → est. 1RM 168 kg"
+}
+
+/**
+ * Analyse recent logged sets for a competition lift and determine whether the
+ * athlete's current training max should be bumped.
+ *
+ * Algorithm:
+ * 1. Filter sets that have `rpeLogged` and at least 1 rep.
+ * 2. Estimate 1RM for each via the inverse RPE table.
+ * 3. Take the median of the top 3 estimated 1RMs.
+ * 4. If that median exceeds `currentMax × 1.03` (at least 3% above), return
+ *    a suggestion.
+ *
+ * Guard: need ≥ 3 qualifying sets to avoid basing a max update on a single
+ * lucky set.
+ */
+export function detectMaxUpdate(
+  lift: 'SQUAT' | 'BENCH' | 'DEADLIFT',
+  currentMax: number,
+  recentSets: Array<{ loadKg: number; reps: number; rpeLogged?: number }>,
+): MaxUpdateSuggestion | null {
+  // Collect valid e1RMs
+  const estimates: { e1rm: number; set: typeof recentSets[number] }[] = [];
+
+  for (const s of recentSets) {
+    if (s.rpeLogged === undefined || s.reps < 1) continue;
+    const e1rm = estimateMaxFromRpe(s.loadKg, s.reps, s.rpeLogged);
+    if (e1rm !== null && e1rm > 0) {
+      estimates.push({ e1rm, set: s });
+    }
+  }
+
+  if (estimates.length < 3) return null;
+
+  // Sort descending and take top 3
+  estimates.sort((a, b) => b.e1rm - a.e1rm);
+  const top3 = estimates.slice(0, 3);
+
+  // Median of 3 = the middle value (index 1 when sorted desc)
+  const median = top3[1]!.e1rm;
+
+  // Need at least 3% improvement to suggest
+  if (median <= currentMax * 1.03) return null;
+
+  const suggestedMax = Math.round(median * 2) / 2; // round to 0.5 kg
+  const best = top3[1]!.set;
+  const evidence = `${best.reps} × ${best.loadKg} @ RPE ${best.rpeLogged} → est. 1RM ${Math.round(median)} kg`;
+
+  return { lift, currentMax, suggestedMax, evidence };
+}
+
+// ── Neural Gap Detection ─────────────────────────────────────────────────────
+
+/**
+ * If `gymMax > meetMax × 1.05`, the athlete has a "neural gap" — they're
+ * stronger in training than on the platform. Returns the gap percentage
+ * (e.g. 8 means gym max is 8% above meet max). Returns 0 when no gap.
+ */
+export function detectNeuralGap(meetMax: number, gymMax: number): number {
+  if (meetMax <= 0 || gymMax <= meetMax * 1.05) return 0;
+  return Math.round(((gymMax - meetMax) / meetMax) * 100);
+}
+
 // ── Attempt Selection ──────────────────────────────────────────────────────────
 
 /**

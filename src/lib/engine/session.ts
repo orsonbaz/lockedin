@@ -11,6 +11,7 @@ import type {
   ExerciseType,
   SetStructure,
   SessionType,
+  RewardSystem,
 } from '@/lib/db/types';
 import {
   prescribeLoad,
@@ -96,6 +97,7 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const isDupRepeat  = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock, isDupRepeat,
+    sessionNumber,
   );
 
   // ── 5. Coach note ──────────────────────────────────────────────────────────
@@ -154,14 +156,16 @@ function buildSessionExercises(
   rpeOffset: number,
   weekWithinBlock = 1,
   isDupRepeat = false,
+  sessionNumber = 1,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
+  const reward = profile.rewardSystem;
 
   // Primary comp movement(s)
   const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
-    weekWithinBlock, totalBlockWeeks, isDupRepeat,
+    weekWithinBlock, totalBlockWeeks, isDupRepeat, reward,
   );
   exercises.push(...primaryExercises);
 
@@ -170,6 +174,7 @@ function buildSessionExercises(
     const nextOrder = exercises.length + 1;
     const accessories = buildAccessories(
       primaryLift, block.blockType, profile, volMult, rpeOffset, nextOrder,
+      reward, sessionNumber,
     );
     exercises.push(...accessories);
   }
@@ -188,6 +193,7 @@ function buildPrimaryExercises(
   weekInBlock = 1,
   totalBlockWeeks = 1,
   isDupRepeat = false,
+  reward: RewardSystem = 'CONSISTENCY',
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
   const baseRpe = getBaseRpeForBlock(blockType);
@@ -283,19 +289,38 @@ function buildPrimaryExercises(
 
   const compLoad = roundLoad(prescribeLoad(maxKg, finalRpe, finalReps));
 
-  const result: GeneratedExercise[] = [
-    {
+  const result: GeneratedExercise[] = [];
+
+  // HEAVY_SINGLES: in INTENSIFICATION, add a top single before back-off sets
+  // to give heavy-singles athletes the neural stimulus they crave.
+  if (reward === 'HEAVY_SINGLES' && blockType === 'INTENSIFICATION') {
+    const topSingleRpe  = clampRpe(adjustedRpe + 0.5);
+    const topSingleLoad = roundLoad(prescribeLoad(maxKg, topSingleRpe, 1));
+    result.push({
       name:              compName,
       exerciseType:      'COMPETITION',
-      setStructure:      'STRAIGHT',
-      sets:              finalSets,
-      reps:              finalReps,
-      rpeTarget:         finalRpe,
-      estimatedLoadKg:   compLoad,
+      setStructure:      'ASCENDING',
+      sets:              1,
+      reps:              1,
+      rpeTarget:         topSingleRpe,
+      estimatedLoadKg:   topSingleLoad,
       order:             1,
+      notes:             `Top single @ RPE ${topSingleRpe} before back-offs.`,
       libraryExerciseId: compLibraryId,
-    },
-  ];
+    });
+  }
+
+  result.push({
+    name:              compName,
+    exerciseType:      'COMPETITION',
+    setStructure:      'STRAIGHT',
+    sets:              finalSets,
+    reps:              finalReps,
+    rpeTarget:         finalRpe,
+    estimatedLoadKg:   compLoad,
+    order:             result.length + 1,
+    libraryExerciseId: compLibraryId,
+  });
 
   // Variation exercise — only in ACCUMULATION
   if (blockType === 'ACCUMULATION' && variationName !== null) {
@@ -315,7 +340,7 @@ function buildPrimaryExercises(
       reps:              varReps,
       rpeTarget:         varRpe,
       estimatedLoadKg:   varLoad,
-      order:             2,
+      order:             result.length + 1,
       libraryExerciseId: variationLibId ?? undefined,
     });
   }
@@ -332,9 +357,13 @@ function buildAccessories(
   volMult: number,
   rpeOffset: number,
   startOrder: number,
+  reward: RewardSystem = 'CONSISTENCY',
+  sessionNumber = 1,
 ): GeneratedExercise[] {
   const accRpe  = clampRpe(7.5 + rpeOffset);
-  const accSets = Math.max(1, Math.floor(3 * volMult));
+  const baseAccSets = Math.max(1, Math.floor(3 * volMult));
+  // HIGH_VOLUME athletes get +1 accessory set
+  const accSets = reward === 'HIGH_VOLUME' ? baseAccSets + 1 : baseAccSets;
   const isDeload = blockType === 'DELOAD';
 
   const sq = profile.maxSquat;
@@ -408,6 +437,14 @@ function buildAccessories(
         ['Overhead Press',     8, bp],
         ['Lat Pulldowns',     10, dl],
       ];
+  }
+
+  // VARIETY: rotate accessories — shift the order each session so the athlete
+  // sees different exercises first (and potentially different ones if the pool
+  // is larger than what fits in a session). Uses sessionNumber as the seed.
+  if (reward === 'VARIETY' && defs.length > 1) {
+    const shift = (sessionNumber - 1) % defs.length;
+    defs = [...defs.slice(shift), ...defs.slice(0, shift)];
   }
 
   return defs.map(([name, reps, refMaxKg], i) => {

@@ -41,12 +41,51 @@ import {
 import { C }                                            from '@/lib/theme';
 
 // ── Suggested quick-prompts ───────────────────────────────────────────────────
-const SUGGESTED_PROMPTS = [
+const DEFAULT_PROMPTS = [
   'Why is my program structured this way right now?',
   'How is my peaking looking?',
   'I only have time for a 45-minute session today.',
   'What should my attempts be based on my current training?',
-] as const;
+];
+
+interface CoachContext {
+  blockType?: string;
+  meetInDays?: number;
+  overshooter?: boolean;
+  lowReadinessTrend?: boolean;
+}
+
+/**
+ * Generate contextual suggested prompts based on the athlete's current
+ * training state. Falls back to defaults when no interesting context exists.
+ */
+function getContextualPrompts(ctx: CoachContext): string[] {
+  const prompts: string[] = [];
+
+  if (ctx.meetInDays !== undefined && ctx.meetInDays <= 14) {
+    prompts.push('What should my final week look like before the meet?');
+  }
+
+  if (ctx.blockType === 'DELOAD') {
+    prompts.push('How should I approach this deload?');
+  }
+
+  if (ctx.overshooter) {
+    prompts.push('I keep overshooting RPE — what should I change?');
+  }
+
+  if (ctx.lowReadinessTrend) {
+    prompts.push('My readiness has been low all week — should I adjust?');
+  }
+
+  // Fill remaining slots with defaults (avoid duplicates)
+  for (const d of DEFAULT_PROMPTS) {
+    if (prompts.length >= 4) break;
+    if (!prompts.includes(d)) prompts.push(d);
+  }
+
+  return prompts.slice(0, 4);
+}
 
 // ── Model status type ─────────────────────────────────────────────────────────
 type ModelStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -253,6 +292,7 @@ export default function CoachPage() {
   const [groqKey,        setGroqKey]        = useState<string>('');
   const [modelStatus,    setModelStatus]    = useState<ModelStatus>('idle');
   const [loadProgress,   setLoadProgress]   = useState<ProgressPayload | null>(null);
+  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(DEFAULT_PROMPTS);
 
   // ── Input state ───────────────────────────────────────────────────────────
   const [input,          setInput]          = useState('');
@@ -278,10 +318,42 @@ export default function CoachPage() {
         .toArray();
       setMessages(recent.reverse());
 
-      // Load Groq key from profile
+      // Load Groq key from profile + build contextual prompts
       const profile = await db.profile.get('me');
       const key = profile?.groqApiKey ?? '';
       setGroqKey(key);
+
+      // Build context for suggested prompts
+      const ctx: CoachContext = { overshooter: profile?.overshooter };
+      try {
+        // Check for active cycle + block
+        const cycle = await db.cycles.where('status').equals('ACTIVE').first();
+        if (cycle) {
+          const blocks = await db.blocks.where('cycleId').equals(cycle.id).toArray();
+          const currentBlock = blocks.find(
+            (b) => cycle.currentWeek >= b.weekStart && cycle.currentWeek <= b.weekEnd,
+          );
+          if (currentBlock) ctx.blockType = currentBlock.blockType;
+        }
+        // Check for upcoming meet within 14 days
+        const meets = await db.meets.where('status').equals('UPCOMING').toArray();
+        const now = Date.now();
+        for (const m of meets) {
+          const daysUntil = Math.floor((new Date(m.date).getTime() - now) / 86_400_000);
+          if (daysUntil >= 0 && (ctx.meetInDays === undefined || daysUntil < ctx.meetInDays)) {
+            ctx.meetInDays = daysUntil;
+          }
+        }
+        // Check for low readiness trend (last 3 check-ins avg < 60)
+        const recentReadiness = await db.readiness.orderBy('date').reverse().limit(3).toArray();
+        if (recentReadiness.length >= 3) {
+          const avg = recentReadiness.reduce((s, r) => s + r.readinessScore, 0) / recentReadiness.length;
+          ctx.lowReadinessTrend = avg < 60;
+        }
+      } catch {
+        // Non-critical — fall back to defaults
+      }
+      setSuggestedPrompts(getContextualPrompts(ctx));
 
       // If model is already cached, mark as ready.
       // Otherwise wait for explicit user action — don't auto-download 2.2 GB.
@@ -642,7 +714,7 @@ export default function CoachPage() {
               Ask me anything about your training.
             </p>
             <div className="w-full max-w-sm grid gap-2">
-              {SUGGESTED_PROMPTS.map((prompt) => (
+              {suggestedPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"

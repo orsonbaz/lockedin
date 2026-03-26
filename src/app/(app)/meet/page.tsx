@@ -14,7 +14,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger,
 } from '@/components/ui/sheet';
 import { db, newId }                         from '@/lib/db/database';
-import { suggestAttempts, blockToIntensity } from '@/lib/engine/calc';
+import { suggestAttempts, blockToIntensity, calcDots } from '@/lib/engine/calc';
 import { C }                                 from '@/lib/theme';
 import { daysUntil, todayIso }               from '@/lib/date-utils';
 import type {
@@ -289,6 +289,11 @@ export default function MeetDashboardPage() {
   const [cycle,        setCycle]        = useState<TrainingCycle | null>(null);
   const [blocks,       setBlocks]       = useState<TrainingBlock[]>([]);
   const [localLoads,   setLocalLoads]   = useState<Record<string, number>>({});
+  const [pastMeets,    setPastMeets]    = useState<Array<{
+    meet: Meet;
+    bestSquat?: number; bestBench?: number; bestDeadlift?: number;
+    total: number; dots?: number;
+  }>>([]);
 
   // ── Sheet ─────────────────────────────────────────────────────────────────
   const [sheetOpen,    setSheetOpen]    = useState(false);
@@ -328,6 +333,41 @@ export default function MeetDashboardPage() {
       setCycle(activeCycle);
       setBlocks(cycleBlocks);
     }
+
+    // ── Past meets ─────────────────────────────────────────────────────
+    const completedMeets = await db.meets
+      .filter((m) => m.status === 'COMPLETED')
+      .toArray();
+
+    const pastMeetData = await Promise.all(
+      completedMeets
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map(async (m) => {
+          const meetAttempts = await db.attempts
+            .where('meetId').equals(m.id)
+            .toArray();
+
+          const bestLift = (lift: string) => {
+            const good = meetAttempts.filter(
+              (a) => a.lift === lift && a.result === 'GOOD' && a.actualKg,
+            );
+            return good.length > 0
+              ? Math.max(...good.map((a) => a.actualKg!))
+              : undefined;
+          };
+
+          const bestSquat    = bestLift('SQUAT');
+          const bestBench    = bestLift('BENCH');
+          const bestDeadlift = bestLift('DEADLIFT');
+          const total = (bestSquat ?? 0) + (bestBench ?? 0) + (bestDeadlift ?? 0);
+          const dots = total > 0 && prof
+            ? Math.round(calcDots(total, prof.weightKg, prof.sex) * 10) / 10
+            : undefined;
+
+          return { meet: m, bestSquat, bestBench, bestDeadlift, total, dots };
+        }),
+    );
+    setPastMeets(pastMeetData);
 
     if (prof) setForm(defaultForm(prof));
     setLoading(false);
@@ -719,6 +759,57 @@ export default function MeetDashboardPage() {
             {addMeetSheet}
           </div>
         </div>
+
+        {/* ── PAST MEETS ──────────────────────────────────────────────── */}
+        {pastMeets.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-bold mb-3" style={{ color: C.text }}>Past Meets</h2>
+            <div className="space-y-3">
+              {pastMeets.map(({ meet: pm, bestSquat, bestBench, bestDeadlift, total, dots }) => (
+                <div
+                  key={pm.id}
+                  className="rounded-2xl p-4"
+                  style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="text-sm font-bold" style={{ color: C.text }}>{pm.name}</p>
+                      <p className="text-xs" style={{ color: C.muted }}>
+                        {new Date(pm.date + 'T12:00:00').toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                        })}
+                        {' · '}{pm.federation}{' · '}{WEIGHT_CLASS_LABELS[pm.weightClass] ?? `${pm.weightClass} kg`}
+                      </p>
+                    </div>
+                    {dots !== undefined && dots > 0 && (
+                      <div className="text-right">
+                        <p className="text-lg font-black" style={{ color: C.accent, fontVariantNumeric: 'tabular-nums' }}>
+                          {dots}
+                        </p>
+                        <p className="text-xs" style={{ color: C.muted }}>DOTS</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { label: 'SQ', value: bestSquat },
+                      { label: 'BP', value: bestBench },
+                      { label: 'DL', value: bestDeadlift },
+                      { label: 'Total', value: total > 0 ? total : undefined },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="text-center">
+                        <p className="text-sm font-bold" style={{ color: value ? C.text : C.muted, fontVariantNumeric: 'tabular-nums' }}>
+                          {value ? `${value}` : '—'}
+                        </p>
+                        <p className="text-xs" style={{ color: C.muted }}>{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

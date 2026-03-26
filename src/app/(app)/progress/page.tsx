@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -131,12 +132,22 @@ interface CompScores {
   bodyweight: number;
 }
 
+interface SessionHistoryItem {
+  id:          string;
+  date:        string;   // YYYY-MM-DD
+  primaryLift: string;
+  volume:      number;   // total kg
+  avgRpe?:     number;
+  setCount:    number;
+}
+
 interface ProgressData {
   volumeData: VolumePoint[];
   e1rmData:   E1rmPoint[];
   rpeData:    RpePoint[];
   bwData:     BwPoint[];
   compScores: CompScores | null;
+  history:    SessionHistoryItem[];
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
@@ -144,12 +155,13 @@ const DEFAULT_WEEKS = 12;
 const LOAD_MORE_WEEKS = 12;
 
 export default function ProgressPage() {
+  const router = useRouter();
   const [loading, setLoading]  = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [weeksBack, setWeeksBack] = useState(DEFAULT_WEEKS);
   const [loadingMore, setLoadingMore] = useState(false);
   const [chartData, setChartData] = useState<ProgressData>({
-    volumeData: [], e1rmData: [], rpeData: [], bwData: [], compScores: null,
+    volumeData: [], e1rmData: [], rpeData: [], bwData: [], compScores: null, history: [],
   });
 
   const loadData = useCallback(async (weeks: number) => {
@@ -194,7 +206,7 @@ export default function ProgressPage() {
 
     const sessionIds = allSessions.map((s) => s.id);
     if (sessionIds.length === 0) {
-      return { volumeData: [], e1rmData: [], rpeData: [], bwData, compScores };
+      return { volumeData: [], e1rmData: [], rpeData: [], bwData, compScores, history: [] };
     }
 
     // Get all exercises & sets for these sessions
@@ -314,7 +326,32 @@ export default function ProgressPage() {
       });
     }
 
-    return { volumeData, e1rmData, rpeData, bwData, compScores };
+    // ── Session History ──────────────────────────────────────────────
+    const completedSessions = allSessions
+      .filter((s) => s.status === 'COMPLETED')
+      .sort((a, b) => (b.completedAt ?? b.scheduledDate).localeCompare(a.completedAt ?? a.scheduledDate))
+      .slice(0, 50); // cap at 50 for perf
+
+    const history: SessionHistoryItem[] = await Promise.all(
+      completedSessions.map(async (s) => {
+        const sets = await db.sets.where('sessionId').equals(s.id).toArray();
+        const volume = sets.reduce((acc, sl) => acc + sl.loadKg * sl.reps, 0);
+        const rpeSets = sets.filter((sl) => sl.rpeLogged !== undefined);
+        const avgRpe  = rpeSets.length > 0
+          ? Math.round((rpeSets.reduce((acc, sl) => acc + (sl.rpeLogged ?? 0), 0) / rpeSets.length) * 10) / 10
+          : undefined;
+        return {
+          id:          s.id,
+          date:        s.scheduledDate,
+          primaryLift: s.primaryLift,
+          volume,
+          avgRpe,
+          setCount:    sets.length,
+        };
+      }),
+    );
+
+    return { volumeData, e1rmData, rpeData, bwData, compScores, history };
   }, []);
 
   // Initial load
@@ -391,7 +428,7 @@ export default function ProgressPage() {
     );
   }
 
-  const { volumeData, e1rmData, rpeData, bwData, compScores } = chartData;
+  const { volumeData, e1rmData, rpeData, bwData, compScores, history } = chartData;
   const hasVolume = volumeData.some((d) => d.volume > 0);
   const hasE1rm   = e1rmData.some((d) => d.squat || d.bench || d.deadlift);
   const hasRpe    = rpeData.length > 0;
@@ -670,6 +707,54 @@ export default function ProgressPage() {
               </LineChart>
             </ResponsiveContainer>
           </ChartCard>
+        )}
+
+        {/* ── SESSION HISTORY ──────────────────────────────────────────────── */}
+        {history.length > 0 && (
+          <div className="mb-4">
+            <h2 className="text-lg font-bold mb-3" style={{ color: C.text }}>Session History</h2>
+            <div className="space-y-2">
+              {history.map((h) => (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => router.push(`/session/${h.id}`)}
+                  className="w-full rounded-xl p-3 flex items-center gap-3 text-left transition-all active:scale-[0.98]"
+                  style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-black uppercase"
+                    style={{
+                      backgroundColor: `${LIFT_COLOURS[h.primaryLift as keyof typeof LIFT_COLOURS] ?? C.muted}20`,
+                      color: LIFT_COLOURS[h.primaryLift as keyof typeof LIFT_COLOURS] ?? C.muted,
+                    }}
+                  >
+                    {h.primaryLift.slice(0, 2)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: C.text }}>
+                      {h.primaryLift.charAt(0) + h.primaryLift.slice(1).toLowerCase()} Day
+                    </p>
+                    <p className="text-xs" style={{ color: C.muted }}>
+                      {new Date(h.date + 'T12:00:00').toLocaleDateString('en-US', {
+                        weekday: 'short', month: 'short', day: 'numeric',
+                      })}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-bold" style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>
+                      {h.volume >= 1000
+                        ? `${(h.volume / 1000).toFixed(1)}t`
+                        : `${Math.round(h.volume)} kg`}
+                    </p>
+                    <p className="text-xs" style={{ color: C.muted }}>
+                      {h.setCount} sets{h.avgRpe !== undefined ? ` · RPE ${h.avgRpe}` : ''}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* ── LOAD MORE ───────────────────────────────────────────────────── */}

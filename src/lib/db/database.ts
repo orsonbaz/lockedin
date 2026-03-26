@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
   AthleteProfile,
+  BlockType,
   TrainingCycle,
   TrainingBlock,
   TrainingSession,
@@ -74,6 +75,82 @@ export const today = (): string => {
 
 /** Generates a cryptographically random UUID v4 (collision-proof). */
 export const newId = (): string => crypto.randomUUID();
+
+// ── Cycle Week Advancement ──────────────────────────────────────────────────
+
+export interface AdvanceCycleResult {
+  advanced: boolean;
+  newWeek: number;
+  completed: boolean;
+  newBlockType?: BlockType;
+}
+
+/**
+ * Advance the cycle's `currentWeek` when we've passed the calendar boundary
+ * for the current week. Called after completing a session.
+ *
+ * Logic:
+ * 1. If `currentWeek >= totalWeeks`, mark cycle COMPLETED.
+ * 2. Determine week boundary: `startDate + (currentWeek) * 7 days`.
+ *    If today is on or past that boundary, bump `currentWeek`.
+ * 3. After bumping, check if the new week falls in a different block.
+ *    Return the block type for a UI toast if it changed.
+ */
+export async function advanceCycleWeek(
+  cycleId: string,
+): Promise<AdvanceCycleResult> {
+  const cycle = await db.cycles.get(cycleId);
+  if (!cycle || cycle.status !== 'ACTIVE') {
+    return { advanced: false, newWeek: cycle?.currentWeek ?? 0, completed: false };
+  }
+
+  // Already at or past total weeks → mark completed
+  if (cycle.currentWeek >= cycle.totalWeeks) {
+    await db.cycles.update(cycleId, { status: 'COMPLETED' });
+    return { advanced: false, newWeek: cycle.currentWeek, completed: true };
+  }
+
+  // Determine when the NEXT week starts
+  const startMs = new Date(cycle.startDate).getTime();
+  const nextWeekBoundary = startMs + cycle.currentWeek * 7 * 24 * 60 * 60 * 1000;
+  const todayMs = new Date(today()).getTime();
+
+  if (todayMs < nextWeekBoundary) {
+    // Still within the current week
+    return { advanced: false, newWeek: cycle.currentWeek, completed: false };
+  }
+
+  const newWeek = cycle.currentWeek + 1;
+
+  // If the new week exceeds total, mark completed
+  if (newWeek > cycle.totalWeeks) {
+    await db.cycles.update(cycleId, { status: 'COMPLETED', currentWeek: newWeek });
+    return { advanced: true, newWeek, completed: true };
+  }
+
+  await db.cycles.update(cycleId, { currentWeek: newWeek });
+
+  // Check for block transition
+  const blocks = await db.blocks
+    .where('cycleId')
+    .equals(cycleId)
+    .toArray();
+
+  // Find the block containing the old week and the new week
+  const oldBlock = blocks.find(
+    (b) => cycle.currentWeek >= b.weekStart && cycle.currentWeek <= b.weekEnd,
+  );
+  const newBlock = blocks.find(
+    (b) => newWeek >= b.weekStart && newWeek <= b.weekEnd,
+  );
+
+  const newBlockType =
+    newBlock && (!oldBlock || oldBlock.id !== newBlock.id)
+      ? newBlock.blockType
+      : undefined;
+
+  return { advanced: true, newWeek, completed: false, newBlockType };
+}
 
 // ── Export / Import helpers ──────────────────────────────────────────────────
 

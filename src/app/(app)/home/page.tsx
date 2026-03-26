@@ -48,6 +48,7 @@ interface HomeData {
   cycle:          TrainingCycle | null;
   upcomingMeet:   Meet | null;
   recentSessions: Array<{ session: TrainingSession; volume: number; avgRpe?: number }>;
+  loggedSetCount: number;
 }
 
 export default function HomePage() {
@@ -56,7 +57,7 @@ export default function HomePage() {
   const [loadError, setLoadError] = useState(false);
   const [data,    setData]    = useState<HomeData>({
     profile: null, readiness: null, session: null, exercises: [],
-    block: null, cycle: null, upcomingMeet: null, recentSessions: [],
+    block: null, cycle: null, upcomingMeet: null, recentSessions: [], loggedSetCount: 0,
   });
 
   useEffect(() => {
@@ -75,6 +76,10 @@ export default function HomePage() {
       const exercises = session
         ? await db.exercises.where('sessionId').equals(session.id).toArray()
         : [];
+
+      const loggedSetCount = session
+        ? await db.sets.where('sessionId').equals(session.id).count()
+        : 0;
 
       let block: TrainingBlock | null = null;
       if (activeCycle) {
@@ -113,6 +118,7 @@ export default function HomePage() {
         cycle: activeCycle ?? null,
         upcomingMeet: upcomingMeet ?? null,
         recentSessions,
+        loggedSetCount,
       });
       setLoading(false);
     }
@@ -187,12 +193,13 @@ export default function HomePage() {
     );
   }
 
-  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions } = data;
+  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions, loggedSetCount } = data;
   const rdScore   = readiness?.readinessScore ?? 0;
   const rdInfo    = readinessLabel(rdScore);
   const hasCheckin = readiness !== null;
 
   const isCompleted = session?.status === 'COMPLETED';
+  const isModified  = session?.status === 'MODIFIED';
   const isRest      = !session;
 
   const totalSets   = exercises.reduce((acc, ex) => acc + ex.sets, 0);
@@ -376,14 +383,21 @@ export default function HomePage() {
                   ✓ Session Complete — great work!
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => router.push(`/session/${session!.id}`)}
-                  className="w-full py-4 rounded-2xl text-base font-bold transition-all active:scale-[0.98]"
-                  style={{ backgroundColor: C.accent, color: '#fff' }}
-                >
-                  Start Session →
-                </button>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/session/${session!.id}`)}
+                    className="w-full py-4 rounded-2xl text-base font-bold transition-all active:scale-[0.98]"
+                    style={{ backgroundColor: C.accent, color: '#fff' }}
+                  >
+                    {isModified ? 'Resume Session →' : 'Start Session →'}
+                  </button>
+                  {isModified && loggedSetCount > 0 && (
+                    <p className="text-xs text-center" style={{ color: C.muted }}>
+                      {loggedSetCount} set{loggedSetCount !== 1 ? 's' : ''} logged
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </div>
