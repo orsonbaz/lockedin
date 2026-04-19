@@ -39,6 +39,7 @@ import {
   type ProgressPayload,
 } from '@/lib/ai/coach';
 import { parseActions, executeAction, type CoachAction, type ActionResult } from '@/lib/ai/coach-actions';
+import { loadChatContext, summarizeIfNeeded }            from '@/lib/ai/memory';
 import { C }                                            from '@/lib/theme';
 
 // ── Suggested quick-prompts ───────────────────────────────────────────────────
@@ -454,14 +455,16 @@ export default function CoachPage() {
 
     const isGroq = Boolean(groqKey);
 
-    // Build context (system prompt + last 10 messages + new user message)
-    const [systemPrompt, allMsgs] = await Promise.all([
+    // Build context: system prompt (with memory + summary baked in) + tiered
+    // chat window (rolling summary already inside the system prompt, so raw
+    // messages only include the portion after the last summarized range).
+    const [systemPrompt, chatCtx] = await Promise.all([
       buildSystemPrompt(userText, isGroq),
-      db.chat.orderBy('createdAt').reverse().limit(10).toArray(),
+      loadChatContext(isGroq ? 'groq' : 'local'),
     ]);
     const context: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...allMsgs.reverse().map((m) => ({
+      ...chatCtx.messages.map((m) => ({
         role:    m.role as 'user' | 'assistant',
         content: m.content,
       })),
@@ -505,6 +508,10 @@ export default function CoachPage() {
     setStreamingText('');
     setIsGenerating(false);
     abortRef.current = false;
+
+    // Rolling summarization runs in the background; it's an optimization, not
+    // a correctness requirement. Swallow errors — the next turn will retry.
+    void summarizeIfNeeded(groqKey || undefined).catch(() => undefined);
   }, [input, isGenerating, groqKey]);
 
   // ── Execute a confirmed action ─────────────────────────────────────────────

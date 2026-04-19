@@ -15,6 +15,7 @@ import Groq                 from 'groq-sdk';
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
+import { buildMemorySection, buildSummarySection } from './memory';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -27,6 +28,40 @@ export interface ProgressPayload {
 }
 
 export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
+
+// Per-section character caps. Total ceiling ~12k chars (~3k tokens) for Groq,
+// ~3k chars for Phi on-device. The `knowledge` cap is dynamic.
+const SECTION_CAPS = {
+  role:       600,
+  profile:    500,
+  state:      500,
+  summary:    800,
+  memories:   1500,
+  session:    700,
+  history:    600,
+  schedule:   400,
+  actions:    900,
+  guidelines: 500,
+} as const;
+
+type SectionName = keyof typeof SECTION_CAPS | 'knowledge';
+
+interface PromptSection {
+  name:    SectionName;
+  heading?: string;
+  content: string;
+}
+
+function capText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + '…';
+}
+
+function renderSection(section: PromptSection, cap: number): string {
+  const body = capText(section.content.trim(), cap);
+  if (!body) return '';
+  return section.heading ? `## ${section.heading}\n${body}` : body;
+}
 
 // ── Worker singleton ──────────────────────────────────────────────────────────
 // Kept at module level so the model stays loaded across navigation.
@@ -208,11 +243,16 @@ export async function buildSystemPrompt(
   } else {
     knowledge = getCompactKnowledge();
   }
+  const knowledgeCap = isGroqMode ? 6000 : 2000;
+
+  // ── Long-term memory + rolling conversation summary ────────────────────────
+  const [memoriesBody, summaryBody] = await Promise.all([
+    buildMemorySection(userMessage, SECTION_CAPS.memories),
+    buildSummarySection(SECTION_CAPS.summary),
+  ]);
 
   // ── Action instructions ───────────────────────────────────────────────────
-  const actionInstructions = `
-## Actions You Can Take
-You can modify the athlete's program by including action tags in your response. The athlete will see a confirmation button before any change is applied.
+  const actionInstructions = `You can modify the athlete's program by including action tags in your response. The athlete will see a confirmation button before any change is applied.
 
 Format: [ACTION:TYPE|param1=value1|param2=value2]
 
@@ -223,57 +263,72 @@ Available actions:
 - [ACTION:REMOVE_EXERCISE|name=Lat Pulldown] — Remove an accessory from today's session
 - [ACTION:UPDATE_REPS|name=Competition Back Squat|sets=4|reps=3] — Change sets/reps for an exercise
 - [ACTION:SET_RPE_TARGET|name=Competition Back Squat|rpe=7.5] — Change RPE target for an exercise
-- [ACTION:MODIFY_SESSION|rpe_offset=-0.5|volume_mult=0.8|modification=Reduced volume due to low readiness] — Adjust entire session
+- [ACTION:MODIFY_SESSION|rpe_offset=-0.5|volume_mult=0.8|modification=Reduced volume] — Adjust entire session
 - [ACTION:SKIP_SESSION] — Skip today's session entirely
+- [ACTION:REMEMBER|kind=INJURY|content=Left shoulder impingement|tags=shoulder,injury|importance=4] — Save a long-term fact about the athlete (kinds: INJURY, PREFERENCE, LIFE_EVENT, PAST_ADVICE, GOAL, CONSTRAINT)
+- [ACTION:FORGET|id=<memoryId>] — Remove a previously stored memory
 
 Rules:
-- Always explain WHY you're suggesting the change before including the action tag.
+- Always explain WHY before including the action tag.
 - Only include action tags when the athlete asks for a change or when you're making a specific recommendation.
 - Never include more than 2 action tags in a single response.
 - Do not include action tags when just answering questions or giving general advice.
 - Never remove competition lifts from a session.
-- For nutrition questions, give detailed advice — no action tags needed.
-`;
+- Use REMEMBER when the athlete shares a durable fact (injury, preference, constraint, goal). Keep content under 140 chars.
+- For nutrition questions, give detailed advice — no action tags needed.`;
 
-  // ── Assemble prompt ───────────────────────────────────────────────────────
-  return [
-    `You are the Lockedin AI coach — an expert powerlifting coach with deep knowledge of programming, nutrition, recovery, and competition preparation.`,
-    ``,
-    `## Athlete Profile`,
-    `Name: ${name}. Sex: ${profile?.sex ?? '?'}. Body weight: ${bodyweight} kg. Target weight class: ${weightClass} kg.`,
-    `Federation: ${federation}. Equipment: ${profile?.equipment ?? 'RAW'}. Training age: ${trainingAge}.`,
-    `Current competition maxes — Squat: ${squat} kg, Bench: ${bench} kg, Deadlift: ${deadlift} kg. Total: ${typeof squat === 'number' && typeof bench === 'number' && typeof deadlift === 'number' ? squat + bench + deadlift : '?'} kg.`,
-    profile?.gymSquat ? `Gym PRs — Squat: ${profile.gymSquat} kg, Bench: ${profile.gymBench} kg, Deadlift: ${profile.gymDeadlift} kg.` : '',
-    `Athlete phenotype — Bottleneck: ${bottleneck}. Responder: ${responder}. Overshooter: ${overshooter ? 'YES (tends to exceed RPE targets)' : 'no'}. Reward system: ${rewardSys}. Peak time: ${profile?.timeToPeakWeeks ?? 3} weeks.`,
-    ``,
-    `## Current Training State`,
-    blockInfo,
-    readinessDetails || (rdScore !== undefined ? `Readiness today: ${rdScore}/100 (${rdLabel}).` : 'No readiness check-in today.'),
-    readinessTrend,
-    bwTrend,
-    meetInfo,
-    ``,
-    sessionInfo ? `## Today's Session\n${sessionInfo}` : '',
-    ``,
-    sessionHistory ? `## Training History\n${sessionHistory}` : '',
-    ``,
-    `## Coaching Knowledge Base`,
-    knowledge,
-    ``,
-    actionInstructions,
-    ``,
-    `## Response Guidelines`,
-    `- Be direct and confident. You are an expert coach, not a chatbot.`,
-    `- Explain the WHY behind every recommendation. Lifters need to understand the reasoning.`,
-    `- When discussing nutrition, give specific numbers (calories, grams, meal examples) tailored to this athlete's weight and goals.`,
-    `- When discussing exercises, reference specific technique cues and common errors.`,
-    `- Reference the athlete's actual data (maxes, readiness, recent sessions) — don't make up numbers.`,
-    `- If the athlete asks about something you can modify (session, maxes, exercises), offer to make the change with an action tag.`,
-    `- For complex questions, structure your response with clear sections.`,
-    `- Keep responses focused. Don't pad with disclaimers or excessive caveats unless safety is involved.`,
-  ]
+  const guidelines = `- Be direct and confident. You are an expert coach, not a chatbot.
+- Explain the WHY behind every recommendation.
+- When discussing nutrition, give specific numbers tailored to this athlete's weight and goals.
+- Reference specific technique cues and common errors for exercises.
+- Reference the athlete's actual data (maxes, readiness, recent sessions) — don't make up numbers.
+- If the athlete asks about something you can modify, offer it with an action tag.
+- Keep responses focused. No filler or excessive caveats unless safety is involved.`;
+
+  // ── Assemble sections in priority order ───────────────────────────────────
+  const sections: PromptSection[] = [
+    {
+      name: 'role',
+      content: 'You are the Lockedin AI coach — an expert powerlifting and strength coach with deep knowledge of programming, nutrition, recovery, and competition preparation. You also support hybrid training that mixes powerlifting with street lifting and weighted calisthenics.',
+    },
+    {
+      name: 'profile',
+      heading: 'Athlete Profile',
+      content: [
+        `Name: ${name}. Sex: ${profile?.sex ?? '?'}. Body weight: ${bodyweight} kg. Target weight class: ${weightClass} kg.`,
+        `Federation: ${federation}. Equipment: ${profile?.equipment ?? 'RAW'}. Training age: ${trainingAge}.`,
+        `Current competition maxes — Squat: ${squat} kg, Bench: ${bench} kg, Deadlift: ${deadlift} kg. Total: ${typeof squat === 'number' && typeof bench === 'number' && typeof deadlift === 'number' ? squat + bench + deadlift : '?'} kg.`,
+        profile?.gymSquat ? `Gym PRs — Squat: ${profile.gymSquat} kg, Bench: ${profile.gymBench} kg, Deadlift: ${profile.gymDeadlift} kg.` : '',
+        `Phenotype — Bottleneck: ${bottleneck}. Responder: ${responder}. Overshooter: ${overshooter ? 'YES' : 'no'}. Reward system: ${rewardSys}. Peak time: ${profile?.timeToPeakWeeks ?? 3} weeks.`,
+        profile?.disciplines?.length
+          ? `Disciplines: ${profile.disciplines.join(', ')}${profile.primaryDiscipline ? ` (primary: ${profile.primaryDiscipline})` : ''}.`
+          : '',
+      ].filter(Boolean).join('\n'),
+    },
+    {
+      name: 'state',
+      heading: 'Current Training State',
+      content: [
+        blockInfo,
+        readinessDetails || (rdScore !== undefined ? `Readiness today: ${rdScore}/100 (${rdLabel}).` : 'No readiness check-in today.'),
+        readinessTrend,
+        bwTrend,
+        meetInfo,
+      ].filter(Boolean).join('\n'),
+    },
+    { name: 'summary',  heading: 'Conversation Summary', content: summaryBody },
+    { name: 'memories', heading: 'Long-Term Memory',     content: memoriesBody },
+    { name: 'session',  heading: "Today's Session",      content: sessionInfo },
+    { name: 'history',  heading: 'Training History',     content: sessionHistory },
+    { name: 'knowledge', heading: 'Coaching Knowledge Base', content: knowledge },
+    { name: 'actions',  heading: 'Actions You Can Take', content: actionInstructions },
+    { name: 'guidelines', heading: 'Response Guidelines', content: guidelines },
+  ];
+
+  return sections
+    .map((s) => renderSection(s, s.name === 'knowledge' ? knowledgeCap : SECTION_CAPS[s.name]))
     .filter(Boolean)
-    .join('\n');
+    .join('\n\n');
 }
 
 // ── Token streaming — async generator queue ───────────────────────────────────

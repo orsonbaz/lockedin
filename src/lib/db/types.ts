@@ -43,6 +43,22 @@ export type ChatRole = 'user' | 'assistant' | 'system';
 
 export type HRVSource = 'MANUAL' | 'APPLE_HEALTH' | 'OURA' | 'WHOOP' | 'POLAR';
 
+export type Discipline = 'POWERLIFTING' | 'STREET_LIFT' | 'CALISTHENICS' | 'HYBRID';
+
+export type MemoryKind =
+  | 'INJURY'
+  | 'PREFERENCE'
+  | 'LIFE_EVENT'
+  | 'PAST_ADVICE'
+  | 'GOAL'
+  | 'CONSTRAINT';
+
+export type ScheduleOverrideKind =
+  | 'UNAVAILABLE'
+  | 'TIME_BOX'
+  | 'EQUIPMENT_ONLY'
+  | 'LOCATION';
+
 // ── Core entities ─────────────────────────────────────────────────────────────
 
 export interface AthleteProfile {
@@ -79,6 +95,47 @@ export interface AthleteProfile {
   onboardingComplete: boolean;
   createdAt: string;             // ISO date string
   updatedAt: string;
+  // Multi-discipline (v4+): what the athlete actually trains
+  disciplines?: Discipline[];    // defaults to ['POWERLIFTING'] on read
+  primaryDiscipline?: Discipline;
+  /** Default day-of-week availability (0=Sun…6=Sat → minutes). Undefined ⇒ unlimited. */
+  weeklyScheduleTemplate?: Record<number, number | undefined>;
+  calisthenicsGoals?: string[];  // free-text: 'muscle_up', 'front_lever', etc.
+}
+
+// ── Long-term coach memory (v4) ──────────────────────────────────────────────
+
+export interface AthleteMemory {
+  id: string;
+  kind: MemoryKind;
+  content: string;
+  tags: string[];               // multi-valued index; lowercase
+  importance: number;           // 1-5
+  createdAt: string;
+  updatedAt?: string;
+  expiresAt?: string;           // ISO date; null/undefined = permanent
+  sourceMessageId?: string;     // chat message that produced this memory
+}
+
+export interface ConversationSummary {
+  id: string;
+  periodStart: string;          // ISO date of earliest message summarized
+  periodEnd: string;            // ISO date of latest message summarized
+  messageCount: number;         // how many messages rolled into this summary
+  summary: string;
+  topics: string[];
+  createdAt: string;
+}
+
+export interface ScheduleOverride {
+  id: string;
+  date: string;                 // YYYY-MM-DD
+  kind: ScheduleOverrideKind;
+  minutesAvailable?: number;    // for TIME_BOX
+  allowedEquipment?: string[];  // for EQUIPMENT_ONLY (e.g. ['BODYWEIGHT','BANDS'])
+  location?: string;            // for LOCATION (free-text)
+  note?: string;
+  createdAt: string;
 }
 
 export interface TrainingCycle {

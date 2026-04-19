@@ -536,6 +536,20 @@ export default function SettingsPage() {
               </button>
             </Row>
           )}
+          <Row>
+            <RowLabel
+              label="Coach Memory"
+              sub="Review what the coach remembers across conversations"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/settings/memory')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Manage
+            </button>
+          </Row>
         </SettingsCard>
 
         {/* ── 5. ABOUT ─────────────────────────────────────────────────── */}

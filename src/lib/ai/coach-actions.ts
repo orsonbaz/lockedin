@@ -22,7 +22,8 @@
 import { db, today, newId } from '@/lib/db/database';
 import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
 import { EXERCISE_BY_ID, EXERCISE_LIBRARY } from '@/lib/exercises/index';
-import type { SessionExercise } from '@/lib/db/types';
+import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
+import { addMemory, removeMemory, isValidMemoryKind } from './memory';
 
 // ── Action Types ──────────────────────────────────────────────────────────────
 
@@ -34,7 +35,9 @@ export type CoachActionType =
   | 'ADD_EXERCISE'
   | 'REMOVE_EXERCISE'
   | 'UPDATE_REPS'
-  | 'SET_RPE_TARGET';
+  | 'SET_RPE_TARGET'
+  | 'REMEMBER'
+  | 'FORGET';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -172,6 +175,29 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    case 'REMEMBER': {
+      const kind = (params.kind || '').toUpperCase();
+      const content = params.content;
+      if (!isValidMemoryKind(kind) || !content) return null;
+      return {
+        type,
+        params: { ...params, kind },
+        displayText: `Remember (${kind.toLowerCase()}): ${content}`,
+        confirmText: 'Save memory',
+      };
+    }
+
+    case 'FORGET': {
+      const id = params.id;
+      if (!id) return null;
+      return {
+        type,
+        params,
+        displayText: `Forget memory ${id.slice(0, 8)}…`,
+        confirmText: 'Forget',
+      };
+    }
+
     default:
       return null;
   }
@@ -198,6 +224,10 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeUpdateReps(action.params);
       case 'SET_RPE_TARGET':
         return await executeSetRpeTarget(action.params);
+      case 'REMEMBER':
+        return await executeRemember(action.params);
+      case 'FORGET':
+        return await executeForget(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -221,13 +251,14 @@ async function executeUpdateMax(params: Record<string, string>): Promise<ActionR
   }
 
   const key = `max${lift!.charAt(0) + lift!.slice(1).toLowerCase()}` as 'maxSquat' | 'maxBench' | 'maxDeadlift';
+  const gymKey = `gym${lift!.charAt(0) + lift!.slice(1).toLowerCase()}` as 'gymSquat' | 'gymBench' | 'gymDeadlift';
   const rounded = roundLoad(value);
 
   await db.profile.update('me', {
     [key]: rounded,
-    [`gym${lift!.charAt(0) + lift!.slice(1).toLowerCase()}`]: rounded,
+    [gymKey]: rounded,
     updatedAt: new Date().toISOString(),
-  });
+  } as Partial<AthleteProfile>);
 
   return { success: true, message: `${lift!.toLowerCase()} max updated to ${rounded} kg.` };
 }
@@ -502,6 +533,31 @@ async function executeSetRpeTarget(params: Record<string, string>): Promise<Acti
   await db.sessions.update(session.id, { status: 'MODIFIED' });
 
   return { success: true, message: `Set RPE target for ${target.name} to ${rpe}.` };
+}
+
+async function executeRemember(params: Record<string, string>): Promise<ActionResult> {
+  const kind = (params.kind || '').toUpperCase();
+  const content = params.content?.trim();
+  if (!isValidMemoryKind(kind) || !content) {
+    return { success: false, message: 'Invalid memory kind or content.' };
+  }
+  const tags = (params.tags || '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const importance = parseInt(params.importance || '3', 10);
+
+  const memory = await addMemory({ kind, content, tags, importance });
+  return { success: true, message: `Saved memory: ${memory.content}` };
+}
+
+async function executeForget(params: Record<string, string>): Promise<ActionResult> {
+  const id = params.id?.trim();
+  if (!id) return { success: false, message: 'Missing memory id.' };
+  const removed = await removeMemory(id);
+  return removed
+    ? { success: true, message: 'Memory removed.' }
+    : { success: false, message: 'Memory not found.' };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

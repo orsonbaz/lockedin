@@ -12,6 +12,9 @@ import type {
   MeetAttempt,
   BodyweightEntry,
   ChatMessage,
+  AthleteMemory,
+  ConversationSummary,
+  ScheduleOverride,
 } from './types';
 import type { UserEquipmentProfile, CustomExercise } from '@/lib/exercises/types';
 
@@ -29,6 +32,9 @@ export class LockedinDB extends Dexie {
   chat!: Table<ChatMessage>;
   equipmentProfile!: Table<UserEquipmentProfile>;
   customExercises!: Table<CustomExercise>;
+  athleteMemory!: Table<AthleteMemory>;
+  conversationSummaries!: Table<ConversationSummary>;
+  scheduleOverrides!: Table<ScheduleOverride>;
 
   constructor() {
     super('LockedinDB');
@@ -58,6 +64,17 @@ export class LockedinDB extends Dexie {
       equipmentProfile: 'id',
       // User-authored exercises; multi-valued index on swapGroups for efficient lookup
       customExercises:  'id, movementPattern, *swapGroups',
+    });
+
+    // v4: long-term coach memory + schedule overrides
+    this.version(4).stores({
+      // Structured athlete facts surfaced into the AI prompt. *tags is a multi-valued
+      // index so we can filter memories by tag efficiently during retrieval.
+      athleteMemory:         'id, kind, createdAt, importance, *tags',
+      // Rolling conversation summaries — replaces the hard "last 10 messages" window.
+      conversationSummaries: 'id, periodEnd, createdAt',
+      // Per-date schedule constraints (unavailable days, time boxes, equipment limits).
+      scheduleOverrides:     'id, date, [date+kind]',
     });
   }
 }
@@ -158,13 +175,14 @@ const TABLE_NAMES = [
   'profile', 'cycles', 'blocks', 'sessions', 'exercises',
   'sets', 'readiness', 'meets', 'attempts', 'bodyweight', 'chat',
   'equipmentProfile', 'customExercises',
+  'athleteMemory', 'conversationSummaries', 'scheduleOverrides',
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
 
 interface BackupPayload {
-  /** v1 = original schema; v2 = added equipmentProfile + customExercises */
-  version: 1 | 2;
+  /** v1 = original schema; v2 = equipmentProfile + customExercises; v3 = memory + schedule overrides */
+  version: 1 | 2 | 3;
   exportedAt: string;
   tables: Partial<Record<TableName, unknown[]>>;
 }
@@ -175,7 +193,7 @@ export async function exportAll(): Promise<BackupPayload> {
   for (const name of TABLE_NAMES) {
     tables[name] = await (db[name] as Table<unknown>).toArray();
   }
-  return { version: 2, exportedAt: new Date().toISOString(), tables };
+  return { version: 3, exportedAt: new Date().toISOString(), tables };
 }
 
 /**
@@ -187,7 +205,7 @@ export async function exportAll(): Promise<BackupPayload> {
 export async function importAll(
   payload: BackupPayload,
 ): Promise<Record<string, number>> {
-  if (payload.version !== 1 && payload.version !== 2) {
+  if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3) {
     throw new Error(`Unsupported backup version: ${payload.version}`);
   }
 

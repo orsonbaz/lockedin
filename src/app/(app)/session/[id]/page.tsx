@@ -21,7 +21,7 @@ import { readinessLabel }                                 from '@/lib/engine/rea
 import { detectMaxUpdate }                                from '@/lib/engine/calc';
 import type { MaxUpdateSuggestion }                       from '@/lib/engine/calc';
 import { C as _C }                                        from '@/lib/theme';
-import type { TrainingSession, TrainingBlock, SessionExercise, SetLog }  from '@/lib/db/types';
+import type { TrainingSession, TrainingBlock, SessionExercise, SetLog, AthleteProfile }  from '@/lib/db/types';
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
@@ -1380,7 +1380,7 @@ export default function SessionPage({
                   void db.profile.update('me', {
                     [key]: maxSuggestion.suggestedMax,
                     updatedAt: new Date().toISOString(),
-                  });
+                  } as Partial<AthleteProfile>);
                   toast(`${maxSuggestion.lift.toLowerCase()} max updated to ${maxSuggestion.suggestedMax} kg`, { duration: 3000 });
                   setMaxSuggestion(null);
                 }}
