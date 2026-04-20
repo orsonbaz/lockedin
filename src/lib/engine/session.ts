@@ -58,6 +58,18 @@ export interface GeneratedSession {
   coachNote: string;         // 1-2 sentence rule-based coaching cue
 }
 
+/** Constraints the generator/abbreviator must satisfy. */
+export interface SessionBudget {
+  /** Hard ceiling on estimated minutes for the entire session. */
+  maxMinutes?: number;
+  /** If present, only exercises whose libraryExerciseId is in this list stay. */
+  allowedEquipment?: string[];
+  /** Coarse movement-pattern allow-list (future use). */
+  allowedPatterns?: string[];
+  /** When true, strip exercises that load the spine axially (deadlifts, squats) — e.g. back-pain day. */
+  excludedSpinalLoad?: boolean;
+}
+
 // ── Main Generator ─────────────────────────────────────────────────────────────
 
 export function generateSession(input: SessionInput): GeneratedSession {
@@ -679,4 +691,107 @@ function detectDupRepeat(sessionNumber: number, weeklyFrequency: number): boolea
     6: [4, 5],
   };
   return (repeatIndices[freq] ?? []).includes(idx);
+}
+
+// ── Time estimation & abbreviation ─────────────────────────────────────────────
+
+/**
+ * Rough time cost for one working set of an exercise. Includes rest between
+ * sets, amortised. Warmups for comp/variation movements are counted via
+ * `WARMUP_MINUTES` so single-set top-singles aren't underestimated.
+ */
+const MINUTES_PER_SET: Record<ExerciseType, number> = {
+  COMPETITION: 4.5,
+  VARIATION:   3.5,
+  ACCESSORY:   2.5,
+};
+
+/** One-time warmup cost per comp/variation exercise slot. */
+const WARMUP_MINUTES: Partial<Record<ExerciseType, number>> = {
+  COMPETITION: 10,
+  VARIATION:   4,
+};
+
+export function estimateExerciseMinutes(ex: Pick<GeneratedExercise, 'sets' | 'exerciseType'>): number {
+  const warmup = WARMUP_MINUTES[ex.exerciseType] ?? 0;
+  return warmup + ex.sets * MINUTES_PER_SET[ex.exerciseType];
+}
+
+export function estimateSessionMinutes(
+  exercises: Array<Pick<GeneratedExercise, 'sets' | 'exerciseType'>>,
+): number {
+  return exercises.reduce((sum, e) => sum + estimateExerciseMinutes(e), 0);
+}
+
+/**
+ * Trim a generated session to fit inside `budget.maxMinutes`.
+ *
+ * Rules:
+ *   - Competition lifts are never removed.
+ *   - Variation lifts get trimmed (sets) before accessories are touched.
+ *   - Accessories drop from the bottom of the order list first (accessory
+ *     order reflects priority — lats/triceps pushdowns etc. come last).
+ *   - If still over budget after dropping all accessories, accessory sets on
+ *     remaining rows are reduced, then variation sets.
+ *   - Comp sets reduce only as a last resort and never below 2 (1 for REALIZATION top-single).
+ *   - Returns the trimmed session with `modifications` describing what was cut.
+ */
+export function abbreviateSession(
+  session: GeneratedSession,
+  budget: SessionBudget,
+): GeneratedSession {
+  const cap = budget.maxMinutes;
+  if (!cap || cap <= 0) return session;
+
+  // Deep-enough copy: exercises are re-created so callers can safely mutate.
+  const exercises: GeneratedExercise[] = session.exercises.map((e) => ({ ...e }));
+  const modifications: string[] = [...session.modifications];
+
+  const minutes = () => estimateSessionMinutes(exercises);
+
+  if (minutes() <= cap) return session;
+
+  // 1. Reduce accessory sets (bottom-up) until each is at ≥1, while over budget.
+  const droppedNames: string[] = [];
+
+  // Pass A: drop accessories from the end until we fit or only comp/variation remain.
+  while (minutes() > cap) {
+    const lastAccessoryIdx = [...exercises]
+      .map((e, i) => ({ e, i }))
+      .reverse()
+      .find(({ e }) => e.exerciseType === 'ACCESSORY')?.i;
+    if (lastAccessoryIdx === undefined) break;
+    droppedNames.push(exercises[lastAccessoryIdx].name);
+    exercises.splice(lastAccessoryIdx, 1);
+  }
+
+  // Pass B: if still over, reduce variation sets to a minimum of 2.
+  if (minutes() > cap) {
+    for (const e of exercises) {
+      if (e.exerciseType !== 'VARIATION') continue;
+      while (e.sets > 2 && minutes() > cap) e.sets -= 1;
+    }
+  }
+
+  // Pass C: last resort — reduce comp sets. Floor at 2 (or 1 for top-single peak sessions).
+  if (minutes() > cap) {
+    for (const e of exercises) {
+      if (e.exerciseType !== 'COMPETITION') continue;
+      const floor = e.reps === 1 ? 1 : 2;
+      while (e.sets > floor && minutes() > cap) e.sets -= 1;
+    }
+  }
+
+  // Re-number the order field to stay contiguous after deletions.
+  exercises.forEach((e, i) => { e.order = i + 1; });
+
+  if (droppedNames.length > 0) {
+    modifications.push(
+      `Abbreviated to fit ${cap} min — dropped ${droppedNames.join(', ')}.`,
+    );
+  } else {
+    modifications.push(`Abbreviated to fit ${cap} min — reduced sets to fit budget.`);
+  }
+
+  return { ...session, exercises, modifications };
 }

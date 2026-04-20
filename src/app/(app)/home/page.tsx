@@ -14,12 +14,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter }                    from 'next/navigation';
 import { Skeleton }                     from '@/components/ui/skeleton';
-import { Settings, ChevronRight }       from 'lucide-react';
+import { toast }                        from 'sonner';
+import { Settings, ChevronRight, CalendarClock, Clock } from 'lucide-react';
 import { db, today }                    from '@/lib/db/database';
 import { readinessLabel }               from '@/lib/engine/readiness';
 import { RingProgress }                 from '@/components/lockedin/RingProgress';
 import { C }                            from '@/lib/theme';
 import { greeting, daysUntil }          from '@/lib/date-utils';
+import { loadTodayBudget, describeDay, type DayBudget } from '@/lib/engine/schedule';
+import { executeAction } from '@/lib/ai/coach-actions';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
   SessionExercise, TrainingBlock, TrainingCycle, Meet,
@@ -49,6 +52,7 @@ interface HomeData {
   upcomingMeet:   Meet | null;
   recentSessions: Array<{ session: TrainingSession; volume: number; avgRpe?: number }>;
   loggedSetCount: number;
+  todayBudget:    DayBudget | null;
 }
 
 export default function HomePage() {
@@ -58,7 +62,9 @@ export default function HomePage() {
   const [data,    setData]    = useState<HomeData>({
     profile: null, readiness: null, session: null, exercises: [],
     block: null, cycle: null, upcomingMeet: null, recentSessions: [], loggedSetCount: 0,
+    todayBudget: null,
   });
+  const [abbreviating, setAbbreviating] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -71,11 +77,12 @@ export default function HomePage() {
         return;
       }
 
-      const [profile, readiness, activeCycle, upcomingMeet] = await Promise.all([
+      const [profile, readiness, activeCycle, upcomingMeet, todayBudget] = await Promise.all([
         db.profile.get('me'),
         Promise.resolve(existingCheckin),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
         db.meets.filter((m) => m.status === 'UPCOMING').first(),
+        loadTodayBudget(),
       ]);
 
       const session = (await db.sessions.where('scheduledDate').equals(todayStr).first()) ?? null;
@@ -126,6 +133,7 @@ export default function HomePage() {
         upcomingMeet: upcomingMeet ?? null,
         recentSessions,
         loggedSetCount,
+        todayBudget: todayBudget ?? null,
       });
       setLoading(false);
     }
@@ -200,7 +208,32 @@ export default function HomePage() {
     );
   }
 
-  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions, loggedSetCount } = data;
+  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions, loggedSetCount, todayBudget } = data;
+  const scheduleCap = todayBudget?.minutes;
+  const isUnavailable = scheduleCap === null;
+  const isTimeBoxed = typeof scheduleCap === 'number';
+  const hasOverride = !!todayBudget && todayBudget.overrides.length > 0;
+
+  async function handleAbbreviate() {
+    if (!session || !isTimeBoxed) return;
+    setAbbreviating(true);
+    try {
+      const res = await executeAction({
+        type: 'ABBREVIATE_TODAY',
+        params: { minutes: String(scheduleCap) },
+        displayText: '',
+        confirmText: '',
+      });
+      if (res.success) {
+        toast.success(res.message);
+        setTimeout(() => window.location.reload(), 400);
+      } else {
+        toast.error(res.message);
+      }
+    } finally {
+      setAbbreviating(false);
+    }
+  }
   const rdScore   = readiness?.readinessScore ?? 0;
   const rdInfo    = readinessLabel(rdScore);
   const hasCheckin = readiness !== null;
@@ -304,6 +337,37 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* ── 2b. SCHEDULE OVERRIDE BANNER ──────────────────────────────── */}
+        {hasOverride && (
+          <button
+            type="button"
+            onClick={() => router.push('/schedule')}
+            className="w-full rounded-2xl p-3 mb-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+            style={{
+              backgroundColor: C.surface,
+              border: `1px solid ${isUnavailable ? C.red : C.gold}`,
+              textAlign: 'left',
+            }}
+          >
+            <div
+              className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: `${isUnavailable ? C.red : C.gold}20` }}
+            >
+              <CalendarClock size={18} color={isUnavailable ? C.red : C.gold} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: isUnavailable ? C.red : C.gold }}>
+                {isUnavailable ? 'Rest day' : 'Time-boxed'}
+              </p>
+              <p className="text-sm truncate" style={{ color: C.text }}>
+                {todayBudget ? describeDay(todayBudget) : ''}
+                {todayBudget?.note ? ` · ${todayBudget.note}` : ''}
+              </p>
+            </div>
+            <ChevronRight size={18} color={C.muted} />
+          </button>
+        )}
+
         {/* ── 3. TODAY'S SESSION ────────────────────────────────────────── */}
         {isRest ? (
           <div
@@ -399,6 +463,18 @@ export default function HomePage() {
                   >
                     {isModified ? 'Resume Session →' : 'Start Session →'}
                   </button>
+                  {isTimeBoxed && session!.modality !== 'ABBREVIATED' && estDuration > (scheduleCap as number) && (
+                    <button
+                      type="button"
+                      onClick={handleAbbreviate}
+                      disabled={abbreviating}
+                      className="w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60"
+                      style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+                    >
+                      <Clock size={13} />
+                      {abbreviating ? 'Trimming…' : `Abbreviate to ${scheduleCap} min`}
+                    </button>
+                  )}
                   {isModified && loggedSetCount > 0 && (
                     <p className="text-xs text-center" style={{ color: C.muted }}>
                       {loggedSetCount} set{loggedSetCount !== 1 ? 's' : ''} logged

@@ -550,6 +550,20 @@ export default function SettingsPage() {
               Manage
             </button>
           </Row>
+          <Row>
+            <RowLabel
+              label="Schedule"
+              sub="Busy week, travel, time-boxed sessions"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/schedule')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Open
+            </button>
+          </Row>
         </SettingsCard>
 
         {/* ── 5. ABOUT ─────────────────────────────────────────────────── */}

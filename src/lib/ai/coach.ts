@@ -267,6 +267,8 @@ Available actions:
 - [ACTION:SKIP_SESSION] — Skip today's session entirely
 - [ACTION:REMEMBER|kind=INJURY|content=Left shoulder impingement|tags=shoulder,injury|importance=4] — Save a long-term fact about the athlete (kinds: INJURY, PREFERENCE, LIFE_EVENT, PAST_ADVICE, GOAL, CONSTRAINT)
 - [ACTION:FORGET|id=<memoryId>] — Remove a previously stored memory
+- [ACTION:ABBREVIATE_TODAY|minutes=30] — Trim today's session to fit a minute budget (keeps comp lifts, drops accessories first)
+- [ACTION:SET_WEEK_AVAILABILITY|minutes=45|week_start=2026-04-20|off_days=2026-04-22,2026-04-23|note=Moving week] — Cap this week's daily training minutes and flag unavailable days
 
 Rules:
 - Always explain WHY before including the action tag.
@@ -275,6 +277,7 @@ Rules:
 - Do not include action tags when just answering questions or giving general advice.
 - Never remove competition lifts from a session.
 - Use REMEMBER when the athlete shares a durable fact (injury, preference, constraint, goal). Keep content under 140 chars.
+- Use ABBREVIATE_TODAY when the athlete says they're short on time today. Use SET_WEEK_AVAILABILITY for multi-day constraints (travel, busy week).
 - For nutrition questions, give detailed advice — no action tags needed.`;
 
   const guidelines = `- Be direct and confident. You are an expert coach, not a chatbot.

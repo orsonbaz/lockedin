@@ -45,6 +45,13 @@ export type HRVSource = 'MANUAL' | 'APPLE_HEALTH' | 'OURA' | 'WHOOP' | 'POLAR';
 
 export type Discipline = 'POWERLIFTING' | 'STREET_LIFT' | 'CALISTHENICS' | 'HYBRID';
 
+/** How today's session will actually be run — governs the abbreviation logic. */
+export type SessionModality =
+  | 'FULL'             // standard generated session, full budget
+  | 'ABBREVIATED'      // trimmed to fit a minute budget
+  | 'BODYWEIGHT_ONLY'  // no barbell available (travel, home)
+  | 'TRAVEL';          // abbreviated + bodyweight hints
+
 export type MemoryKind =
   | 'INJURY'
   | 'PREFERENCE'
@@ -171,6 +178,10 @@ export interface TrainingSession {
   aiModifications?: string;      // JSON string of changes made
   coachNote?: string;            // shown to athlete
   completedAt?: string;
+  // Phase 2 (optional, additive — no index change)
+  discipline?: Discipline;
+  estimatedMinutes?: number;     // budgeted time for the session
+  modality?: SessionModality;    // how the athlete will actually run it
 }
 
 export interface SessionExercise {

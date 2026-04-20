@@ -24,6 +24,8 @@ import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
 import { EXERCISE_BY_ID, EXERCISE_LIBRARY } from '@/lib/exercises/index';
 import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
 import { addMemory, removeMemory, isValidMemoryKind } from './memory';
+import { abbreviateSession, estimateSessionMinutes, type GeneratedExercise } from '@/lib/engine/session';
+import { applyWeekTimeBox, mondayOf, addOverride } from '@/lib/engine/schedule';
 
 // ── Action Types ──────────────────────────────────────────────────────────────
 
@@ -37,7 +39,9 @@ export type CoachActionType =
   | 'UPDATE_REPS'
   | 'SET_RPE_TARGET'
   | 'REMEMBER'
-  | 'FORGET';
+  | 'FORGET'
+  | 'ABBREVIATE_TODAY'
+  | 'SET_WEEK_AVAILABILITY';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -198,6 +202,29 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    case 'ABBREVIATE_TODAY': {
+      const minutes = parseInt(params.minutes || '0', 10);
+      if (!minutes || minutes < 10 || minutes > 240) return null;
+      return {
+        type,
+        params,
+        displayText: `Abbreviate today's session to ${minutes} min`,
+        confirmText: 'Abbreviate',
+      };
+    }
+
+    case 'SET_WEEK_AVAILABILITY': {
+      const minutes = parseInt(params.minutes || '0', 10);
+      const weekStart = params.week_start || '';
+      if (!minutes || minutes < 10 || minutes > 240) return null;
+      return {
+        type,
+        params,
+        displayText: `Cap this week to ${minutes} min/day${params.note ? ` · ${params.note}` : ''}`,
+        confirmText: 'Apply to week',
+      };
+    }
+
     default:
       return null;
   }
@@ -228,6 +255,10 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeRemember(action.params);
       case 'FORGET':
         return await executeForget(action.params);
+      case 'ABBREVIATE_TODAY':
+        return await executeAbbreviateToday(action.params);
+      case 'SET_WEEK_AVAILABILITY':
+        return await executeSetWeekAvailability(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -558,6 +589,107 @@ async function executeForget(params: Record<string, string>): Promise<ActionResu
   return removed
     ? { success: true, message: 'Memory removed.' }
     : { success: false, message: 'Memory not found.' };
+}
+
+async function executeAbbreviateToday(params: Record<string, string>): Promise<ActionResult> {
+  const minutes = parseInt(params.minutes || '0', 10);
+  if (!minutes || minutes < 10 || minutes > 240) {
+    return { success: false, message: 'Provide a minute budget between 10 and 240.' };
+  }
+
+  const session = await db.sessions
+    .where('scheduledDate').equals(today())
+    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
+    .first();
+  if (!session) return { success: false, message: 'No active session today.' };
+
+  const exercises = await db.exercises.where('sessionId').equals(session.id).toArray();
+  exercises.sort((a, b) => a.order - b.order);
+
+  // Shape DB exercises into the GeneratedSession form abbreviateSession expects.
+  const generatedExercises: GeneratedExercise[] = exercises.map((e) => ({
+    name: e.name,
+    exerciseType: e.exerciseType,
+    setStructure: e.setStructure,
+    sets: e.sets,
+    reps: e.reps,
+    rpeTarget: e.rpeTarget,
+    estimatedLoadKg: e.estimatedLoadKg,
+    order: e.order,
+    notes: e.notes,
+    libraryExerciseId: e.libraryExerciseId,
+  }));
+
+  const before = estimateSessionMinutes(generatedExercises);
+
+  const abbreviated = abbreviateSession(
+    {
+      sessionType: session.sessionType,
+      primaryLift: session.primaryLift,
+      exercises: generatedExercises,
+      modifications: [],
+      coachNote: '',
+    },
+    { maxMinutes: minutes },
+  );
+
+  const after = estimateSessionMinutes(abbreviated.exercises);
+  const keptLibIds = new Set(abbreviated.exercises.map((e) => e.libraryExerciseId));
+  const keptNames = new Set(abbreviated.exercises.map((e) => e.name));
+
+  // Delete exercises that were cut; update sets on the survivors.
+  for (const ex of exercises) {
+    const stillIn = ex.libraryExerciseId
+      ? keptLibIds.has(ex.libraryExerciseId)
+      : keptNames.has(ex.name);
+    if (!stillIn) {
+      await db.exercises.delete(ex.id);
+      continue;
+    }
+    const match = abbreviated.exercises.find((a) =>
+      a.libraryExerciseId === ex.libraryExerciseId && a.name === ex.name,
+    );
+    if (match && match.sets !== ex.sets) {
+      await db.exercises.update(ex.id, { sets: match.sets });
+    }
+  }
+
+  await db.sessions.update(session.id, {
+    status: 'MODIFIED',
+    modality: 'ABBREVIATED',
+    estimatedMinutes: Math.round(after),
+    aiModifications: JSON.stringify(abbreviated.modifications),
+  });
+
+  return {
+    success: true,
+    message: `Abbreviated: ~${Math.round(before)} min → ~${Math.round(after)} min.`,
+  };
+}
+
+async function executeSetWeekAvailability(params: Record<string, string>): Promise<ActionResult> {
+  const minutes = parseInt(params.minutes || '0', 10);
+  if (!minutes || minutes < 10 || minutes > 240) {
+    return { success: false, message: 'Provide a minute budget between 10 and 240.' };
+  }
+  const weekStart = params.week_start?.trim() || mondayOf(today());
+  const note = params.note?.trim() || undefined;
+
+  // Per-day unavailable list (comma-separated YYYY-MM-DD).
+  const offDays = (params.off_days || '')
+    .split(',')
+    .map((d) => d.trim())
+    .filter(Boolean);
+
+  for (const date of offDays) {
+    await addOverride({ date, kind: 'UNAVAILABLE', note });
+  }
+
+  const created = await applyWeekTimeBox(weekStart, minutes, note);
+  return {
+    success: true,
+    message: `Week of ${weekStart} capped at ${minutes} min/day (${created.length} days).`,
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
