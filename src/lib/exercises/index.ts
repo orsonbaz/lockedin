@@ -15,6 +15,7 @@ import { horizontalPullExercises } from './library/horizontal-pull';
 import { verticalPullExercises } from './library/vertical-pull';
 import { singleLegExercises }    from './library/single-leg';
 import { caryAndCoreExercises }  from './library/carry-core';
+import { calisthenicsExercises } from './library/calisthenics';
 
 // ── Flat array ────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ export const EXERCISE_LIBRARY: LibraryExercise[] = [
   ...verticalPullExercises,
   ...singleLegExercises,
   ...caryAndCoreExercises,
+  ...calisthenicsExercises,
 ];
 
 // ── O(1) id lookup ────────────────────────────────────────────────────────────

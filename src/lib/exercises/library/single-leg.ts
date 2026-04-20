@@ -144,7 +144,7 @@ export const singleLegExercises: LibraryExercise[] = [
       isWeightedCalisthenics: true,
     },
     coachingNotes: 'Full single-leg squat to the bottom. Demands excellent ankle mobility. Progress from box pistols before going freestanding.',
-    swapGroups: [SWAP_GROUPS.SINGLE_LEG_PISTOL],
+    swapGroups: [SWAP_GROUPS.SINGLE_LEG_PISTOL, SWAP_GROUPS.CALISTHENICS_SKILL],
     isCustom: false,
   },
 

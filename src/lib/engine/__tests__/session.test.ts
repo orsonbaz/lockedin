@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateSession } from '../session';
+import { generateSession, abbreviateSession, estimateSessionMinutes } from '../session';
 import type { AthleteProfile, TrainingBlock } from '@/lib/db/types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -889,5 +889,60 @@ describe('generateSession — progressive RPE ramp', () => {
     const compOver   = overshooter.exercises.find(e => e.exerciseType === 'COMPETITION')!;
 
     expect(compOver.rpeTarget).toBeLessThan(compNormal.rpeTarget);
+  });
+});
+
+// ── abbreviateSession ────────────────────────────────────────────────────────
+
+describe('abbreviateSession', () => {
+  const block = makeBlock('ACCUMULATION');
+
+  function base() {
+    return generateSession({
+      profile: baseProfile,
+      block,
+      weekDayOfWeek: mondayDOW,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+    });
+  }
+
+  it('is a no-op when the session already fits the budget', () => {
+    const session = base();
+    const before = session.exercises.length;
+    const out = abbreviateSession(session, { maxMinutes: 999 });
+    expect(out.exercises.length).toBe(before);
+    expect(out.modifications).toEqual(session.modifications);
+  });
+
+  it('drops accessories first when over budget', () => {
+    const session = base();
+    const out = abbreviateSession(session, { maxMinutes: 30 });
+
+    // Comp lift must survive.
+    const comp = out.exercises.find((e) => e.exerciseType === 'COMPETITION');
+    expect(comp).toBeDefined();
+
+    // Fewer accessories than the full session.
+    const fullAccessories = session.exercises.filter((e) => e.exerciseType === 'ACCESSORY').length;
+    const trimmedAccessories = out.exercises.filter((e) => e.exerciseType === 'ACCESSORY').length;
+    expect(trimmedAccessories).toBeLessThan(fullAccessories);
+
+    expect(out.modifications.some((m) => m.includes('Abbreviated'))).toBe(true);
+  });
+
+  it('preserves competition lifts even at very tight budgets', () => {
+    const session = base();
+    const out = abbreviateSession(session, { maxMinutes: 15 });
+    const comp = out.exercises.find((e) => e.exerciseType === 'COMPETITION');
+    expect(comp).toBeDefined();
+  });
+
+  it('estimated minutes shrinks after abbreviation', () => {
+    const session = base();
+    const before = estimateSessionMinutes(session.exercises);
+    const out = abbreviateSession(session, { maxMinutes: 30 });
+    const after = estimateSessionMinutes(out.exercises);
+    expect(after).toBeLessThan(before);
   });
 });

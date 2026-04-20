@@ -17,6 +17,7 @@ import {
   estimateMaxFromRpe,
   detectMaxUpdate,
   detectNeuralGap,
+  prescribeHoldSeconds,
 } from '../calc';
 
 // ── estimateMax ───────────────────────────────────────────────────────────────
@@ -560,5 +561,28 @@ describe('detectNeuralGap', () => {
 
   it('returns 0 when meet max is 0 (guard)', () => {
     expect(detectNeuralGap(0, 200)).toBe(0);
+  });
+});
+
+// ── prescribeHoldSeconds ─────────────────────────────────────────────────────
+
+describe('prescribeHoldSeconds', () => {
+  it('returns the full target at RPE 10', () => {
+    expect(prescribeHoldSeconds(15, 10)).toBe(15);
+  });
+
+  it('scales down proportionally at lower RPE', () => {
+    expect(prescribeHoldSeconds(20, 7)).toBe(14); // 70%
+    expect(prescribeHoldSeconds(20, 8)).toBe(16); // 80%
+  });
+
+  it('floors at 3s for very short prescriptions', () => {
+    expect(prescribeHoldSeconds(5, 5)).toBe(3);
+    expect(prescribeHoldSeconds(3, 5)).toBe(3);
+  });
+
+  it('clamps RPE above 10 to 10 and below 5 to 5', () => {
+    expect(prescribeHoldSeconds(20, 12)).toBe(20);
+    expect(prescribeHoldSeconds(20, 4)).toBe(10); // 50%
   });
 });

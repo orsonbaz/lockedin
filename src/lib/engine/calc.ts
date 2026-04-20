@@ -381,6 +381,28 @@ export function detectNeuralGap(meetMax: number, gymMax: number): number {
   return Math.round(((gymMax - meetMax) / meetMax) * 100);
 }
 
+// ── Isometric hold prescription ──────────────────────────────────────────────
+
+/**
+ * Prescribe hold seconds for an isometric skill level (front lever, planche,
+ * L-sit, etc.). Scales the level's target by RPE so the coach can dial the
+ * hold down on a low-readiness day without changing the level itself.
+ *
+ * Examples:
+ *   prescribeHoldSeconds(15, 7.5) ≈ 11s  (75%)
+ *   prescribeHoldSeconds(15, 9)   ≈ 14s  (93%)
+ *   prescribeHoldSeconds(15, 10)  === 15  (100%)
+ *
+ * Floored at 3s — hold any less and the set is too short to build capacity.
+ */
+export function prescribeHoldSeconds(targetSeconds: number, rpe: number): number {
+  const clampedRpe = Math.max(5, Math.min(10, rpe));
+  // Map RPE 10→1.00, RPE 7→0.70, RPE 5→0.50. Linear for simplicity.
+  const factor = 0.1 * clampedRpe;
+  const seconds = Math.round(targetSeconds * factor);
+  return Math.max(3, seconds);
+}
+
 // ── Attempt Selection ──────────────────────────────────────────────────────────
 
 /**

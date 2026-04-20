@@ -77,6 +77,16 @@ export const SWAP_GROUPS = {
   CORE_FLEX:          'core_flex',
   /** Rotational / anti-rotation core. */
   CORE_ROTATION:      'core_rotation',
+
+  // ── Street lift / calisthenics ───────────────────────────────────────────
+  /** Street-lift weighted pulls (weighted pull-up, weighted muscle-up). */
+  STREET_LIFT_PULL:   'street_lift_pull',
+  /** Street-lift weighted dips / pressing. */
+  STREET_LIFT_DIP:    'street_lift_dip',
+  /** Bodyweight skill holds (front lever, planche, L-sit). */
+  CALISTHENICS_HOLD:  'calisthenics_hold',
+  /** Bodyweight skill dynamic work (muscle-up, pistol squat, handstand pushup). */
+  CALISTHENICS_SKILL: 'calisthenics_skill',
 } as const;
 
 export type SwapGroupId = typeof SWAP_GROUPS[keyof typeof SWAP_GROUPS];
