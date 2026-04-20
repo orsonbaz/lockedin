@@ -16,6 +16,7 @@ import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
 import { buildMemorySection, buildSummarySection } from './memory';
+import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -39,6 +40,7 @@ const SECTION_CAPS = {
   memories:   1500,
   session:    700,
   history:    600,
+  weakPoints: 400,
   schedule:   400,
   actions:    900,
   guidelines: 500,
@@ -245,10 +247,11 @@ export async function buildSystemPrompt(
   }
   const knowledgeCap = isGroqMode ? 6000 : 2000;
 
-  // ── Long-term memory + rolling conversation summary ────────────────────────
-  const [memoriesBody, summaryBody] = await Promise.all([
+  // ── Long-term memory + rolling conversation summary + weak points ─────────
+  const [memoriesBody, summaryBody, weakPointsBody] = await Promise.all([
     buildMemorySection(userMessage, SECTION_CAPS.memories),
     buildSummarySection(SECTION_CAPS.summary),
+    buildWeakPointsSection(SECTION_CAPS.weakPoints),
   ]);
 
   // ── Action instructions ───────────────────────────────────────────────────
@@ -323,6 +326,7 @@ Rules:
     { name: 'memories', heading: 'Long-Term Memory',     content: memoriesBody },
     { name: 'session',  heading: "Today's Session",      content: sessionInfo },
     { name: 'history',  heading: 'Training History',     content: sessionHistory },
+    { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
     { name: 'knowledge', heading: 'Coaching Knowledge Base', content: knowledge },
     { name: 'actions',  heading: 'Actions You Can Take', content: actionInstructions },
     { name: 'guidelines', heading: 'Response Guidelines', content: guidelines },
