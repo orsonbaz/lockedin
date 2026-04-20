@@ -15,6 +15,9 @@ import type {
   AthleteMemory,
   ConversationSummary,
   ScheduleOverride,
+  NutritionProfile,
+  NutritionLog,
+  NutritionTarget,
 } from './types';
 import type { UserEquipmentProfile, CustomExercise } from '@/lib/exercises/types';
 
@@ -35,6 +38,9 @@ export class LockedinDB extends Dexie {
   athleteMemory!: Table<AthleteMemory>;
   conversationSummaries!: Table<ConversationSummary>;
   scheduleOverrides!: Table<ScheduleOverride>;
+  nutritionProfile!: Table<NutritionProfile>;
+  nutritionLogs!: Table<NutritionLog>;
+  nutritionTargets!: Table<NutritionTarget>;
 
   constructor() {
     super('LockedinDB');
@@ -75,6 +81,13 @@ export class LockedinDB extends Dexie {
       conversationSummaries: 'id, periodEnd, createdAt',
       // Per-date schedule constraints (unavailable days, time boxes, equipment limits).
       scheduleOverrides:     'id, date, [date+kind]',
+    });
+
+    // v5: nutrition — singleton profile + daily logs + resolved targets.
+    this.version(5).stores({
+      nutritionProfile: 'id',
+      nutritionLogs:    'id, date, mealType',
+      nutritionTargets: 'id, date',
     });
   }
 }
@@ -176,13 +189,14 @@ const TABLE_NAMES = [
   'sets', 'readiness', 'meets', 'attempts', 'bodyweight', 'chat',
   'equipmentProfile', 'customExercises',
   'athleteMemory', 'conversationSummaries', 'scheduleOverrides',
+  'nutritionProfile', 'nutritionLogs', 'nutritionTargets',
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
 
 interface BackupPayload {
-  /** v1 = original schema; v2 = equipmentProfile + customExercises; v3 = memory + schedule overrides */
-  version: 1 | 2 | 3;
+  /** v1 = original; v2 = equipmentProfile + customExercises; v3 = memory + schedule; v4 = nutrition */
+  version: 1 | 2 | 3 | 4;
   exportedAt: string;
   tables: Partial<Record<TableName, unknown[]>>;
 }
@@ -193,7 +207,7 @@ export async function exportAll(): Promise<BackupPayload> {
   for (const name of TABLE_NAMES) {
     tables[name] = await (db[name] as Table<unknown>).toArray();
   }
-  return { version: 3, exportedAt: new Date().toISOString(), tables };
+  return { version: 4, exportedAt: new Date().toISOString(), tables };
 }
 
 /**
@@ -205,7 +219,7 @@ export async function exportAll(): Promise<BackupPayload> {
 export async function importAll(
   payload: BackupPayload,
 ): Promise<Record<string, number>> {
-  if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3) {
+  if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 && payload.version !== 4) {
     throw new Error(`Unsupported backup version: ${payload.version}`);
   }
 

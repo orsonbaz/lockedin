@@ -66,6 +66,12 @@ export type ScheduleOverrideKind =
   | 'EQUIPMENT_ONLY'
   | 'LOCATION';
 
+export type DietPhase = 'CUT' | 'MAINTAIN' | 'BULK' | 'RECOMP';
+
+export type BmrFormula = 'MIFFLIN_ST_JEOR' | 'KATCH_MCARDLE';
+
+export type NutritionMealType = 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK';
+
 // ── Core entities ─────────────────────────────────────────────────────────────
 
 export interface AthleteProfile {
@@ -143,6 +149,50 @@ export interface ScheduleOverride {
   location?: string;            // for LOCATION (free-text)
   note?: string;
   createdAt: string;
+}
+
+// ── Nutrition (v5) ───────────────────────────────────────────────────────────
+
+export interface NutritionProfile {
+  id: 'me';                     // singleton
+  dietPhase: DietPhase;
+  bmrFormula: BmrFormula;
+  activityFactor: number;       // 1.2–1.9 (sedentary → very active)
+  bodyFatPercent?: number;      // needed for KATCH_MCARDLE
+  trainingDayKcal: number;
+  restDayKcal: number;
+  refeedDayKcal: number;
+  proteinGPerKg: number;
+  fatGPerKg: number;
+  carbGPerKg: number;
+  refeedFrequencyDays: number;  // 0 disables refeeds
+  lastRefeedDate?: string;      // YYYY-MM-DD
+  updatedAt: string;
+}
+
+export interface NutritionLog {
+  id: string;
+  date: string;                 // YYYY-MM-DD
+  mealType: NutritionMealType;
+  description?: string;
+  kcal?: number;
+  proteinG?: number;
+  carbG?: number;
+  fatG?: number;
+  loggedAt: string;
+}
+
+export interface NutritionTarget {
+  id: string;                   // one per date
+  date: string;                 // YYYY-MM-DD
+  kcal: number;
+  proteinG: number;
+  carbG: number;
+  fatG: number;
+  isTrainingDay: boolean;
+  isRefeed: boolean;
+  note?: string;
+  resolvedAt: string;
 }
 
 export interface TrainingCycle {
