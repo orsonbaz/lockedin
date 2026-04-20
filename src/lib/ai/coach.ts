@@ -17,6 +17,7 @@ import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
 import { buildMemorySection, buildSummarySection } from './memory';
 import { buildWeakPointsSection } from '@/lib/engine/weak-points';
+import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -41,6 +42,7 @@ const SECTION_CAPS = {
   session:    700,
   history:    600,
   weakPoints: 400,
+  nutrition:  200,
   schedule:   400,
   actions:    900,
   guidelines: 500,
@@ -247,11 +249,12 @@ export async function buildSystemPrompt(
   }
   const knowledgeCap = isGroqMode ? 6000 : 2000;
 
-  // ── Long-term memory + rolling conversation summary + weak points ─────────
-  const [memoriesBody, summaryBody, weakPointsBody] = await Promise.all([
+  // ── Long-term memory + rolling conversation summary + weak points + nutrition ─
+  const [memoriesBody, summaryBody, weakPointsBody, nutritionBody] = await Promise.all([
     buildMemorySection(userMessage, SECTION_CAPS.memories),
     buildSummarySection(SECTION_CAPS.summary),
     buildWeakPointsSection(SECTION_CAPS.weakPoints),
+    buildNutritionSection(SECTION_CAPS.nutrition),
   ]);
 
   // ── Action instructions ───────────────────────────────────────────────────
@@ -272,6 +275,9 @@ Available actions:
 - [ACTION:FORGET|id=<memoryId>] — Remove a previously stored memory
 - [ACTION:ABBREVIATE_TODAY|minutes=30] — Trim today's session to fit a minute budget (keeps comp lifts, drops accessories first)
 - [ACTION:SET_WEEK_AVAILABILITY|minutes=45|week_start=2026-04-20|off_days=2026-04-22,2026-04-23|note=Moving week] — Cap this week's daily training minutes and flag unavailable days
+- [ACTION:LOG_NUTRITION|meal=BREAKFAST|kcal=620|protein=45|carbs=70|fat=18|description=oats + whey] — Log a meal for today (meal: BREAKFAST/LUNCH/DINNER/SNACK)
+- [ACTION:SET_NUTRITION_TARGETS|training_kcal=3000|rest_kcal=2600|refeed_kcal=3600|phase=MAINTAIN] — Update daily kcal targets (phase: CUT/MAINTAIN/BULK/RECOMP)
+- [ACTION:SCHEDULE_REFEED|date=2026-04-20] — Mark today (or another date) as a refeed day
 
 Rules:
 - Always explain WHY before including the action tag.
@@ -281,7 +287,7 @@ Rules:
 - Never remove competition lifts from a session.
 - Use REMEMBER when the athlete shares a durable fact (injury, preference, constraint, goal). Keep content under 140 chars.
 - Use ABBREVIATE_TODAY when the athlete says they're short on time today. Use SET_WEEK_AVAILABILITY for multi-day constraints (travel, busy week).
-- For nutrition questions, give detailed advice — no action tags needed.`;
+- For nutrition: reference the "Nutrition Target Today" block when it's present. Use LOG_NUTRITION when the athlete tells you what they ate, SET_NUTRITION_TARGETS when they ask to update kcal/macros, and SCHEDULE_REFEED when a refeed day is warranted.`;
 
   const guidelines = `- Be direct and confident. You are an expert coach, not a chatbot.
 - Explain the WHY behind every recommendation.
@@ -327,6 +333,7 @@ Rules:
     { name: 'session',  heading: "Today's Session",      content: sessionInfo },
     { name: 'history',  heading: 'Training History',     content: sessionHistory },
     { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
+    { name: 'nutrition', heading: 'Nutrition Target Today', content: nutritionBody },
     { name: 'knowledge', heading: 'Coaching Knowledge Base', content: knowledge },
     { name: 'actions',  heading: 'Actions You Can Take', content: actionInstructions },
     { name: 'guidelines', heading: 'Response Guidelines', content: guidelines },

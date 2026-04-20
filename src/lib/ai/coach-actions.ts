@@ -26,6 +26,8 @@ import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
 import { addMemory, removeMemory, isValidMemoryKind } from './memory';
 import { abbreviateSession, estimateSessionMinutes, type GeneratedExercise } from '@/lib/engine/session';
 import { applyWeekTimeBox, mondayOf, addOverride } from '@/lib/engine/schedule';
+import { recordRefeed, saveTodayTarget } from '@/lib/engine/nutrition-db';
+import type { NutritionMealType, NutritionLog, NutritionProfile } from '@/lib/db/types';
 
 // ── Action Types ──────────────────────────────────────────────────────────────
 
@@ -41,7 +43,10 @@ export type CoachActionType =
   | 'REMEMBER'
   | 'FORGET'
   | 'ABBREVIATE_TODAY'
-  | 'SET_WEEK_AVAILABILITY';
+  | 'SET_WEEK_AVAILABILITY'
+  | 'LOG_NUTRITION'
+  | 'SET_NUTRITION_TARGETS'
+  | 'SCHEDULE_REFEED';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -225,6 +230,48 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    case 'LOG_NUTRITION': {
+      const meal = (params.meal || 'SNACK').toUpperCase();
+      const kcal = parseInt(params.kcal || '0', 10);
+      const protein = parseInt(params.protein || '0', 10);
+      if (!kcal && !protein) return null;
+      const macros = [
+        kcal ? `${kcal} kcal` : '',
+        protein ? `${protein}g P` : '',
+        params.carbs ? `${params.carbs}g C` : '',
+        params.fat ? `${params.fat}g F` : '',
+      ].filter(Boolean).join(' · ');
+      return {
+        type,
+        params: { ...params, meal },
+        displayText: `Log ${meal.toLowerCase()}: ${macros}`,
+        confirmText: 'Log meal',
+      };
+    }
+
+    case 'SET_NUTRITION_TARGETS': {
+      const training = parseInt(params.training_kcal || '0', 10);
+      const rest = parseInt(params.rest_kcal || '0', 10);
+      if (!training || !rest) return null;
+      return {
+        type,
+        params,
+        displayText: `Targets: ${training} kcal training / ${rest} kcal rest`,
+        confirmText: 'Update targets',
+      };
+    }
+
+    case 'SCHEDULE_REFEED': {
+      const date = params.date || '';
+      if (!date) return null;
+      return {
+        type,
+        params,
+        displayText: `Log refeed day: ${date}`,
+        confirmText: 'Mark refeed',
+      };
+    }
+
     default:
       return null;
   }
@@ -259,6 +306,12 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeAbbreviateToday(action.params);
       case 'SET_WEEK_AVAILABILITY':
         return await executeSetWeekAvailability(action.params);
+      case 'LOG_NUTRITION':
+        return await executeLogNutrition(action.params);
+      case 'SET_NUTRITION_TARGETS':
+        return await executeSetNutritionTargets(action.params);
+      case 'SCHEDULE_REFEED':
+        return await executeScheduleRefeed(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -266,6 +319,62 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
     console.error('[coach-actions] execute failed:', err);
     return { success: false, message: 'Action failed. Please try again.' };
   }
+}
+
+async function executeLogNutrition(params: Record<string, string>): Promise<ActionResult> {
+  const mealType = (params.meal || 'SNACK').toUpperCase() as NutritionMealType;
+  const log: NutritionLog = {
+    id: newId(),
+    date: today(),
+    mealType,
+    description: params.description,
+    kcal: params.kcal ? parseInt(params.kcal, 10) : undefined,
+    proteinG: params.protein ? parseInt(params.protein, 10) : undefined,
+    carbG: params.carbs ? parseInt(params.carbs, 10) : undefined,
+    fatG: params.fat ? parseInt(params.fat, 10) : undefined,
+    loggedAt: new Date().toISOString(),
+  };
+  await db.nutritionLogs.add(log);
+  return { success: true, message: `Logged ${mealType.toLowerCase()}.` };
+}
+
+async function executeSetNutritionTargets(params: Record<string, string>): Promise<ActionResult> {
+  const existing = await db.nutritionProfile.get('me');
+  const training = parseInt(params.training_kcal || '0', 10);
+  const rest = parseInt(params.rest_kcal || '0', 10);
+  const refeed = parseInt(params.refeed_kcal || '0', 10);
+  if (!training || !rest) {
+    return { success: false, message: 'training_kcal and rest_kcal are required.' };
+  }
+  const next: NutritionProfile = {
+    id: 'me',
+    dietPhase: (params.phase as NutritionProfile['dietPhase']) ?? existing?.dietPhase ?? 'MAINTAIN',
+    bmrFormula: existing?.bmrFormula ?? 'MIFFLIN_ST_JEOR',
+    activityFactor: existing?.activityFactor ?? 1.55,
+    bodyFatPercent: existing?.bodyFatPercent,
+    trainingDayKcal: training,
+    restDayKcal: rest,
+    refeedDayKcal: refeed || existing?.refeedDayKcal || training + 600,
+    proteinGPerKg: existing?.proteinGPerKg ?? 2.0,
+    fatGPerKg: existing?.fatGPerKg ?? 0.9,
+    carbGPerKg: existing?.carbGPerKg ?? 4.0,
+    refeedFrequencyDays: existing?.refeedFrequencyDays ?? 10,
+    lastRefeedDate: existing?.lastRefeedDate,
+    updatedAt: new Date().toISOString(),
+  };
+  await db.nutritionProfile.put(next);
+  await saveTodayTarget();
+  return { success: true, message: 'Nutrition targets updated.' };
+}
+
+async function executeScheduleRefeed(params: Record<string, string>): Promise<ActionResult> {
+  const date = params.date || today();
+  const updated = await recordRefeed(date);
+  if (!updated) {
+    return { success: false, message: 'Set up nutrition targets first.' };
+  }
+  await saveTodayTarget();
+  return { success: true, message: `Refeed recorded for ${date}.` };
 }
 
 // ── Individual Executors ──────────────────────────────────────────────────────
