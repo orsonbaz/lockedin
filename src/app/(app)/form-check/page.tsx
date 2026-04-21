@@ -13,7 +13,7 @@
  *   exercise_id  — optional: link to a specific exercise in that session
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { ArrowLeft, Camera, Circle, Square, Video, AlertTriangle, CheckCircle2, XCircle, History } from 'lucide-react';
@@ -46,6 +46,29 @@ const VERDICT_META: Record<FormVerdict, { label: string; color: string; icon: ty
 };
 
 export default function FormCheckPage() {
+  // useSearchParams needs a Suspense boundary for Next 16 static prerender.
+  return (
+    <Suspense fallback={<FormCheckFallback />}>
+      <FormCheckInner />
+    </Suspense>
+  );
+}
+
+function FormCheckFallback() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: C.bg, color: C.muted }}
+    >
+      <div
+        className="w-8 h-8 rounded-full border-4 animate-spin"
+        style={{ borderColor: `${C.accent} transparent transparent transparent` }}
+      />
+    </div>
+  );
+}
+
+function FormCheckInner() {
   const router = useRouter();
   const search = useSearchParams();
   const initialLift = (search.get('lift')?.toUpperCase() as Lift) || 'SQUAT';
