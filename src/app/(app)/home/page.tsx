@@ -15,7 +15,7 @@ import { useState, useEffect } from 'react';
 import { useRouter }                    from 'next/navigation';
 import { Skeleton }                     from '@/components/ui/skeleton';
 import { toast }                        from 'sonner';
-import { Settings, ChevronRight, CalendarClock, Clock } from 'lucide-react';
+import { Settings, ChevronRight, CalendarClock, Clock, Flame } from 'lucide-react';
 import { db, today }                    from '@/lib/db/database';
 import { readinessLabel }               from '@/lib/engine/readiness';
 import { RingProgress }                 from '@/components/lockedin/RingProgress';
@@ -23,6 +23,8 @@ import { C }                            from '@/lib/theme';
 import { greeting, daysUntil }          from '@/lib/date-utils';
 import { loadTodayBudget, describeDay, type DayBudget } from '@/lib/engine/schedule';
 import { executeAction } from '@/lib/ai/coach-actions';
+import { resolveTodayTarget, macroTotalsFor } from '@/lib/engine/nutrition-db';
+import type { DailyTarget } from '@/lib/engine/nutrition';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
   SessionExercise, TrainingBlock, TrainingCycle, Meet,
@@ -53,6 +55,8 @@ interface HomeData {
   recentSessions: Array<{ session: TrainingSession; volume: number; avgRpe?: number }>;
   loggedSetCount: number;
   todayBudget:    DayBudget | null;
+  nutritionTarget: DailyTarget | null;
+  nutritionTotals: { kcal: number; proteinG: number; count: number };
 }
 
 export default function HomePage() {
@@ -62,7 +66,8 @@ export default function HomePage() {
   const [data,    setData]    = useState<HomeData>({
     profile: null, readiness: null, session: null, exercises: [],
     block: null, cycle: null, upcomingMeet: null, recentSessions: [], loggedSetCount: 0,
-    todayBudget: null,
+    todayBudget: null, nutritionTarget: null,
+    nutritionTotals: { kcal: 0, proteinG: 0, count: 0 },
   });
   const [abbreviating, setAbbreviating] = useState(false);
 
@@ -77,12 +82,14 @@ export default function HomePage() {
         return;
       }
 
-      const [profile, readiness, activeCycle, upcomingMeet, todayBudget] = await Promise.all([
+      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw] = await Promise.all([
         db.profile.get('me'),
         Promise.resolve(existingCheckin),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
         db.meets.filter((m) => m.status === 'UPCOMING').first(),
         loadTodayBudget(),
+        resolveTodayTarget(todayStr),
+        macroTotalsFor(todayStr),
       ]);
 
       const session = (await db.sessions.where('scheduledDate').equals(todayStr).first()) ?? null;
@@ -134,6 +141,12 @@ export default function HomePage() {
         recentSessions,
         loggedSetCount,
         todayBudget: todayBudget ?? null,
+        nutritionTarget,
+        nutritionTotals: {
+          kcal: nutritionTotalsRaw.kcal,
+          proteinG: nutritionTotalsRaw.proteinG,
+          count: nutritionTotalsRaw.count,
+        },
       });
       setLoading(false);
     }
@@ -208,7 +221,7 @@ export default function HomePage() {
     );
   }
 
-  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions, loggedSetCount, todayBudget } = data;
+  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals } = data;
   const scheduleCap = todayBudget?.minutes;
   const isUnavailable = scheduleCap === null;
   const isTimeBoxed = typeof scheduleCap === 'number';
@@ -484,6 +497,44 @@ export default function HomePage() {
               )}
             </div>
           </div>
+        )}
+
+        {/* ── 3b. NUTRITION TARGET ──────────────────────────────────────── */}
+        {nutritionTarget && (
+          <button
+            type="button"
+            onClick={() => router.push('/nutrition')}
+            className="w-full rounded-2xl p-4 mb-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+            style={{
+              backgroundColor: C.surface,
+              border: `1px solid ${C.border}`,
+              textAlign: 'left',
+            }}
+          >
+            <div
+              className="flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center"
+              style={{
+                backgroundColor: `${nutritionTarget.isRefeed ? C.gold : nutritionTarget.isTrainingDay ? C.accent : C.blue}20`,
+              }}
+            >
+              <Flame
+                size={18}
+                color={nutritionTarget.isRefeed ? C.gold : nutritionTarget.isTrainingDay ? C.accent : C.blue}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: C.muted }}>
+                {nutritionTarget.isRefeed ? 'Refeed target' : nutritionTarget.isTrainingDay ? 'Training target' : 'Rest target'}
+              </p>
+              <p className="text-sm font-semibold truncate" style={{ color: C.text, fontVariantNumeric: 'tabular-nums' }}>
+                {Math.round(nutritionTotals.kcal)} / {nutritionTarget.kcal} kcal
+                <span style={{ color: C.muted }}>
+                  {' · '}P {Math.round(nutritionTotals.proteinG)} / {nutritionTarget.proteinG}g
+                </span>
+              </p>
+            </div>
+            <ChevronRight size={18} color={C.muted} />
+          </button>
         )}
 
         {/* ── 4. MEET COUNTDOWN ─────────────────────────────────────────── */}

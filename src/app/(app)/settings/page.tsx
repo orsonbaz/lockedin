@@ -564,6 +564,20 @@ export default function SettingsPage() {
               Open
             </button>
           </Row>
+          <Row>
+            <RowLabel
+              label="Nutrition"
+              sub="Training-day, rest-day, and refeed targets"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/nutrition')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Open
+            </button>
+          </Row>
         </SettingsCard>
 
         {/* ── 5. ABOUT ─────────────────────────────────────────────────── */}
