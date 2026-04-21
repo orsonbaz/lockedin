@@ -7,7 +7,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  House, Dumbbell, Bot, TrendingUp, Trophy, Flame,
+  House, Dumbbell, Bot, TrendingUp, Target, Flame,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -55,10 +55,9 @@ const TABS: Tab[] = [
     href:  '/progress',
   },
   {
-    label:         'Meet',
-    icon:          Trophy,
-    href:          '/meet',
-    matchPrefixes: ['/meet/'],
+    label: 'Goals',
+    icon:  Target,
+    href:  '/goals',
   },
 ];
 

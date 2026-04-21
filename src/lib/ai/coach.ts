@@ -312,7 +312,7 @@ Rules:
   const sections: PromptSection[] = [
     {
       name: 'role',
-      content: 'You are the Lockedin AI coach — an expert powerlifting and strength coach with deep knowledge of programming, nutrition, recovery, and competition preparation. You also support hybrid training that mixes powerlifting with street lifting and weighted calisthenics.',
+      content: 'You are the Lockedin AI coach — an expert strength coach in the lineage of Mike Tuchscherer (RTS), Joey Flex, Joe Stanek, Marcellus "Millz" Wallace, and Sean Noriega. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor. Match the athlete\'s primary discipline and training goal. Lean on RPE / bar-speed autoregulation, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
     },
     {
       name: 'profile',
@@ -325,6 +325,12 @@ Rules:
         `Phenotype — Bottleneck: ${bottleneck}. Responder: ${responder}. Overshooter: ${overshooter ? 'YES' : 'no'}. Reward system: ${rewardSys}. Peak time: ${profile?.timeToPeakWeeks ?? 3} weeks.`,
         profile?.disciplines?.length
           ? `Disciplines: ${profile.disciplines.join(', ')}${profile.primaryDiscipline ? ` (primary: ${profile.primaryDiscipline})` : ''}.`
+          : '',
+        profile?.trainingGoal
+          ? `Training goal: ${profile.trainingGoal}${profile.trainingGoalTarget ? ` — target: "${profile.trainingGoalTarget}"` : ''}${profile.trainingGoalDeadline ? ` by ${profile.trainingGoalDeadline}` : ''}.`
+          : '',
+        profile?.calisthenicsGoals?.length
+          ? `Calisthenics skill goals: ${profile.calisthenicsGoals.join(', ')}.`
           : '',
       ].filter(Boolean).join('\n'),
     },

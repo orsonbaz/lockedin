@@ -114,7 +114,26 @@ export interface AthleteProfile {
   /** Default day-of-week availability (0=Sun…6=Sat → minutes). Undefined ⇒ unlimited. */
   weeklyScheduleTemplate?: Record<number, number | undefined>;
   calisthenicsGoals?: string[];  // free-text: 'muscle_up', 'front_lever', etc.
+  // Training direction (additive, non-indexed — no schema bump required)
+  trainingGoal?: TrainingGoal;
+  /** Free text, e.g. "200 kg squat", "strict muscle-up", "back to 82.5kg class". */
+  trainingGoalTarget?: string;
+  /** Target completion date (YYYY-MM-DD) for the current training goal. */
+  trainingGoalDeadline?: string;
 }
+
+/**
+ * High-level training focus. Sets the tone for the coach's programming
+ * suggestions and the knowledge it retrieves.
+ */
+export type TrainingGoal =
+  | 'COMPETITION_PREP'     // peaking for a powerlifting / street-lift meet
+  | 'STRENGTH_PROGRESSION' // chase specific PRs without a meet on the calendar
+  | 'SKILL_PROGRESSION'    // calisthenics skills: muscle-up, front lever, planche
+  | 'WEIGHT_LOSS'          // lose fat while maintaining strength
+  | 'WEIGHT_GAIN'          // gain lean mass
+  | 'GENERAL_FITNESS'      // hybrid training without a single focus
+  | 'MAINTENANCE';         // hold current state during life constraints
 
 // ── Long-term coach memory (v4) ──────────────────────────────────────────────
 

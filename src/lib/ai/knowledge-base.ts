@@ -556,6 +556,77 @@ export const PROGRAMMING_KNOWLEDGE = `
 - 6 days/week: PPL-PPL or DUP. Only for advanced lifters with excellent recovery. High injury risk.
 `;
 
+// ── Elite Coaching Principles ─────────────────────────────────────────────────
+
+export const COACH_PRINCIPLES_KNOWLEDGE = `
+## Elite Coaching Principles
+Programming follows the consensus of modern evidence-based powerlifting coaches. Cite these
+philosophies when making recommendations — the athlete should feel the lineage.
+
+### Mike Tuchscherer (Reactive Training Systems)
+- RPE autoregulation is the spine: set prescriptions are RPE-targeted, load adjusts to the day.
+- Fatigue percents: once a top set hits target RPE, back-offs drop ~2–4% per rep below top for 3–6 sets.
+  Example: top single RPE 8 → 4 back-off triples at ~6–8% below.
+- Specificity grows through the block: accumulation is broad, peaking is comp-stance, comp-grip,
+  comp-tempo, comp-commands only.
+- Volume is measured in quality reps at target RPE, not blind tonnage. Ditch junk sets.
+- Weak-point analysis is diagnostic: bar speed drop + RPE creep at a specific joint angle identifies the
+  limiting link. Address with targeted variations, not random accessories.
+- Tonnage caps: when a lifter stalls despite hitting numbers, cut weekly working sets by 20–30% for a
+  mini-block before adding back.
+
+### Joey Flex
+- Specificity windows: the final 6–8 weeks before a meet are for competition lifts only. Anything that
+  doesn't reinforce comp technique is cut or minimized.
+- Adherence first. The best program is the one the athlete actually finishes consistently. When in doubt
+  between "optimal but miserable" and "90% as good and sustainable," choose sustainable.
+- Bench frequency: 3–4 bench sessions per week for most intermediates — treat it as a skill movement.
+  Pause work gets its own session, not just competition week.
+- Spinal erector fatigue is the silent killer of peaking. Alternate heavy squat and heavy pull days;
+  never stack them same-day in peaking.
+- Bar speed drops of ≥15% on a top single → back off, don't grind.
+
+### Joe Stanek
+- Block periodization rigor: explicit accumulation → intensification → realization transitions. No
+  aimless "I'll just train hard" blocks.
+- Intensity ramps are earned: hit target RPE and bar speed at load L before advancing to L+2.5kg.
+- Bar-speed-informed backoffs: on comp lifts, cap working sets when mean velocity drops below a
+  lift-specific floor (roughly 0.25 m/s squat, 0.15 m/s bench, 0.30 m/s deadlift for peaking).
+- Command practice from week 1 of peaking — "squat," "rack," "start," "press," "down," — not just
+  meet week.
+- Sandbagging kills peaks. If the athlete chronically undersells RPE, film sets and force 2.5 kg jumps
+  until RPE self-calibrates.
+
+### Marcellus "Millz" Wallace
+- High weekly exposures to all three comp lifts. Aim for 2–4 squat, 3–4 bench, 2–3 deadlift sessions
+  in an accumulation week. Keep fatigue in check with variety in modality (paused, tempo, comp).
+- Pause work mastery: pause squats and pause benches build positional strength and mental composure
+  under command. Rotate them in year-round, not just peaking.
+- Tempo bench (3-count eccentric, 1-count pause) drives bar path discipline and the leg drive pattern.
+- Aggressive specificity: the best squat accessory is a squat variation. The best deadlift accessory
+  is a deadlift variation. Isolation only fills remaining SFR.
+- Volume distribution beats volume magnitude: 4×8 bench 4x/week crushes 8×8 once a week.
+
+### Sean Noriega
+- Low-volume, high-quality philosophy: fewer working sets with higher RPE accuracy outperform junk
+  volume for most intermediates.
+- Pause variants are the standard, not the exception. Paused squats / benches / deadlifts teach control
+  under load and expose weaknesses early.
+- Mental rehearsal as training: visualize the comp lift, setup, breath, cue sequence before every
+  top set. Technique is a skill; skills are rehearsed.
+- Readiness-driven session modification: when the body says no, take the L and hit prescribed RPE on
+  lighter work rather than forcing the programmed load.
+- Quality bar speed > quantity tonnage. If speed is off on the opener-equivalent single, the day is a
+  technical session, not a PR attempt.
+
+### Cross-cutting consensus
+- Autoregulate via RPE and bar speed, not ego.
+- Specificity dominates novelty: you get strong at what you practice.
+- Comp lifts are skills, not just strength tests — rehearse every rep like meet day.
+- Adherence > optimization. A B+ program run for 12 weeks beats an A+ program abandoned after 3.
+- Fatigue is a variable to manage, not prove. Track it. Respect it. Dissipate it before meet day.
+`;
+
 // ── Assembler ─────────────────────────────────────────────────────────────────
 
 /**
@@ -567,6 +638,7 @@ export const PROGRAMMING_KNOWLEDGE = `
  */
 export function getFullKnowledge(): string {
   return [
+    COACH_PRINCIPLES_KNOWLEDGE,
     RPE_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
@@ -586,6 +658,7 @@ export function getFullKnowledge(): string {
  */
 export function getCompactKnowledge(): string {
   return [
+    COACH_PRINCIPLES_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
     NUTRITION_KNOWLEDGE,
@@ -633,6 +706,15 @@ const KW_PROGRAMMING   = [
   'adjust', 'max', 'swap', 'modif', 'chang', 'frequency', 'responder',
   'overreach', 'phenotype', 'abbreviat',
 ] as const;
+const KW_COACH         = [
+  'tuchscherer', 'tuscher', 'rts ', 'reactive training',
+  'joey flex', 'joeyflex',
+  'joe stanek', 'stanek',
+  'marcellus', 'millz', 'wallace',
+  'noriega', 'sean noriega',
+  'autoregul', 'bar speed', 'velocity', 'specificity', 'adherence',
+  'philosoph', 'princip', 'approach',
+] as const;
 
 /**
  * Returns knowledge relevant to a specific topic. Keywords are matched
@@ -652,10 +734,11 @@ export function getTopicKnowledge(topic: string): string {
   if (hasAny(t, KW_MEET))          sections.push(MEET_PREP_KNOWLEDGE);
   if (hasAny(t, KW_INJURY))        sections.push(INJURY_KNOWLEDGE);
   if (hasAny(t, KW_PROGRAMMING))   sections.push(PROGRAMMING_KNOWLEDGE);
+  if (hasAny(t, KW_COACH))         sections.push(COACH_PRINCIPLES_KNOWLEDGE);
 
   // If nothing matched, return the most universally useful sections
   if (sections.length === 0) {
-    sections.push(EXERCISE_KNOWLEDGE, CALISTHENICS_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
+    sections.push(COACH_PRINCIPLES_KNOWLEDGE, EXERCISE_KNOWLEDGE, CALISTHENICS_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
   }
 
   return sections.join('\n');
