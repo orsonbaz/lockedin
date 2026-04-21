@@ -685,15 +685,32 @@ export default function SessionPage({
         <div className="max-w-lg mx-auto px-4">
 
           {/* Header */}
-          <div className="pt-8 pb-4">
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: C.muted }}>
-              Today&apos;s Session
-            </p>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {session.sessionType} SESSION
-              {' '}&mdash;{' '}
-              {session.primaryLift}
-            </h1>
+          <div className="pt-8 pb-4 flex items-start gap-3">
+            <div className="flex-1">
+              <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: C.muted }}>
+                Today&apos;s Session
+              </p>
+              <h1 className="text-2xl font-bold tracking-tight">
+                {session.sessionType} SESSION
+                {' '}&mdash;{' '}
+                {session.primaryLift}
+              </h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const qs = new URLSearchParams({
+                  lift: session.primaryLift,
+                  session_id: session.id,
+                });
+                router.push(`/form-check?${qs.toString()}`);
+              }}
+              className="mt-1 px-3 py-2 rounded-xl text-xs font-bold active:scale-95 transition-all flex items-center gap-1.5"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+              aria-label="Record form check"
+            >
+              🎥 Form check
+            </button>
           </div>
 
           {/* AI modifications banner */}

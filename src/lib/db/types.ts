@@ -195,6 +195,46 @@ export interface NutritionTarget {
   resolvedAt: string;
 }
 
+// ── Video form check (v6) ────────────────────────────────────────────────────
+
+/** High-level verdict from a vision model's analysis of lift keyframes. */
+export type FormVerdict = 'GOOD' | 'MINOR_FIXES' | 'MAJOR_FIXES' | 'UNSAFE' | 'UNCLEAR';
+
+export interface FormCheck {
+  id: string;
+  /** Date of capture, YYYY-MM-DD. */
+  date: string;
+  /** Session + exercise are optional — users can form-check outside a session. */
+  sessionId?: string;
+  exerciseId?: string;
+  /** Lift label used to prompt the vision model. */
+  lift: Lift;
+  /** Athlete-supplied context, e.g. "final set, 180kg, felt grindy". */
+  note?: string;
+  verdict: FormVerdict;
+  /** Short coaching bullets from the model. */
+  cues: string[];
+  /** Red flags surfaced by the safety prompt. */
+  safetyFlags: string[];
+  /** Raw model score 0–100 for quick sorting of history. */
+  score?: number;
+  /** Which model produced the analysis. */
+  model: string;
+  /** ISO 8601 timestamp. */
+  analyzedAt: string;
+}
+
+export interface FormCheckKeyframe {
+  id: string;
+  formCheckId: string;
+  /** 0-based index within the keyframe sequence. */
+  index: number;
+  /** Relative position in the clip (0–1) — used to order and caption frames. */
+  timestamp: number;
+  /** data: URI for the jpeg. Small (~40KB) so storing inline keeps things simple. */
+  dataUri: string;
+}
+
 export interface TrainingCycle {
   id: string;
   name: string;

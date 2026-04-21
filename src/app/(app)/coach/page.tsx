@@ -18,6 +18,7 @@ import {
   useRef,
   useCallback,
 } from 'react';
+import { useRouter }                                        from 'next/navigation';
 import { toast }                                            from 'sonner';
 import {
   Sheet,
@@ -293,6 +294,7 @@ function MessageBubble({ role, content, streaming = false }: BubbleProps) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CoachPage() {
+  const router = useRouter();
   // ── Data state ────────────────────────────────────────────────────────────
   const [messages,       setMessages]       = useState<DBChatMessage[]>([]);
   const [groqKey,        setGroqKey]        = useState<string>('');
@@ -538,7 +540,11 @@ export default function CoachPage() {
     // Remove executed action from pending
     setPendingActions((prev) => prev.filter((a) => a !== action));
     setExecutingAction(null);
-  }, []);
+
+    if (result.success && result.navigateTo) {
+      router.push(result.navigateTo);
+    }
+  }, [router]);
 
   const handleDismissAction = useCallback((action: CoachAction) => {
     setPendingActions((prev) => prev.filter((a) => a !== action));

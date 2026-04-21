@@ -46,7 +46,8 @@ export type CoachActionType =
   | 'SET_WEEK_AVAILABILITY'
   | 'LOG_NUTRITION'
   | 'SET_NUTRITION_TARGETS'
-  | 'SCHEDULE_REFEED';
+  | 'SCHEDULE_REFEED'
+  | 'REQUEST_FORM_CHECK';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -58,6 +59,8 @@ export interface CoachAction {
 export interface ActionResult {
   success: boolean;
   message: string;
+  /** Optional path the UI should navigate to after executing. */
+  navigateTo?: string;
 }
 
 // ── Action Parser ─────────────────────────────────────────────────────────────
@@ -272,6 +275,17 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    case 'REQUEST_FORM_CHECK': {
+      const lift = (params.lift || '').toUpperCase();
+      if (!['SQUAT', 'BENCH', 'DEADLIFT', 'UPPER', 'LOWER', 'FULL'].includes(lift)) return null;
+      return {
+        type,
+        params: { ...params, lift },
+        displayText: `Record a ${lift.toLowerCase()} set for form check`,
+        confirmText: 'Open camera',
+      };
+    }
+
     default:
       return null;
   }
@@ -312,6 +326,8 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeSetNutritionTargets(action.params);
       case 'SCHEDULE_REFEED':
         return await executeScheduleRefeed(action.params);
+      case 'REQUEST_FORM_CHECK':
+        return executeRequestFormCheck(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -375,6 +391,20 @@ async function executeScheduleRefeed(params: Record<string, string>): Promise<Ac
   }
   await saveTodayTarget();
   return { success: true, message: `Refeed recorded for ${date}.` };
+}
+
+function executeRequestFormCheck(params: Record<string, string>): ActionResult {
+  const lift = (params.lift || '').toLowerCase();
+  const sessionId = params.session_id;
+  const exerciseId = params.exercise_id;
+  const qs = new URLSearchParams({ lift });
+  if (sessionId) qs.set('session_id', sessionId);
+  if (exerciseId) qs.set('exercise_id', exerciseId);
+  return {
+    success: true,
+    message: `Opening camera for ${lift} form check…`,
+    navigateTo: `/form-check?${qs.toString()}`,
+  };
 }
 
 // ── Individual Executors ──────────────────────────────────────────────────────
