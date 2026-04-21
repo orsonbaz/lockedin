@@ -173,14 +173,25 @@ export async function summarizeIfNeeded(groqApiKey?: string): Promise<Conversati
   if (groqApiKey?.trim()) {
     try {
       const client = new Groq({ apiKey: groqApiKey.trim(), dangerouslyAllowBrowser: true });
-      const res = await client.chat.completions.create({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: transcript },
-        ],
-        max_tokens: 400,
-      });
+      // Non-streaming call — guard against hung sockets with a 25s timeout.
+      const controller = new AbortController();
+      const timeoutId  = setTimeout(() => controller.abort(), 25_000);
+      let res;
+      try {
+        res = await client.chat.completions.create(
+          {
+            model: 'llama-3.1-8b-instant',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: transcript },
+            ],
+            max_tokens: 400,
+          },
+          { signal: controller.signal },
+        );
+      } finally {
+        clearTimeout(timeoutId);
+      }
       const out = res.choices[0]?.message?.content ?? '';
       const topicMatch = out.match(/TOPICS:\s*(.+)$/im);
       topics = topicMatch

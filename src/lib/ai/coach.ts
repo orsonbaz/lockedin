@@ -85,6 +85,11 @@ function getWorker(): Worker {
   return _worker;
 }
 
+/** True only if the on-device model has already been downloaded and loaded. */
+function hasWorker(): boolean {
+  return typeof window !== 'undefined' && _modelLoaded;
+}
+
 // ── System-prompt builder ─────────────────────────────────────────────────────
 
 /**
@@ -397,9 +402,79 @@ async function* streamFromWorker(
 
 // ── Main public API ───────────────────────────────────────────────────────────
 
+/** Max ms between streamed tokens before we consider the stream stalled. */
+const GROQ_IDLE_TIMEOUT_MS  = 20_000;
+/** Max ms to wait for the first token after the request is sent. */
+const GROQ_FIRST_TOKEN_MS   = 30_000;
+/** How many times to retry the whole Groq call on a stall / network error. */
+const GROQ_MAX_RETRIES      = 1;
+
+/**
+ * Wrap a Groq SDK streaming call so that any stall longer than
+ * `idleMs` (or the first-token wait longer than `firstMs`) throws a named
+ * error the caller can surface or fall back from.
+ */
+async function* groqStreamWithWatchdog(
+  groqApiKey: string,
+  messages:   ChatMessage[],
+  maxTokens:  number,
+): AsyncGenerator<string> {
+  const client = new Groq({ apiKey: groqApiKey, dangerouslyAllowBrowser: true });
+
+  const controller = new AbortController();
+  const stream = await client.chat.completions.create(
+    {
+      model:      'llama-3.3-70b-versatile',
+      messages:   messages as Groq.Chat.ChatCompletionMessageParam[],
+      max_tokens: maxTokens,
+      stream:     true,
+    },
+    { signal: controller.signal },
+  );
+
+  const iterator = (stream as unknown as AsyncIterable<Groq.Chat.Completions.ChatCompletionChunk>)
+    [Symbol.asyncIterator]();
+
+  let gotFirstToken = false;
+
+  while (true) {
+    const timeoutMs = gotFirstToken ? GROQ_IDLE_TIMEOUT_MS : GROQ_FIRST_TOKEN_MS;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        const err = new Error(
+          gotFirstToken
+            ? `Groq stream idle for ${timeoutMs / 1000}s — aborting.`
+            : `Groq stream produced no tokens in ${timeoutMs / 1000}s — aborting.`,
+        );
+        (err as Error & { code?: string }).code = 'GROQ_STREAM_IDLE';
+        reject(err);
+      }, timeoutMs);
+    });
+
+    let next: IteratorResult<Groq.Chat.Completions.ChatCompletionChunk>;
+    try {
+      next = await Promise.race([iterator.next(), timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+
+    if (next.done) return;
+    const content = next.value.choices[0]?.delta?.content;
+    if (content) {
+      gotFirstToken = true;
+      yield content;
+    }
+  }
+}
+
 /**
  * Route a chat turn to the correct AI backend.
  * Yields string tokens as they stream from the model.
+ *
+ * When Groq is configured we auto-retry once on a stalled/idle stream and
+ * fall back to the on-device worker if all Groq attempts fail.
  *
  * @param messages   Conversation history (user + assistant turns). Include
  *                   the system prompt as the first message with role 'system'.
@@ -411,28 +486,48 @@ export async function* sendMessage(
   groqApiKey?: string,
   maxTokens    = 512,
 ): AsyncGenerator<string> {
-  if (groqApiKey && groqApiKey.trim()) {
-    // ── MODE B: Groq online ─────────────────────────────────────────────
-    const client = new Groq({
-      apiKey:                 groqApiKey.trim(),
-      dangerouslyAllowBrowser: true,
-    });
+  const trimmedKey = groqApiKey?.trim();
 
-    const stream = await client.chat.completions.create({
-      model:      'llama-3.3-70b-versatile',
-      messages:   messages as Groq.Chat.ChatCompletionMessageParam[],
-      max_tokens: maxTokens,
-      stream:     true,
-    });
-
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) yield content;
+  if (trimmedKey) {
+    // Retry the whole call up to GROQ_MAX_RETRIES times on a stall. We only
+    // retry when the stream produced zero tokens so we don't double-emit
+    // partial responses to the UI.
+    for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
+      let emitted = 0;
+      try {
+        for await (const token of groqStreamWithWatchdog(trimmedKey, messages, maxTokens)) {
+          emitted++;
+          yield token;
+        }
+        return;
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        const isStall = code === 'GROQ_STREAM_IDLE';
+        console.warn(
+          `[coach] Groq attempt ${attempt + 1} failed (emitted=${emitted}, stall=${isStall}):`,
+          err,
+        );
+        // If we already streamed tokens, don't retry — the user sees them.
+        if (emitted > 0) throw err;
+        // Only retry stalls / transient network errors; bail on auth etc.
+        if (!isStall && attempt >= GROQ_MAX_RETRIES) throw err;
+        if (attempt >= GROQ_MAX_RETRIES) {
+          // Final attempt exhausted — try on-device worker as a last resort.
+          if (hasWorker()) {
+            console.warn('[coach] falling back to on-device model after Groq stalls.');
+            yield* streamFromWorker(messages, maxTokens);
+            return;
+          }
+          throw err;
+        }
+        // Otherwise loop and retry.
+      }
     }
-  } else {
-    // ── MODE A: On-device Worker ────────────────────────────────────────
-    yield* streamFromWorker(messages, maxTokens);
+    return;
   }
+
+  // ── MODE A: On-device Worker ────────────────────────────────────────
+  yield* streamFromWorker(messages, maxTokens);
 }
 
 /**

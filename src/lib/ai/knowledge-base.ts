@@ -1,15 +1,6 @@
 /**
- * knowledge-base.ts — Comprehensive powerlifting coaching & nutrition knowledge.
- *
- * This module contains domain knowledge that gets injected into the AI coach
- * system prompt. It covers:
- *   - RPE/RIR training theory
- *   - Periodization principles
- *   - Exercise selection & technique cues
- *   - Injury prevention & management
- *   - Nutrition & weight management for powerlifters
- *   - Meet preparation & peaking
- *   - Recovery science
+ * knowledge-base.ts — Coaching knowledge across powerlifting, calisthenics,
+ * street lifting, and nutrition. Injected into the AI coach system prompt.
  *
  * All content is written in a compressed coaching-style format to minimize
  * token usage while maximizing information density.

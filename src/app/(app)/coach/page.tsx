@@ -482,9 +482,18 @@ export default function CoachPage() {
         setStreamingText(fullResponse);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg  = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: string })?.code;
       console.error('[coach] generation error:', msg);
-      fullResponse = 'Something went wrong. Check your connection or API key.';
+      if (code === 'GROQ_STREAM_IDLE') {
+        fullResponse = fullResponse
+          ? fullResponse + '\n\n_(connection stalled — reply cut short, try again)_'
+          : 'The Groq stream stalled with nothing to say. Hit send again — free-tier connections drop sometimes.';
+      } else if (/api key|unauthoriz|401/i.test(msg)) {
+        fullResponse = 'Groq rejected the API key. Update it in Settings → AI Coach.';
+      } else if (!fullResponse) {
+        fullResponse = 'Something went wrong. Check your connection or API key.';
+      }
     }
 
     // Parse actions from response and clean the display text
