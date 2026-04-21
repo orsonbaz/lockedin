@@ -47,7 +47,8 @@ export type CoachActionType =
   | 'LOG_NUTRITION'
   | 'SET_NUTRITION_TARGETS'
   | 'SCHEDULE_REFEED'
-  | 'REQUEST_FORM_CHECK';
+  | 'REQUEST_FORM_CHECK'
+  | 'IMPORT_WEARABLE';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -286,6 +287,14 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    case 'IMPORT_WEARABLE':
+      return {
+        type,
+        params,
+        displayText: 'Import wearable data (Apple Health, Oura, Whoop, or CSV)',
+        confirmText: 'Open importer',
+      };
+
     default:
       return null;
   }
@@ -328,6 +337,12 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeScheduleRefeed(action.params);
       case 'REQUEST_FORM_CHECK':
         return executeRequestFormCheck(action.params);
+      case 'IMPORT_WEARABLE':
+        return {
+          success: true,
+          message: 'Opening wearable importer…',
+          navigateTo: '/settings/wearables',
+        };
       default:
         return { success: false, message: 'Unknown action type.' };
     }

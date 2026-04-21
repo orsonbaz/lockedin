@@ -235,6 +235,49 @@ export interface FormCheckKeyframe {
   dataUri: string;
 }
 
+// ── Wearable imports (v7) ────────────────────────────────────────────────────
+
+export type WearableSource = 'APPLE_HEALTH' | 'OURA' | 'WHOOP' | 'MANUAL_CSV';
+
+/**
+ * Canonical per-day metrics we extract from whichever source the athlete
+ * uploads. Sources differ in naming (e.g. Oura "readiness" vs Whoop
+ * "recovery"), so we normalize here instead of leaking source-specific
+ * shapes into the readiness engine.
+ */
+export type WearableMetricKind =
+  | 'HRV'              // ms (RMSSD or SDNN — source-dependent)
+  | 'RESTING_HR'       // bpm
+  | 'SLEEP_HOURS'      // hours
+  | 'SLEEP_QUALITY'    // 0-100
+  | 'RECOVERY_SCORE'   // 0-100 (Whoop recovery, Oura readiness, Apple HRV-trend)
+  | 'STRAIN'           // Whoop-style 0-21
+  | 'RESPIRATORY_RATE' // breaths/min
+  | 'BODY_TEMP_DELTA'; // °C deviation from baseline
+
+export interface WearableImport {
+  id: string;
+  source: WearableSource;
+  importedAt: string;        // ISO timestamp
+  rangeStart: string;        // YYYY-MM-DD
+  rangeEnd: string;          // YYYY-MM-DD
+  recordCount: number;
+  /** SHA-256 of raw payload, truncated to 16 hex chars. Used for idempotency. */
+  fileHash: string;
+  /** Athlete-supplied label for the imported file. */
+  label?: string;
+}
+
+export interface WearableMetric {
+  id: string;
+  date: string;              // YYYY-MM-DD
+  metricKind: WearableMetricKind;
+  value: number;
+  unit: string;              // 'ms' | 'bpm' | 'h' | '%' | '/21' | '°C'
+  source: WearableSource;
+  importId: string;
+}
+
 export interface TrainingCycle {
   id: string;
   name: string;

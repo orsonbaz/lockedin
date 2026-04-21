@@ -24,9 +24,10 @@ import {
   readinessLabel,
 } from '@/lib/engine/readiness';
 import { generateSession } from '@/lib/engine/session';
+import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
 import { C }               from '@/lib/theme';
-import type { ReadinessRecord, SessionExercise, BodyweightEntry } from '@/lib/db/types';
+import type { HRVSource, ReadinessRecord, SessionExercise, BodyweightEntry } from '@/lib/db/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -161,6 +162,7 @@ export default function CheckInPage() {
   const [hrvBaseline, setHrvBaseline] = useState<number | undefined>();
   const [ready,       setReady]       = useState(false); // init done, safe to render
   const [submitting,  setSubmitting]  = useState(false);
+  const [autoFilled,  setAutoFilled]  = useState<HRVSource | null>(null);
 
   // ── HRV tooltip ─────────────────────────────────────────────────────────
   const [showHrvTip, setShowHrvTip] = useState(false);
@@ -177,7 +179,12 @@ export default function CheckInPage() {
         return;
       }
 
-      // Fetch last 7 days of readiness records that have an HRV value
+      // Prefer wearable-derived readings over manual. `resolveReadinessInputs`
+      // looks back 7 days for an HRV baseline + most-recent sleep stats.
+      const wearable = await resolveReadinessInputs(today());
+
+      // Fetch last 7 days of readiness records that have an HRV value — used
+      // as a fallback baseline when no wearable HRV is present.
       const recentWithHrv = await db.readiness
         .orderBy('date')
         .reverse()
@@ -190,7 +197,17 @@ export default function CheckInPage() {
         .map((r) => r.hrv as number);
 
       if (!cancelled) {
-        setHrvBaseline(calcHrvBaseline(hrvVals));
+        // Wearable baseline wins when present; otherwise manual history.
+        setHrvBaseline(wearable.hrvBaseline7d ?? calcHrvBaseline(hrvVals));
+
+        if (wearable.hrv !== undefined) setHrv(String(Math.round(wearable.hrv)));
+        if (wearable.input.sleepHours   !== undefined) setSleepHours(wearable.input.sleepHours);
+        if (wearable.input.sleepQuality !== undefined) setSleepQuality(wearable.input.sleepQuality);
+
+        if (wearable.hrvSource && wearable.hrvSource !== 'MANUAL') {
+          setAutoFilled(wearable.hrvSource);
+        }
+
         setReady(true);
       }
     }
@@ -263,7 +280,9 @@ export default function CheckInPage() {
         hrv:           hrvNum !== undefined && !isNaN(hrvNum) ? hrvNum : undefined,
         hrvBaseline7d: hrvBaseline,
         hrvDeviation,
-        hrvSource:     hrvNum !== undefined && !isNaN(hrvNum) ? 'MANUAL' : undefined,
+        hrvSource:     hrvNum !== undefined && !isNaN(hrvNum)
+                         ? (autoFilled ?? 'MANUAL')
+                         : undefined,
         sleepHours,
         sleepQuality,
         energy,
@@ -411,6 +430,7 @@ export default function CheckInPage() {
     note,
     bodyweight,
     readinessScore,
+    autoFilled,
     router,
   ]);
 
@@ -543,6 +563,13 @@ export default function CheckInPage() {
               <p className="text-xs" style={{ color: MUTED }}>
                 Find RMSSD in your Oura, Polar, or WHOOP app each morning before getting up.
               </p>
+
+              {/* Auto-fill banner */}
+              {autoFilled && (
+                <p className="text-xs" style={{ color: GOLD }}>
+                  Auto-filled from {autoFilled.replace('_', ' ').toLowerCase()} — edit if needed.
+                </p>
+              )}
 
               {/* Baseline + deviation */}
               {hrvBaseline !== undefined ? (

@@ -18,6 +18,7 @@ import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './know
 import { buildMemorySection, buildSummarySection } from './memory';
 import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
+import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -44,6 +45,7 @@ const SECTION_CAPS = {
   weakPoints: 400,
   nutrition:  200,
   schedule:   400,
+  wearables:  400,
   actions:    900,
   guidelines: 500,
 } as const;
@@ -249,12 +251,13 @@ export async function buildSystemPrompt(
   }
   const knowledgeCap = isGroqMode ? 6000 : 2000;
 
-  // ── Long-term memory + rolling conversation summary + weak points + nutrition ─
-  const [memoriesBody, summaryBody, weakPointsBody, nutritionBody] = await Promise.all([
+  // ── Long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
+  const [memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
     buildMemorySection(userMessage, SECTION_CAPS.memories),
     buildSummarySection(SECTION_CAPS.summary),
     buildWeakPointsSection(SECTION_CAPS.weakPoints),
     buildNutritionSection(SECTION_CAPS.nutrition),
+    buildWearablesSection(SECTION_CAPS.wearables),
   ]);
 
   // ── Action instructions ───────────────────────────────────────────────────
@@ -279,6 +282,7 @@ Available actions:
 - [ACTION:SET_NUTRITION_TARGETS|training_kcal=3000|rest_kcal=2600|refeed_kcal=3600|phase=MAINTAIN] — Update daily kcal targets (phase: CUT/MAINTAIN/BULK/RECOMP)
 - [ACTION:SCHEDULE_REFEED|date=2026-04-20] — Mark today (or another date) as a refeed day
 - [ACTION:REQUEST_FORM_CHECK|lift=SQUAT] — Open the camera for a quick video form check (lift: SQUAT/BENCH/DEADLIFT/UPPER/LOWER/FULL)
+- [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
 
 Rules:
 - Always explain WHY before including the action tag.
@@ -336,6 +340,7 @@ Rules:
     { name: 'history',  heading: 'Training History',     content: sessionHistory },
     { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
     { name: 'nutrition', heading: 'Nutrition Target Today', content: nutritionBody },
+    { name: 'wearables', heading: 'Wearable Signals (last 7d)', content: wearablesBody },
     { name: 'knowledge', heading: 'Coaching Knowledge Base', content: knowledge },
     { name: 'actions',  heading: 'Actions You Can Take', content: actionInstructions },
     { name: 'guidelines', heading: 'Response Guidelines', content: guidelines },

@@ -578,6 +578,20 @@ export default function SettingsPage() {
               Open
             </button>
           </Row>
+          <Row>
+            <RowLabel
+              label="Wearables"
+              sub="Import Apple Health / Oura / Whoop / CSV exports"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/settings/wearables')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Import
+            </button>
+          </Row>
         </SettingsCard>
 
         {/* ── 5. ABOUT ─────────────────────────────────────────────────── */}
