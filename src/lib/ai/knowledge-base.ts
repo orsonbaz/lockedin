@@ -141,10 +141,148 @@ export const EXERCISE_KNOWLEDGE = `
 - Farmer's Walks: Grip, traps, core, conditioning. 30-60 second walks. Heavy.
 `;
 
-// ── Nutrition for Powerlifters ────────────────────────────────────────────────
+// ── Calisthenics / Bodyweight Strength ────────────────────────────────────────
+
+export const CALISTHENICS_KNOWLEDGE = `
+## Calisthenics & Bodyweight Strength
+
+### Core Principles
+- Progressive overload in calisthenics = harder leverage or added weight, not just more reps.
+- Two qualities to train: MAX STRENGTH (low reps, hard levers, weighted) and SKILL (position, tension, balance). Program them on separate days when possible.
+- RPE applies to weighted variants. For pure bodyweight + skill work, use REPS IN RESERVE or HOLD QUALITY (shaky = stop).
+- Tendons adapt slower than muscle. Level up only when current level is clean for 3 sets of prescribed reps/holds.
+
+### Scapular Foundations (non-negotiable)
+- Hollow body: Ribs down, pelvis tucked, lower back flat on floor. Trains anterior chain + bracing. 3x30s holds.
+- Arch / Superman: Mirror of hollow — glutes squeezed, chest lifted. 3x20s.
+- Scap pull-ups: Dead hang → retract and depress shoulder blades (no arm bend). 3x8-10. Prerequisite for ALL pulling work.
+- Scap push-ups: Plank → protract and retract shoulders. 3x10-12. Prerequisite for planche work.
+- Dead hang: Build to 60s unbroken before loading pull-ups heavily.
+
+### Pull-up Family (weighted progression)
+- Ring finger on bar, full dead hang bottom, chin OVER bar (not just to).
+- Standards: 5 strict unweighted → start adding load. Typical intermediate: +20-30 kg x 5.
+- Sets/reps: Strength 4-6 sets x 3-5 reps @ RPE 7-8. Volume 3-4 sets x 6-8 reps.
+- Chin-ups (supinated) are ~10% stronger than pull-ups and emphasize biceps more.
+- Archer pull-ups → one-arm pull-up assist progression: archer clean x 5/side → band-assisted one-arm → full OAPU.
+
+### Dip Family (weighted progression)
+- Parallel bar dips: Shoulders above elbows at bottom, full lockout top. Lean forward for chest, upright for triceps.
+- Ring dips: ~30% harder than bar dips due to stabilization. Turn palms out at top ("RTO"). Great for planche carryover.
+- Standards: 8-10 strict bar dips → load. +40 kg x 3 is a strong benchmark.
+- Bulgarian dips (rings, straight arm drop) and Russian dips are advanced variants.
+
+### Muscle-Up (strict / street lifting style)
+- Prerequisites: 10 strict pull-ups (chest to bar), 8 strict bar dips, false-grip dead hang 20s.
+- Skill breakdown: EXPLOSIVE PULL (hips to bar, elbows high) → TRANSITION (elbows over, wrists rotate) → STRICT PRESS-OUT.
+- Common faults: kipping the pull (illegal in street-lift comps), chicken-wing transition (one arm early), failing the press-out (weak dips).
+- Progressions: Banded MU → negative MU (slow lower from top) → slow 3s eccentric x 3-5 → strict bar MU.
+- Weighted muscle-ups: Once you own 3 strict reps unweighted, add 5 kg and rebuild. Typical world-class: +40 kg.
+- Programming: 2x/week. Day 1 = heavy weighted pull + dip accessory. Day 2 = strict MU reps (3-5 sets x 2-3 reps).
+
+### Front Lever
+- Straight-body isometric pull (bodyweight hangs parallel to floor, face up).
+- Progression ladder (hold each 3x10s clean before advancing):
+  1. Tuck front lever (knees to chest)
+  2. Advanced tuck (hips open, knees tucked)
+  3. Single-leg (one leg extended)
+  4. Straddle
+  5. Full front lever
+- Scapular position: DEPRESSED + PROTRACTED. "Push the bar down toward your hips."
+- Strength work: 3-5 sets of 5-10s holds at hardest clean progression. Ice-cream makers (eccentric FL pulls) once level unlocks.
+- Pull-up carryover: full FL ≈ +35-40 kg weighted pull-up strength.
+
+### Planche
+- Straight-body isometric push (bodyweight horizontal, face down, hands pressing floor).
+- Progression ladder (3x10s clean before advancing):
+  1. Planche lean (hands forward of shoulders, feet on floor)
+  2. Tuck planche
+  3. Advanced tuck
+  4. Straddle
+  5. Full planche
+- Scapular position: PROTRACTED + DEPRESSED. "Push the floor away and long."
+- Wrist prep mandatory: 2-3 min of wrist rolls, extension, and finger pushes before any planche work. Wrists are the #1 injury site.
+- Pair with pseudo planche push-ups (PPPU) 3-4 sets x 5-8 for pressing strength.
+
+### Pistol Squat
+- Single-leg squat, working leg fully extended in front, full ROM (hamstring to calf).
+- Prerequisites: adequate ankle dorsiflexion, hip flexor strength, quad strength.
+- Progressions: Box pistol (sit and stand) → hand-assisted pistol → counterweight pistol (hold 2-5 kg DB in front) → unassisted → weighted pistol (weight vest or goblet).
+- Common faults: Heel lift (ankle mobility), collapse at bottom (quad weakness), knee cave (glute/adductor weakness).
+- Programming: 3-4 sets x 3-5 per leg. Add 2-5 kg when 5x5 feels RPE 7.
+
+### One-Arm Pull-Up (OAPU)
+- The ultimate upper-body calisthenics strength marker.
+- Prerequisites: 20+ strict pull-ups, +50% BW weighted pull-up x 5, 10+ archer pull-ups per side clean.
+- Progression: Archer → typewriter → uneven (one arm on towel/band) → band-assisted OAPU → negative OAPU → full OAPU.
+- Training: Low volume, high intensity. 4-6 sets x 1-3 reps total per session, 2x/week max. Elbow tendinopathy risk is real.
+
+### Volume / Recovery Norms
+- Isometric skill work (levers, planche) recovers faster than weighted work. Can train 3-4x/week.
+- Weighted pull-up / dip / MU: treat like strength lifts. 6-10 working sets per week per movement.
+- Grip work from pulls and hangs accumulates — deload wrists and elbows every 4-6 weeks.
+- If wrist/elbow pain > 2 weeks: drop volume 40%, add eccentric wrist curls + reverse wrist curls x 3 sets x 15 daily.
+
+### False Grip (for rings / strict MU)
+- Wrist flexed so the meaty part of the palm is ON TOP of the ring/bar.
+- Condition gradually: 10s holds x 3-4 → 20s → 30s dead hang in false grip. Build over 6-8 weeks. Skin and wrist flexors need time.
+`;
+
+// ── Street Lifting ────────────────────────────────────────────────────────────
+
+export const STREET_LIFT_KNOWLEDGE = `
+## Street Lifting (Competitive Weighted Calisthenics)
+
+### Governing Bodies & Rules
+- IFBSL (International Federation of Bar Sport Lifting) — most recognized, 3-lift total.
+- WSWCF (World Street Workout & Calisthenics Federation) — also runs competitive formats.
+- Standard three lifts (vary by federation, but most common):
+  1. Weighted pull-up (strict dead hang to chin over bar)
+  2. Weighted dip (parallel bars, shoulders below elbows at bottom, full lockout top)
+  3. Weighted muscle-up (strict, no kip, full lockout at top)
+- Some feds run squat + pull-up instead of all three pulls. Always verify the rulebook for your meet.
+
+### Attempt Commands (IFBSL-style)
+- Pull-up: start from dead hang, chin clearly OVER bar, "down" command to lower. No kipping. Feet must not touch anything.
+- Dip: elbows must reach 90° or below at the bottom (shoulder below elbow). Lockout signaled, then "down."
+- Muscle-up: start from full dead hang. Full transition, STRICT press-out, lockout signaled. No kip, no chicken-wing, no re-grip.
+
+### Attempt Selection
+- Same rule as powerlifting: opener = 88-92% of true max (guaranteed on worst day). 2nd = 95-99%. 3rd = PR attempt.
+- MU attempts are the highest-risk lift — miss rates are higher than pull-up / dip because a failed transition = no lift.
+- Conservative MU opener. You get the dip and pull-up eaten out with a missed MU, but a bombed MU is a total bomb.
+
+### Gear & Grip
+- Chalk: standard and legal everywhere.
+- Wrist wraps: usually allowed. Tighter wraps help dip lockout.
+- Belt with dip belt chain: weight hangs from a sturdy dip belt; use carabiners rated for the load.
+- Straps: usually NOT allowed in competition pull/MU. Train strap-less for comp specificity.
+- Grip width: pull-up typically shoulder-width to slightly wider. Narrower = more biceps, wider = more lat leverage.
+- Bar vs ring dip: bar is standard in meets (more stable, more weight). Use ring dips in training for carryover + shoulder health.
+
+### Programming Blueprint (Hybrid w/ Powerlifting)
+- 4-6 weeks accumulation: higher reps (6-10), moderate load. Tons of volume on pull-ups and dips.
+- 3-5 weeks intensification: 3-5 rep work at RPE 8-9. Introduce heavy MU singles.
+- 2-3 weeks peak/realization: doubles and singles. Practice commands with a partner calling "down."
+- Keep squat OR deadlift in the plan on non-street-lift days — helps total-body strength and lockout.
+
+### Common Street-Lift Weaknesses & Fixes
+- Weak off the dead hang (pull-up): scap pull-ups, pause mid-range pull-ups, heavy rows.
+- Weak transition (MU): slow 3s eccentric MUs, banded assistance MUs, explosive pull-to-sternum reps.
+- Weak press-out (MU): Russian dips, heavy weighted dips, close-grip bench press.
+- Weak lockout (dip): bench lockouts, triceps pushdowns, board dips (top-half only).
+- Elbow tendinopathy: drop volume 30%, eccentric wrist curls x 3x15 daily, reduce grip-crushing work.
+
+### Weight Class Management
+- Most feds use body-weight classes similar to calisthenics federations (55, 60, 65, 70, 75, 82.5, 90, 100, +100 kg).
+- Relative strength favors lower classes — weighted MU at +BW scores higher in relative-strength rankings.
+- Walking 1-3% above class is fine. Don't aggressively cut before a street-lift meet — it crushes pull-up performance faster than squat.
+`;
+
+// ── Nutrition for Strength Athletes ───────────────────────────────────────────
 
 export const NUTRITION_KNOWLEDGE = `
-## Nutrition for Powerlifters
+## Nutrition for Strength Athletes
 
 ### Caloric Needs
 - Maintenance: ~15-17 kcal/lb bodyweight for active lifters (varies by activity, metabolism, age).
@@ -200,6 +338,68 @@ export const NUTRITION_KNOWLEDGE = `
 - During intensification: Return to maintenance or slight deficit (-200 kcal max). Prioritize performance.
 - During realization/peak week: EAT AT MAINTENANCE OR ABOVE. This is not the time to diet.
 - If more than 5% above weight class 4 weeks out: Consider moving up a class.
+
+### Refeed Days (Strategic Carb Spikes)
+- WHAT: A planned 24-hour return to maintenance (or slight surplus) with carbs dialed WAY up and fat dialed DOWN. Protein unchanged.
+- WHY: Replenishes muscle glycogen, bumps leptin (the master hormone that drops during a cut and slows metabolism), rescues performance on hard training days, and improves diet adherence.
+- WHEN: Mid-to-late cut, on a training day, never during realization / peak week.
+- FREQUENCY:
+  - Small deficit (< 20% below maintenance): every 10-14 days, leaner athletes (< 12% BF M / 18% F).
+  - Moderate deficit (20-25%): every 7-10 days.
+  - Aggressive deficit (25%+): every 5-7 days. Athletes who compete at lower BF% also need refeeds more often.
+- EXECUTION:
+  - Calories: back to maintenance or ~+200. DON'T binge above that — the goal is a leptin + glycogen bump, not a cheat day.
+  - Carbs: +40-80% vs cut days (often 5-8 g/kg). Low-fiber sources: white rice, potatoes, white bread, sushi rice, dextrose.
+  - Fat: cut in HALF (~0.5 g/kg). High-fat refeeds blunt the leptin response.
+  - Protein: unchanged at 1.8-2.2 g/kg.
+- Two-day refeeds are also valid for deep cuts — but no more than 2 consecutive days or it's a diet break.
+
+### Diet Breaks (Planned Structured Breaks from a Cut)
+- WHAT: 7-14 consecutive days at maintenance calories, NORMAL macros (not a refeed skew). Used in the middle of a long cut.
+- WHY: Restores leptin, thyroid hormones, NEAT (non-exercise activity thermogenesis), and psychological bandwidth. Preserves muscle and metabolic rate.
+- WHEN: Every 8-12 weeks during a long cut. Or any time you feel fatigue accumulating / performance dropping / obsessive food thoughts.
+- NOT a binge. It's structured maintenance. You'll see scale weight bump 1-2 kg from glycogen + gut fill within 48h — that's normal and expected.
+- Typically the break ends with better training performance, lower hunger, and resumed fat loss at the previous rate.
+
+### Sodium & Water Protocol (Meet Week, Both Formats)
+- 10-14 days out: Start tracking sodium. Eat high-sodium (5-7 g/day). Drink high water (8-10 L/day). Body will adapt by reducing aldosterone (water-retention hormone).
+- 24-HOUR WEIGH-IN (conservative 2-3% cut):
+  - 3-4 days out: Drop sodium to ~2 g/day. Keep water at 6-8 L/day.
+  - 24h out (weigh-in day): Water to 0.5-1 L, light foods, finish eating 4-6h before weigh-in.
+  - Post weigh-in rehydration: 1-1.5 L electrolyte drink over 2 hours (Pedialyte + sodium), then slow carb-loading with rice, potatoes, salt-topped foods. Aim to regain 80-90% of lost weight in 16 hours.
+- 2-HOUR WEIGH-IN: Absolute maximum 1-1.5% water cut. Minimize sodium manipulation. You can't refill in 2 hours without cramping on platform.
+- ALWAYS test the cut in training 6-8 weeks out. Never debut a water cut on meet day.
+
+### Intra-Workout Fueling (Long Sessions)
+- Session < 60 min: No intra-workout nutrition needed. Pre-workout meal covers it.
+- Session 60-90 min: Electrolytes (500-750 ml water + 200-300 mg sodium). Carbs optional.
+- Session 90+ min (high-volume block or split day): 30-60 g fast carbs / hour (Gatorade, dextrose, Gummy Bears, rice cakes). Prevents the mid-session crash that inflates RPE.
+- Meet day: Gummy bears and electrolyte drink between attempts. Familiar foods only.
+
+### Pre-Training Caffeine (Optimized for Strength)
+- Dose: 3-6 mg/kg bodyweight, 45-60 min before the first heavy set. For 80 kg lifter: 240-480 mg.
+- Half-life: 4-6 hours (genetically variable). A 400 mg dose at 4pm = ~200 mg still active at 10pm — CAN destroy sleep.
+- Multi-lift meet day: Smaller dose at squat, top-up before bench and/or deadlift. Don't exceed 6 mg/kg total or heart rate and handling suffer.
+- Tolerance: If you're using caffeine daily, cycle off 7-10 days before a meet to restore sensitivity. Use 200 mg on training days only during the off-cycle, then redose for the meet.
+- Tolerate well: theanine 200 mg + caffeine 200 mg smooths jitter.
+
+### Maintenance Calorie Heuristics
+- Too tired to add weight, scale stable, training stagnant → you're probably at maintenance but eating below. Bump 150-200 kcal and retest for 2 weeks.
+- 2 weeks of true stable weight (5-7 day rolling average within ±0.3 kg) + stable performance = that's your maintenance number.
+- Most strength athletes underestimate TDEE. Bump calories before you bump training volume.
+
+### Nutrition for Calisthenics / Street Lifting
+- Relative strength matters most. Don't bulk recklessly — every extra kg of body weight is a kg you pull on every weighted pull-up.
+- Recomp (simultaneous lean mass gain + fat loss) is MORE achievable for calisthenics athletes than strength-only lifters, because bodyweight movements reward leanness.
+- Carb targets can be lower (3-5 g/kg) if volume is moderate — isometric and skill work is less glycolytically demanding than heavy squat volume.
+- Protein: 2.0-2.4 g/kg is NOT excessive during a cut — keeping protein high preserves relative strength.
+- For weighted MU / pull-up progress: small surplus (+150-250 kcal) with tight protein works better than aggressive bulks. Extra fat = friction on every rep.
+
+### Hydration Math (Year-Round)
+- Baseline: 35-40 ml/kg/day for sedentary. Strength athletes: 45-55 ml/kg/day.
+- Add 500-750 ml for every hour of training.
+- Urine color: pale straw = hydrated. Dark yellow = under-hydrated. Clear = potentially over-hydrated (waste of electrolytes).
+- Sodium: 3-5 g/day for active training. Most athletes under-salt food, then cramp and blame it on magnesium.
 `;
 
 // ── Recovery ──────────────────────────────────────────────────────────────────
@@ -370,6 +570,8 @@ export function getFullKnowledge(): string {
     RPE_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
+    CALISTHENICS_KNOWLEDGE,
+    STREET_LIFT_KNOWLEDGE,
     NUTRITION_KNOWLEDGE,
     RECOVERY_KNOWLEDGE,
     MEET_PREP_KNOWLEDGE,
@@ -380,43 +582,80 @@ export function getFullKnowledge(): string {
 
 /**
  * Returns a compact knowledge base for on-device mode (smaller context window).
- * Focuses on the most actionable knowledge.
+ * Focuses on the most actionable knowledge and cross-discipline coverage.
  */
 export function getCompactKnowledge(): string {
   return [
     EXERCISE_KNOWLEDGE,
+    CALISTHENICS_KNOWLEDGE,
     NUTRITION_KNOWLEDGE,
     PROGRAMMING_KNOWLEDGE,
   ].join('\n');
 }
 
+/** Matches any whole-word keyword token in the topic string. */
+function hasAny(t: string, keywords: readonly string[]): boolean {
+  return keywords.some((k) => t.includes(k));
+}
+
+const KW_RPE           = ['rpe', 'rir', 'load', 'intensity'] as const;
+const KW_PERIODIZATION = ['periodiz', 'block', 'program', 'volume', 'mrv', 'mev', 'mav', 'dup'] as const;
+const KW_EXERCISE      = [
+  'exercis', 'squat', 'bench', 'deadlift', 'technique', 'cue', 'weak',
+  'accessory', 'rdl', 'row', 'press', 'hinge',
+] as const;
+const KW_CALISTHENICS  = [
+  'calisthen', 'bodyweight', 'muscle-up', 'muscleup', 'muscle up',
+  'pull-up', 'pullup', 'pull up', 'chin-up', 'chinup',
+  'dip ', ' dip', 'dips',
+  'front lever', 'back lever', 'planche', 'pistol', 'one-arm', 'one arm',
+  'false grip', 'hollow body', 'ring ', 'rings', 'scap',
+  'progression', 'tuck lever', 'straddle',
+] as const;
+const KW_STREET_LIFT   = [
+  'street lift', 'street-lift', 'streetlift', 'ifbsl', 'wswcf',
+  'weighted pull', 'weighted dip', 'weighted muscle', 'dip belt',
+] as const;
+const KW_NUTRITION     = [
+  'nutrit', 'diet', 'calor', 'kcal', 'protein', 'carb', 'fat ', 'macro',
+  'supplement', 'meal', 'weight class', 'water cut', 'sodium', 'hydrat',
+  'refeed', 're-feed', 'diet break', 'leptin', 'cut', 'bulk', 'recomp',
+  'maintenance', 'caffein', 'creatine', 'intra-workout', 'intra workout',
+  'fast', 'fasted', 'eat', 'fueling', 'glycogen',
+] as const;
+const KW_RECOVERY      = ['recover', 'sleep', 'stress', 'hrv', 'sore', 'fatigue', 'rest', 'deload'] as const;
+const KW_MEET          = ['meet', 'compet', 'peak', 'attempt', 'opener', 'weigh-in', 'weigh in', 'command'] as const;
+const KW_INJURY        = [
+  'injur', 'pain', 'hurt', 'shoulder', 'knee', 'back pain', 'lower back',
+  'hip', 'elbow', 'wrist', 'tendin', 'strain',
+] as const;
+const KW_PROGRAMMING   = [
+  'adjust', 'max', 'swap', 'modif', 'chang', 'frequency', 'responder',
+  'overreach', 'phenotype', 'abbreviat',
+] as const;
+
 /**
- * Returns knowledge relevant to a specific topic.
+ * Returns knowledge relevant to a specific topic. Keywords are matched
+ * case-insensitively as substrings.
  */
 export function getTopicKnowledge(topic: string): string {
   const t = topic.toLowerCase();
   const sections: string[] = [];
 
-  if (t.includes('rpe') || t.includes('load') || t.includes('intensity'))
-    sections.push(RPE_KNOWLEDGE);
-  if (t.includes('periodiz') || t.includes('block') || t.includes('program') || t.includes('volume'))
-    sections.push(PERIODIZATION_KNOWLEDGE);
-  if (t.includes('exercis') || t.includes('squat') || t.includes('bench') || t.includes('deadlift') || t.includes('technique') || t.includes('cue') || t.includes('weak'))
-    sections.push(EXERCISE_KNOWLEDGE);
-  if (t.includes('nutrit') || t.includes('diet') || t.includes('calor') || t.includes('protein') || t.includes('carb') || t.includes('fat') || t.includes('supplement') || t.includes('meal') || t.includes('weight') || t.includes('cut') || t.includes('bulk'))
-    sections.push(NUTRITION_KNOWLEDGE);
-  if (t.includes('recover') || t.includes('sleep') || t.includes('stress') || t.includes('hrv') || t.includes('sore'))
-    sections.push(RECOVERY_KNOWLEDGE);
-  if (t.includes('meet') || t.includes('compet') || t.includes('peak') || t.includes('attempt') || t.includes('opener'))
-    sections.push(MEET_PREP_KNOWLEDGE);
-  if (t.includes('injur') || t.includes('pain') || t.includes('shoulder') || t.includes('knee') || t.includes('back') || t.includes('hip') || t.includes('elbow'))
-    sections.push(INJURY_KNOWLEDGE);
-  if (t.includes('adjust') || t.includes('max') || t.includes('swap') || t.includes('modif') || t.includes('chang') || t.includes('frequency'))
-    sections.push(PROGRAMMING_KNOWLEDGE);
+  if (hasAny(t, KW_RPE))           sections.push(RPE_KNOWLEDGE);
+  if (hasAny(t, KW_PERIODIZATION)) sections.push(PERIODIZATION_KNOWLEDGE);
+  if (hasAny(t, KW_EXERCISE))      sections.push(EXERCISE_KNOWLEDGE);
+  if (hasAny(t, KW_CALISTHENICS))  sections.push(CALISTHENICS_KNOWLEDGE);
+  if (hasAny(t, KW_STREET_LIFT))   sections.push(STREET_LIFT_KNOWLEDGE);
+  if (hasAny(t, KW_NUTRITION))     sections.push(NUTRITION_KNOWLEDGE);
+  if (hasAny(t, KW_RECOVERY))      sections.push(RECOVERY_KNOWLEDGE);
+  if (hasAny(t, KW_MEET))          sections.push(MEET_PREP_KNOWLEDGE);
+  if (hasAny(t, KW_INJURY))        sections.push(INJURY_KNOWLEDGE);
+  if (hasAny(t, KW_PROGRAMMING))   sections.push(PROGRAMMING_KNOWLEDGE);
 
   // If nothing matched, return the most universally useful sections
   if (sections.length === 0) {
-    sections.push(EXERCISE_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
+    sections.push(EXERCISE_KNOWLEDGE, CALISTHENICS_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
   }
 
   return sections.join('\n');

@@ -24,6 +24,7 @@ import { greeting, daysUntil }          from '@/lib/date-utils';
 import { loadTodayBudget, describeDay, type DayBudget } from '@/lib/engine/schedule';
 import { executeAction } from '@/lib/ai/coach-actions';
 import { resolveTodayTarget, macroTotalsFor } from '@/lib/engine/nutrition-db';
+import { ensureSessionFresh } from '@/lib/engine/ensure-session-fresh';
 import type { DailyTarget } from '@/lib/engine/nutrition';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
@@ -91,6 +92,13 @@ export default function HomePage() {
         resolveTodayTarget(todayStr),
         macroTotalsFor(todayStr),
       ]);
+
+      // Regenerate today's exercises from the live engine so stale content
+      // from an old app version gets rebuilt on view. No-op if the athlete
+      // has already started logging sets.
+      await ensureSessionFresh(todayStr).catch((err) => {
+        console.warn('[home] ensureSessionFresh failed:', err);
+      });
 
       const session = (await db.sessions.where('scheduledDate').equals(todayStr).first()) ?? null;
 
@@ -500,7 +508,7 @@ export default function HomePage() {
         )}
 
         {/* ── 3b. NUTRITION TARGET ──────────────────────────────────────── */}
-        {nutritionTarget && (
+        {nutritionTarget ? (
           <button
             type="button"
             onClick={() => router.push('/nutrition')}
@@ -531,6 +539,33 @@ export default function HomePage() {
                 <span style={{ color: C.muted }}>
                   {' · '}P {Math.round(nutritionTotals.proteinG)} / {nutritionTarget.proteinG}g
                 </span>
+              </p>
+            </div>
+            <ChevronRight size={18} color={C.muted} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => router.push('/nutrition')}
+            className="w-full rounded-2xl p-4 mb-4 flex items-center gap-3 active:scale-[0.99] transition-transform"
+            style={{
+              backgroundColor: C.surface,
+              border: `1px dashed ${C.accent}`,
+              textAlign: 'left',
+            }}
+          >
+            <div
+              className="flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: `${C.accent}20` }}
+            >
+              <Flame size={18} color={C.accent} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: C.accent }}>
+                Set up nutrition
+              </p>
+              <p className="text-sm truncate" style={{ color: C.text }}>
+                Dial in calories, macros, refeeds — fuels every training day.
               </p>
             </div>
             <ChevronRight size={18} color={C.muted} />

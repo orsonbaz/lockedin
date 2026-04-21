@@ -1,13 +1,13 @@
 'use client';
 
 /**
- * BottomNav — Fixed 5-tab navigation bar.
+ * BottomNav — Fixed 6-tab navigation bar.
  * Appears on all screens inside src/app/(app)/layout.tsx.
  */
 
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  House, Dumbbell, Bot, TrendingUp, Trophy,
+  House, Dumbbell, Bot, TrendingUp, Trophy, Flame,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -37,6 +37,12 @@ const TABS: Tab[] = [
     icon:          Dumbbell,
     href:          '/session/today',
     matchPrefixes: ['/session/'],
+  },
+  {
+    label:         'Nutrition',
+    icon:          Flame,
+    href:          '/nutrition',
+    matchPrefixes: ['/nutrition/'],
   },
   {
     label: 'Coach',
@@ -123,7 +129,7 @@ export default function BottomNav() {
               }}
             >
               <Icon
-                size={22}
+                size={20}
                 strokeWidth={active ? 2.5 : 1.8}
                 color={active ? ACCENT : MUTED}
                 style={{
@@ -135,11 +141,11 @@ export default function BottomNav() {
               />
               <span
                 style={{
-                  fontSize:   '10px',
+                  fontSize:   '9.5px',
                   fontWeight: active ? 700 : 500,
                   color:      active ? ACCENT : MUTED,
                   lineHeight: 1,
-                  letterSpacing: '0.02em',
+                  letterSpacing: '0.01em',
                   transition: 'color 0.15s',
                 }}
               >

@@ -25,6 +25,7 @@ import type { TrainingSession, TrainingBlock, SessionExercise, SetLog, AthletePr
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
+import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
 
 // ── Design tokens (extends shared theme with session-specific colours) ───────
 const C = { ..._C, amber: '#D97706', green: _C.greenDeep } as const;
@@ -244,6 +245,16 @@ export default function SessionPage({
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      // If this is today's session and the athlete hasn't started logging
+      // yet, regenerate exercises from the live engine so stale content
+      // from an old app version gets rebuilt on view.
+      const preSession = await db.sessions.get(sessionId);
+      if (preSession?.scheduledDate === today()) {
+        await ensureSessionFresh(today()).catch((err) => {
+          console.warn('[session] ensureSessionFresh failed:', err);
+        });
+      }
+
       const [sess, exs, sets, readiness, eqProfile] = await Promise.all([
         db.sessions.get(sessionId),
         db.exercises.where('sessionId').equals(sessionId).sortBy('order'),
