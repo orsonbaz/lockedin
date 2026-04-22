@@ -24,7 +24,7 @@ import { greeting, daysUntil }          from '@/lib/date-utils';
 import { loadTodayBudget, describeDay, type DayBudget } from '@/lib/engine/schedule';
 import { executeAction } from '@/lib/ai/coach-actions';
 import { resolveTodayTarget, macroTotalsFor } from '@/lib/engine/nutrition-db';
-import { ensureSessionFresh } from '@/lib/engine/ensure-session-fresh';
+import { ensureSessionFresh, ensureTodaySession } from '@/lib/engine/ensure-session-fresh';
 import type { DailyTarget } from '@/lib/engine/nutrition';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
@@ -71,21 +71,17 @@ export default function HomePage() {
     nutritionTotals: { kcal: 0, proteinG: 0, count: 0 },
   });
   const [abbreviating, setAbbreviating] = useState(false);
+  const [spawning, setSpawning] = useState(false);
 
   useEffect(() => {
     async function load() {
       const todayStr = today();
 
-      // Gate: require daily check-in before showing the home screen
-      const existingCheckin = await db.readiness.where('date').equals(todayStr).first();
-      if (!existingCheckin) {
-        router.replace('/checkin');
-        return;
-      }
-
+      // Check-in is no longer a gate — the athlete can view Home without it.
+      // The readiness card links to /checkin if nothing has been logged yet.
       const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw] = await Promise.all([
         db.profile.get('me'),
-        Promise.resolve(existingCheckin),
+        db.readiness.where('date').equals(todayStr).first(),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
         db.meets.filter((m) => m.status === 'UPCOMING').first(),
         loadTodayBudget(),
@@ -235,6 +231,35 @@ export default function HomePage() {
   const isTimeBoxed = typeof scheduleCap === 'number';
   const hasOverride = !!todayBudget && todayBudget.overrides.length > 0;
 
+  /**
+   * Start the athlete's training for today:
+   *   • If a session exists → /checkin?next=/session/{id} when no readiness,
+   *     otherwise /session/{id}.
+   *   • If no session exists → create one via ensureTodaySession, then same.
+   * Works on rest days ("Train anyway") and regular days.
+   */
+  async function handleTrain() {
+    if (spawning) return;
+    setSpawning(true);
+    try {
+      let targetId = session?.id;
+      if (!targetId) {
+        const { session: created } = await ensureTodaySession(today());
+        targetId = created.id;
+      }
+      const next = `/session/${targetId}`;
+      if (!readiness) {
+        router.push(`/checkin?next=${encodeURIComponent(next)}`);
+      } else {
+        router.push(next);
+      }
+    } catch (err) {
+      console.error('[home] handleTrain failed:', err);
+      toast.error('Could not start a session — finish onboarding first.');
+      setSpawning(false);
+    }
+  }
+
   async function handleAbbreviate() {
     if (!session || !isTimeBoxed) return;
     setAbbreviating(true);
@@ -340,16 +365,17 @@ export default function HomePage() {
             ) : (
               <>
                 <p className="text-sm font-semibold mb-1" style={{ color: C.text }}>
-                  Check in to unlock today's session
+                  Not checked in yet
                 </p>
                 <p className="text-xs mb-3" style={{ color: C.muted }}>
-                  Log HRV, sleep and energy to personalise your training load.
+                  Log HRV, sleep, energy, and what you&apos;ve got access to —
+                  we&apos;ll tune today&apos;s session to match.
                 </p>
                 <button
                   type="button"
                   onClick={() => router.push('/checkin')}
                   className="px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95"
-                  style={{ backgroundColor: C.accent, color: '#fff' }}
+                  style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
                 >
                   Check In Now
                 </button>
@@ -392,14 +418,26 @@ export default function HomePage() {
         {/* ── 3. TODAY'S SESSION ────────────────────────────────────────── */}
         {isRest ? (
           <div
-            className="rounded-3xl p-5 mb-4 text-center"
+            className="rounded-3xl p-5 mb-4"
             style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
           >
-            <p className="text-4xl mb-2">🛋️</p>
-            <p className="text-base font-bold mb-1" style={{ color: C.text }}>Rest Day</p>
-            <p className="text-sm" style={{ color: C.muted }}>
-              Let the adaptations happen. Eat, sleep, recover.
-            </p>
+            <div className="text-center mb-4">
+              <p className="text-4xl mb-2">🛋️</p>
+              <p className="text-base font-bold mb-1" style={{ color: C.text }}>Rest Day</p>
+              <p className="text-sm" style={{ color: C.muted }}>
+                Scheduled recovery. Eat, sleep, let the adaptations happen — or train
+                anyway if you&apos;re feeling it.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleTrain}
+              disabled={spawning}
+              className="w-full py-3.5 rounded-2xl text-sm font-bold transition-all active:scale-[0.98] disabled:opacity-60"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              {spawning ? 'Preparing…' : 'Train anyway →'}
+            </button>
           </div>
         ) : (
           <div
@@ -478,11 +516,12 @@ export default function HomePage() {
                 <div className="space-y-2">
                   <button
                     type="button"
-                    onClick={() => router.push(`/session/${session!.id}`)}
-                    className="w-full py-4 rounded-2xl text-base font-bold transition-all active:scale-[0.98]"
+                    onClick={handleTrain}
+                    disabled={spawning}
+                    className="w-full py-4 rounded-2xl text-base font-bold transition-all active:scale-[0.98] disabled:opacity-60"
                     style={{ backgroundColor: C.accent, color: '#fff' }}
                   >
-                    {isModified ? 'Resume Session →' : 'Start Session →'}
+                    {spawning ? 'Preparing…' : isModified ? 'Resume Session →' : hasCheckin ? 'Start Session →' : 'Check In & Start →'}
                   </button>
                   {isTimeBoxed && session!.modality !== 'ABBREVIATED' && estDuration > (scheduleCap as number) && (
                     <button

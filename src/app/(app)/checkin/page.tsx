@@ -14,8 +14,8 @@
  *  5. Navigate to /home
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { db, today, newId } from '@/lib/db/database';
 import {
   calcHrvBaseline,
@@ -23,11 +23,15 @@ import {
   calcReadinessScore,
   readinessLabel,
 } from '@/lib/engine/readiness';
-import { generateSession } from '@/lib/engine/session';
+import { generateSession, abbreviateSession } from '@/lib/engine/session';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
+import { addOverride, loadOverridesFor } from '@/lib/engine/schedule';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
 import { C }               from '@/lib/theme';
-import type { HRVSource, ReadinessRecord, SessionExercise, BodyweightEntry } from '@/lib/db/types';
+import type {
+  HRVSource, ReadinessRecord, SessionExercise, BodyweightEntry,
+  SessionModalityChoice,
+} from '@/lib/db/types';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -144,8 +148,48 @@ function HrvDeviationBadge({ deviation }: { deviation: number }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+const MODALITY_OPTIONS: {
+  key: SessionModalityChoice;
+  label: string;
+  sub: string;
+  emoji: string;
+  minutes?: number;
+  equipment?: string[];
+}[] = [
+  { key: 'FULL',         label: 'Full gym',      sub: 'Barbell + accessories as programmed.', emoji: '🏋️' },
+  { key: 'QUICK',        label: '30-min squeeze',sub: 'Keep comp lifts, drop accessories.',  emoji: '⏱️', minutes: 30 },
+  { key: 'CALISTHENICS', label: 'Calisthenics',  sub: 'Bars / rings — weighted pull-ups, dips, skills.', emoji: '🤸', equipment: ['pullup_bar', 'dip_station', 'rings'] },
+  { key: 'BODYWEIGHT',   label: 'Bodyweight',    sub: 'No gear at all. Push/pull/squat with what you have.', emoji: '💪', equipment: ['bodyweight'] },
+  { key: 'TRAVEL',       label: 'Travel / hotel',sub: 'Dumbbells or bands, limited room.',   emoji: '🧳', equipment: ['dumbbell', 'band'], minutes: 45 },
+];
+
 export default function CheckInPage() {
+  // useSearchParams needs a Suspense boundary for Next 16 static prerender.
+  return (
+    <Suspense fallback={<CheckInFallback />}>
+      <CheckInInner />
+    </Suspense>
+  );
+}
+
+function CheckInFallback() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: BG }}
+    >
+      <div
+        className="w-10 h-10 rounded-full border-4 animate-spin"
+        style={{ borderColor: `${ACCENT} transparent transparent transparent` }}
+      />
+    </div>
+  );
+}
+
+function CheckInInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextHref = searchParams.get('next');
 
   // ── Form state ──────────────────────────────────────────────────────────
   const [hrv,          setHrv]          = useState('');
@@ -157,6 +201,7 @@ export default function CheckInPage() {
   const [stress,       setStress]       = useState<number | undefined>();
   const [note,         setNote]         = useState('');
   const [bodyweight,   setBodyweight]   = useState('');
+  const [modality,     setModality]     = useState<SessionModalityChoice>('FULL');
 
   // ── Async state ─────────────────────────────────────────────────────────
   const [hrvBaseline, setHrvBaseline] = useState<number | undefined>();
@@ -172,10 +217,11 @@ export default function CheckInPage() {
     let cancelled = false;
 
     async function init() {
-      // If already checked in today → go home immediately
+      // If already checked in today → honor `next` param (came from "Train"),
+      // otherwise go home. No longer a gate — home is viewable without it.
       const existing = await db.readiness.where('date').equals(today()).first();
       if (existing) {
-        router.replace('/home');
+        router.replace(nextHref ?? '/home');
         return;
       }
 
@@ -214,7 +260,7 @@ export default function CheckInPage() {
 
     void init();
     return () => { cancelled = true; };
-  }, [router]);
+  }, [router, nextHref]);
 
   // ── Derived: HRV deviation ────────────────────────────────────────────
   const hrvNum = hrv.trim() !== '' ? parseFloat(hrv) : undefined;
@@ -291,9 +337,35 @@ export default function CheckInPage() {
         stress,
         note:          note.trim() !== '' ? note.trim() : undefined,
         readinessScore,
+        sessionModality: modality,
         createdAt:     new Date().toISOString(),
       };
       await db.readiness.add(record);
+
+      // 1b. Translate modality into a schedule override so the engine +
+      // abbreviator + coach prompt all see the same constraint.
+      const modalityDef = MODALITY_OPTIONS.find((m) => m.key === modality);
+      if (modalityDef && modality !== 'FULL') {
+        const existingOverrides = await loadOverridesFor(dateStr);
+        const hasEquipmentOverride = existingOverrides.some((o) => o.kind === 'EQUIPMENT_ONLY');
+        const hasTimeBoxOverride   = existingOverrides.some((o) => o.kind === 'TIME_BOX');
+        if (modalityDef.equipment && !hasEquipmentOverride) {
+          await addOverride({
+            date: dateStr,
+            kind: 'EQUIPMENT_ONLY',
+            allowedEquipment: modalityDef.equipment,
+            note: `Check-in modality: ${modalityDef.label.toLowerCase()}`,
+          });
+        }
+        if (modalityDef.minutes && !hasTimeBoxOverride) {
+          await addOverride({
+            date: dateStr,
+            kind: 'TIME_BOX',
+            minutesAvailable: modalityDef.minutes,
+            note: `Check-in modality: ${modalityDef.label.toLowerCase()}`,
+          });
+        }
+      }
 
       // 1b. Save bodyweight entry if provided
       const bwNum = bodyweight.trim() !== '' ? parseFloat(bodyweight) : undefined;
@@ -372,7 +444,7 @@ export default function CheckInPage() {
           } catch { /* non-critical — fall back to undefined */ }
 
           // 4. Re-generate session with live readiness data
-          const generated = generateSession({
+          let generated = generateSession({
             profile,
             block,
             weekDayOfWeek,
@@ -381,6 +453,13 @@ export default function CheckInPage() {
             weekWithinBlock,
             overshootHistory,
           });
+
+          // 4b. If the athlete picked a time-capped modality, trim now so the
+          // session they walk into matches what they said they could do.
+          const modalityDef = MODALITY_OPTIONS.find((m) => m.key === modality);
+          if (modalityDef?.minutes) {
+            generated = abbreviateSession(generated, { maxMinutes: modalityDef.minutes });
+          }
 
           // 5a. Update session metadata
           await db.sessions.update(session.id, {
@@ -411,7 +490,7 @@ export default function CheckInPage() {
         }
       }
 
-      router.push('/home');
+      router.push(nextHref ?? '/home');
     } catch (err) {
       console.error('[CheckIn] save failed:', err);
       setSubmitting(false);
@@ -432,6 +511,8 @@ export default function CheckInPage() {
     readinessScore,
     autoFilled,
     router,
+    modality,
+    nextHref,
   ]);
 
   // ── Skip ───────────────────────────────────────────────────────────────
@@ -441,13 +522,14 @@ export default function CheckInPage() {
         id:            newId(),
         date:          today(),
         readinessScore: 70,
+        sessionModality: modality,
         createdAt:     new Date().toISOString(),
       });
     } catch {
       // already exists or other error — still navigate
     }
-    router.push('/home');
-  }, [router]);
+    router.push(nextHref ?? '/home');
+  }, [router, nextHref, modality]);
 
   // ── Loading guard ──────────────────────────────────────────────────────
   if (!ready) {
@@ -587,6 +669,45 @@ export default function CheckInPage() {
                 </p>
               )}
             </div>
+          </Section>
+
+          {/* ── SECTION 1a: Training style today ─────────────────────── */}
+          <Section title="How are you training today?">
+            <div className="grid grid-cols-1 gap-2">
+              {MODALITY_OPTIONS.map((m) => {
+                const on = modality === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => setModality(m.key)}
+                    className="text-left rounded-xl p-3 transition-all active:scale-[0.99]"
+                    style={{
+                      backgroundColor: on ? `${ACCENT}14` : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${on ? ACCENT : C.border}`,
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl leading-none">{m.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold" style={{ color: on ? ACCENT : TEXT }}>
+                          {m.label}
+                          {m.minutes && (
+                            <span className="ml-2 text-xs font-semibold" style={{ color: MUTED }}>
+                              · {m.minutes} min
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs" style={{ color: MUTED }}>{m.sub}</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs" style={{ color: MUTED }}>
+              Session adapts — we&apos;ll trim or swap exercises to match what you&apos;ve got.
+            </p>
           </Section>
 
           {/* ── SECTION 1b: Bodyweight (optional) ───────────────────── */}

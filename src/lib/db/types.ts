@@ -388,8 +388,21 @@ export interface ReadinessRecord {
   stress?: number;               // 1-5
   note?: string;
   readinessScore: number;        // 0-100 composite
+  /** How the athlete wants to train today. Non-indexed, additive. */
+  sessionModality?: SessionModalityChoice;
   createdAt: string;
 }
+
+/**
+ * Lightweight modality choice the athlete picks at check-in time. Drives both
+ * the session abbreviator (via equipment filters) and the coach prompt.
+ */
+export type SessionModalityChoice =
+  | 'FULL'        // full gym, no constraints
+  | 'QUICK'       // ~30 min — abbreviate aggressively
+  | 'BODYWEIGHT'  // no weights available — calisthenics only
+  | 'CALISTHENICS'// calisthenics focus this session (rings/bars ok)
+  | 'TRAVEL';     // hotel / minimal equipment
 
 export interface Meet {
   id: string;

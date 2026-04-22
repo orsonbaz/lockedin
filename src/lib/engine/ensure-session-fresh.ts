@@ -22,6 +22,57 @@ import { db, newId }          from '@/lib/db/database';
 import { generateSession }    from './session';
 import type { SessionExercise, TrainingSession } from '@/lib/db/types';
 
+export interface EnsureTodayResult {
+  session: TrainingSession;
+  /** True if a brand-new session row was created by this call. */
+  created: boolean;
+}
+
+/**
+ * Make sure today has a trainable session row. Creates one from the active
+ * cycle + current block if none exists, then runs ensureSessionFresh to
+ * populate exercises from the live engine.
+ *
+ * Returns the session. Throws if there's no active cycle / block — the caller
+ * should surface that as an onboarding error.
+ */
+export async function ensureTodaySession(dateStr: string): Promise<EnsureTodayResult> {
+  const existing = await db.sessions.where('scheduledDate').equals(dateStr).first();
+  if (existing) {
+    await ensureSessionFresh(dateStr).catch(() => { /* best-effort */ });
+    const refreshed = await db.sessions.get(existing.id);
+    return { session: refreshed ?? existing, created: false };
+  }
+
+  const cycle = await db.cycles.filter((c) => c.status === 'ACTIVE').first();
+  if (!cycle) {
+    throw new Error('No active training cycle — finish onboarding first.');
+  }
+  const block = await db.blocks
+    .where('cycleId').equals(cycle.id)
+    .filter((b) => b.weekStart <= cycle.currentWeek && b.weekEnd >= cycle.currentWeek)
+    .first();
+  if (!block) {
+    throw new Error('No current training block — rebuild your cycle.');
+  }
+
+  const session: TrainingSession = {
+    id: newId(),
+    blockId: block.id,
+    cycleId: cycle.id,
+    scheduledDate: dateStr,
+    sessionType: 'ACCUMULATION',
+    primaryLift: 'SQUAT',
+    status: 'SCHEDULED',
+    coachNote: '',
+  };
+  await db.sessions.put(session);
+
+  await ensureSessionFresh(dateStr).catch(() => { /* exercises stay empty */ });
+  const refreshed = (await db.sessions.get(session.id)) ?? session;
+  return { session: refreshed, created: true };
+}
+
 /** Monday-based ISO week start. Mirrors the helper inlined in checkin/page.tsx. */
 function weekStartOf(dateStr: string): string {
   const d    = new Date(`${dateStr}T12:00:00`);

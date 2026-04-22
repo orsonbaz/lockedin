@@ -155,6 +155,9 @@ export async function buildSystemPrompt(
     if (readiness.stress) parts.push(`Stress: ${readiness.stress}/5`);
     if (readiness.hrv) parts.push(`HRV: ${readiness.hrv}ms`);
     if (readiness.hrvDeviation !== undefined) parts.push(`HRV deviation: ${readiness.hrvDeviation > 0 ? '+' : ''}${readiness.hrvDeviation.toFixed(1)}%`);
+    if (readiness.sessionModality && readiness.sessionModality !== 'FULL') {
+      parts.push(`Training style today: ${readiness.sessionModality.toLowerCase()}`);
+    }
     if (readiness.note) parts.push(`Note: "${readiness.note}"`);
     readinessDetails = `Today's readiness: ${parts.join('. ')}.`;
   }
