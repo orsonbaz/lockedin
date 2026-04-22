@@ -20,6 +20,7 @@
 
 import { db, newId }          from '@/lib/db/database';
 import { generateSession }    from './session';
+import { loadRecentLiftExposures } from './lift-exposures';
 import type { SessionExercise, TrainingSession } from '@/lib/db/types';
 
 export interface EnsureTodayResult {
@@ -172,6 +173,10 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     // Non-critical — fall back to undefined.
   }
 
+  const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
+  const readinessRow2 = await db.readiness.where('date').equals(dateStr).first().catch(() => undefined);
+  const sbdToday = readinessRow2?.sessionModality === 'SBD';
+
   const generated = generateSession({
     profile,
     block,
@@ -180,6 +185,8 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     sessionNumber,
     weekWithinBlock,
     overshootHistory,
+    recentLiftExposures,
+    sbdToday,
   });
 
   // Update session meta and replace exercises atomically.

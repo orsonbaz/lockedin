@@ -16,7 +16,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft, Camera, Circle, Square, Video, AlertTriangle, CheckCircle2, XCircle, History } from 'lucide-react';
+import { ArrowLeft, Camera, Circle, Square, Video, AlertTriangle, CheckCircle2, XCircle, History, Upload } from 'lucide-react';
 import { C } from '@/lib/theme';
 import { db } from '@/lib/db/database';
 import {
@@ -86,6 +86,7 @@ function FormCheckInner() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const supported = useMemo(() => canCaptureVideo(), []);
 
@@ -113,6 +114,38 @@ function FormCheckInner() {
     setKeyframes([]);
     setAnalysis(null);
   }, []);
+
+  /**
+   * Upload a pre-recorded clip from the device instead of shooting in-app.
+   * No 10-second cap: the athlete trims before uploading if they want. We
+   * extract up to 6 evenly-spaced keyframes from whatever they hand us.
+   */
+  const handleUpload = useCallback(async (file: File) => {
+    resetForNextClip();
+    setStage('extracting');
+    try {
+      const { keyframes: frames } = await extractKeyframesFromBlob(file, 6);
+      if (frames.length === 0) {
+        setError('No frames could be read from that file.');
+        setStage('error');
+        return;
+      }
+      setKeyframes(frames);
+      setStage('idle');
+    } catch (e) {
+      console.error('[form-check] upload extract failed', e);
+      setError('Couldn\'t read that video. Try a different file.');
+      setStage('error');
+    }
+  }, [resetForNextClip]);
+
+  const onFilePicked = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset so picking the same file again still fires change
+    if (e.target) e.target.value = '';
+    if (!file) return;
+    void handleUpload(file);
+  }, [handleUpload]);
 
   const startRecording = useCallback(async () => {
     if (!supported) {
@@ -396,16 +429,38 @@ function FormCheckInner() {
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              onClick={() => void startRecording()}
-              disabled={!supported || stage === 'extracting' || stage === 'analyzing'}
-              className="w-full py-4 rounded-2xl text-base font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
-              style={{ backgroundColor: C.accent, color: '#fff' }}
-            >
-              <Circle size={18} fill="currentColor" />
-              {stage === 'extracting' ? 'Extracting frames…' : stage === 'analyzing' ? 'Analyzing…' : 'Start recording'}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => void startRecording()}
+                disabled={!supported || stage === 'extracting' || stage === 'analyzing'}
+                className="w-full py-4 rounded-2xl text-base font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
+                style={{ backgroundColor: C.accent, color: '#fff' }}
+              >
+                <Circle size={18} fill="currentColor" />
+                {stage === 'extracting' ? 'Extracting frames…' : stage === 'analyzing' ? 'Analyzing…' : 'Record in app (10 s)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={stage === 'extracting' || stage === 'analyzing'}
+                className="w-full py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50"
+                style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+              >
+                <Upload size={15} />
+                Upload a video
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                onChange={onFilePicked}
+                className="hidden"
+              />
+              <p className="text-xs text-center" style={{ color: C.muted }}>
+                Record on your phone, trim if needed, then pick it here. No length limit.
+              </p>
+            </>
           )}
         </div>
 

@@ -335,6 +335,20 @@ Rules:
         profile?.calisthenicsGoals?.length
           ? `Calisthenics skill goals: ${profile.calisthenicsGoals.join(', ')}.`
           : '',
+        (() => {
+          const g = profile?.defaultGear;
+          if (!g) return '';
+          const on = [
+            g.belt && 'belt',
+            g.sleeves && 'sleeves',
+            g.chalk && 'chalk',
+            g.wristWraps && 'wrist wraps',
+            g.kneeWraps && 'knee wraps',
+          ].filter(Boolean) as string[];
+          return on.length > 0
+            ? `Default gear on comp lifts: ${on.join(', ')}.`
+            : 'Trains raw by default — no belt/sleeves.';
+        })(),
       ].filter(Boolean).join('\n'),
     },
     {

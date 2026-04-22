@@ -24,6 +24,7 @@ import {
   readinessLabel,
 } from '@/lib/engine/readiness';
 import { generateSession, abbreviateSession } from '@/lib/engine/session';
+import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
 import { addOverride, loadOverridesFor } from '@/lib/engine/schedule';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
@@ -157,6 +158,7 @@ const MODALITY_OPTIONS: {
   equipment?: string[];
 }[] = [
   { key: 'FULL',         label: 'Full gym',      sub: 'Barbell + accessories as programmed.', emoji: '🏋️' },
+  { key: 'SBD',          label: 'SBD day',       sub: 'Cover squat + bench + deadlift in one session.', emoji: '🏆' },
   { key: 'QUICK',        label: '30-min squeeze',sub: 'Keep comp lifts, drop accessories.',  emoji: '⏱️', minutes: 30 },
   { key: 'CALISTHENICS', label: 'Calisthenics',  sub: 'Bars / rings — weighted pull-ups, dips, skills.', emoji: '🤸', equipment: ['pullup_bar', 'dip_station', 'rings'] },
   { key: 'BODYWEIGHT',   label: 'Bodyweight',    sub: 'No gear at all. Push/pull/squat with what you have.', emoji: '💪', equipment: ['bodyweight'] },
@@ -444,6 +446,7 @@ function CheckInInner() {
           } catch { /* non-critical — fall back to undefined */ }
 
           // 4. Re-generate session with live readiness data
+          const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
           let generated = generateSession({
             profile,
             block,
@@ -452,6 +455,8 @@ function CheckInInner() {
             sessionNumber,
             weekWithinBlock,
             overshootHistory,
+            recentLiftExposures,
+            sbdToday: modality === 'SBD',
           });
 
           // 4b. If the athlete picked a time-capped modality, trim now so the
@@ -461,9 +466,12 @@ function CheckInInner() {
             generated = abbreviateSession(generated, { maxMinutes: modalityDef.minutes });
           }
 
-          // 5a. Update session metadata
+          // 5a. Update session metadata — primaryLift can change on the fly
+          // when the adaptive selector picks a different lift.
           await db.sessions.update(session.id, {
             readinessScore,
+            primaryLift:      generated.primaryLift,
+            sessionType:      generated.sessionType,
             coachNote:        generated.coachNote,
             aiModifications:  JSON.stringify(generated.modifications),
             status:           generated.modifications.length > 0 ? 'MODIFIED' : 'SCHEDULED',

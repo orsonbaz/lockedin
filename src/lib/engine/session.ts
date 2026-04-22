@@ -26,6 +26,15 @@ import {
 
 // ── Public Interfaces ──────────────────────────────────────────────────────────
 
+/** Per-lift weekly / historical signal used by the adaptive selector. */
+export interface LiftExposure {
+  lift: Lift;
+  /** Days since this lift was the primary of a (any-status) session. Infinity if never. */
+  daysSince: number;
+  /** Count of sessions this ISO week where this lift was primary. */
+  weekCount: number;
+}
+
 export interface SessionInput {
   profile: AthleteProfile;
   block: TrainingBlock;
@@ -34,6 +43,19 @@ export interface SessionInput {
   sessionNumber: number;     // which session this week (1-based)
   overshootHistory?: number; // avg RPE overshoot in last 5 sessions (positive = over)
   weekWithinBlock?: number;  // 1-based week index within the current block (for taper logic)
+  /**
+   * Recent per-lift exposure signal. When provided, `generateSession` uses an
+   * adaptive scorer that picks the most-due lift(s) for today instead of the
+   * fixed S/B/D rotation. Omit to fall back to the sessionNumber rotation
+   * (primarily for test fixtures + cold-start sessions).
+   */
+  recentLiftExposures?: LiftExposure[];
+  /**
+   * Explicit athlete request to cover all three comp lifts today. When true
+   * the selector returns SQUAT primary with BENCH + DEADLIFT as secondary
+   * top-singles at reduced volume.
+   */
+  sbdToday?: boolean;
 }
 
 export interface GeneratedExercise {
@@ -53,6 +75,12 @@ export interface GeneratedExercise {
 export interface GeneratedSession {
   sessionType: SessionType;
   primaryLift: Lift;
+  /**
+   * Additional comp lifts selected for today. Empty for a conventional
+   * single-lift session; populated when readiness + exposure history warrant
+   * a two-lift or full-SBD day.
+   */
+  secondaryLifts?: Lift[];
   exercises: GeneratedExercise[];
   modifications: string[];   // human-readable list of any changes applied
   coachNote: string;         // 1-2 sentence rule-based coaching cue
@@ -75,8 +103,24 @@ export interface SessionBudget {
 export function generateSession(input: SessionInput): GeneratedSession {
   const { profile, block, readinessScore, sessionNumber } = input;
 
-  // ── 1. Determine primary lift ──────────────────────────────────────────────
-  const primaryLift = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+  // ── 1. Determine primary lift(s) ───────────────────────────────────────────
+  // Adaptive selector when we have exposure history — otherwise fall back to
+  // the fixed S/B/D rotation (cold start + test fixtures).
+  const selection = input.recentLiftExposures && input.recentLiftExposures.length > 0
+    ? selectAdaptivePrimary({
+        exposures:       input.recentLiftExposures,
+        readinessScore,
+        blockType:       block.blockType,
+        weekInBlock:     input.weekWithinBlock ?? 1,
+        totalBlockWeeks: block.weekEnd - block.weekStart + 1,
+        sbdToday:        input.sbdToday === true,
+      })
+    : {
+        primary: selectPrimaryLift(sessionNumber, profile.weeklyFrequency),
+        secondary: [] as Lift[],
+      };
+  const primaryLift = selection.primary;
+  const secondaryLifts = selection.secondary;
 
   // ── 2. Session type from block ─────────────────────────────────────────────
   const sessionType = blockTypeToSessionType(block.blockType);
@@ -112,10 +156,39 @@ export function generateSession(input: SessionInput): GeneratedSession {
     sessionNumber,
   );
 
+  // Secondary comp blocks: low-volume top singles per additional lift. Ordering
+  // stays primary → secondaries → accessories (accessories already trailed the
+  // primary block when buildSessionExercises ran).
+  if (secondaryLifts.length > 0) {
+    // Accessory slots start after whatever buildSessionExercises produced;
+    // we insert secondary comps just after the primary comp(s) and push
+    // accessories down. Simpler: rebuild the order numbers at the end.
+    const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
+    const secondaryExercises: GeneratedExercise[] = [];
+    for (const lift of secondaryLifts) {
+      secondaryExercises.push(
+        ...buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlock, totalBlockWeeks),
+      );
+    }
+
+    // Find the index right after the last COMPETITION exercise so secondary
+    // comps appear adjacent to the primary.
+    let insertAt = 0;
+    for (let i = 0; i < exercises.length; i++) {
+      if (exercises[i].exerciseType === 'COMPETITION') insertAt = i + 1;
+    }
+    exercises.splice(insertAt, 0, ...secondaryExercises);
+    exercises.forEach((e, i) => { e.order = i + 1; });
+
+    modifications.push(
+      `SBD-style day: added top singles for ${secondaryLifts.join(' + ')}.`,
+    );
+  }
+
   // ── 5. Coach note ──────────────────────────────────────────────────────────
   const coachNote = buildCoachNote(readinessScore, block.blockType);
 
-  return { sessionType, primaryLift, exercises, modifications, coachNote };
+  return { sessionType, primaryLift, secondaryLifts: secondaryLifts.length > 0 ? secondaryLifts : undefined, exercises, modifications, coachNote };
 }
 
 // ── Primary Lift Rotation ──────────────────────────────────────────────────────
@@ -142,6 +215,183 @@ function selectPrimaryLift(sessionNumber: number, weeklyFrequency: number): Lift
   };
 
   return rotations[freq][idx];
+}
+
+// ── Adaptive Primary-Lift Selector ────────────────────────────────────────────
+
+/**
+ * Weekly exposure targets per elite-coach consensus:
+ *   Squat     — 2 to 3 sessions
+ *   Bench     — 3 to 4 sessions (higher SFR, lower systemic cost)
+ *   Deadlift  — 2 to 3 sessions (highest systemic cost)
+ */
+const WEEKLY_TARGET: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
+  SQUAT:    2.5,
+  BENCH:    3.5,
+  DEADLIFT: 2.5,
+};
+
+/**
+ * Systemic load of each lift — used to down-rank high-fatigue lifts when
+ * readiness is low. Higher = more taxing.
+ */
+const SYSTEMIC_LOAD: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
+  SQUAT:    7,
+  BENCH:    4,
+  DEADLIFT: 9,
+};
+
+interface AdaptiveInput {
+  exposures: LiftExposure[];
+  readinessScore: number;
+  blockType: BlockType;
+  weekInBlock: number;
+  totalBlockWeeks: number;
+  sbdToday: boolean;
+}
+
+interface AdaptiveOutput {
+  primary: Lift;
+  secondary: Lift[];
+}
+
+/**
+ * Score each of SQUAT / BENCH / DEADLIFT and pick the most "due" lift as
+ * primary. Secondary lifts are added when readiness + block permit and
+ * exposure gaps warrant covering more than one comp lift today.
+ *
+ *   need = 0.35·dueness   // how many days since last exposure
+ *        + 0.35·gap       // weekly target minus this-week count
+ *        + 0.20·readFit   // readiness match (low readiness → bench; high → deadlift/squat)
+ *        - 0.10·systemic  // damp heavy lifts when readiness is borderline
+ *
+ * Peaking / REALIZATION collapses to the fixed S/B/D rotation-driven pick so
+ * specificity wins over adaptation in meet prep.
+ */
+function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
+  // Keep peaking deterministic — meet week cares about order, not novelty.
+  if (input.blockType === 'REALIZATION') {
+    const byGap = scoreAdaptiveLifts(input);
+    return { primary: byGap[0].lift, secondary: [] };
+  }
+
+  const scored = scoreAdaptiveLifts(input);
+  const primary = scored[0].lift;
+
+  // Explicit SBD request: always two secondaries at reduced volume.
+  if (input.sbdToday) {
+    return {
+      primary,
+      secondary: scored.slice(1, 3).map((s) => s.lift),
+    };
+  }
+
+  // Auto-SBD: on a high-readiness day where two or three lifts are roughly
+  // equally due, cover them in one session rather than leaving fatigue on the
+  // table. Only consider this in ACCUMULATION or INTENSIFICATION.
+  const canStack = (input.blockType === 'ACCUMULATION' || input.blockType === 'INTENSIFICATION')
+    && input.readinessScore >= 80;
+  if (!canStack) return { primary, secondary: [] };
+
+  const secondary: Lift[] = [];
+  for (const s of scored.slice(1)) {
+    if (s.lift === 'UPPER') continue;
+    const gap = scored[0].score - s.score;
+    // Add a second comp block when it's within 20% of the top score.
+    if (gap <= scored[0].score * 0.20 && secondary.length < 2) {
+      secondary.push(s.lift);
+    }
+  }
+  return { primary, secondary };
+}
+
+interface ScoredLift { lift: Lift; score: number; }
+
+function scoreAdaptiveLifts(input: AdaptiveInput): ScoredLift[] {
+  const { exposures, readinessScore } = input;
+  const byLift = new Map<Lift, LiftExposure>();
+  for (const e of exposures) byLift.set(e.lift, e);
+
+  function read(lift: 'SQUAT' | 'BENCH' | 'DEADLIFT'): ScoredLift {
+    const exp = byLift.get(lift);
+    const daysSince = exp?.daysSince ?? 14;
+    const weekCount = exp?.weekCount ?? 0;
+    const target    = WEEKLY_TARGET[lift];
+
+    // Dueness: cap influence after ~7 days so a 30-day absence doesn't pin
+    // everything to a single lift. Normalize to roughly 0–1.
+    const dueness = Math.min(daysSince, 10) / 10;
+    // Gap: positive when under weekly target, negative when over. Normalize.
+    const gap     = Math.max(-1, Math.min(1, (target - weekCount) / target));
+    // Readiness fit: on a poor day bias toward bench (low systemic); on a
+    // great day don't penalize squat/deadlift.
+    const readFit = (1 - SYSTEMIC_LOAD[lift] / 10) * (1 - readinessScore / 100)
+                  + (SYSTEMIC_LOAD[lift] / 10) * (readinessScore / 100);
+    // Systemic damp: only hurts when readiness is actually borderline.
+    const systemicDamp = readinessScore < 60
+      ? (SYSTEMIC_LOAD[lift] / 10) * (1 - readinessScore / 100)
+      : 0;
+
+    const score = 0.35 * dueness + 0.35 * gap + 0.20 * readFit - 0.10 * systemicDamp;
+    return { lift, score };
+  }
+
+  const entries: ScoredLift[] = [read('SQUAT'), read('BENCH'), read('DEADLIFT')];
+  entries.sort((a, b) => b.score - a.score);
+  return entries;
+}
+
+// ── Secondary Comp Block Builder ──────────────────────────────────────────────
+
+/**
+ * Minimal top-single comp block for a non-primary lift on an SBD / stacked
+ * day. Stays at RPE 7 with 1 top single + 1 backoff so total session stress
+ * stays manageable. Respects block context but does not taper (primary block
+ * already handles taper logic).
+ */
+function buildSecondaryCompExercises(
+  profile: AthleteProfile,
+  blockType: BlockType,
+  lift: Lift,
+  rpeOffset: number,
+  weekInBlock: number,
+  totalBlockWeeks: number,
+): GeneratedExercise[] {
+  // DELOAD + REALIZATION meet week: don't add secondary comp — protect taper.
+  if (blockType === 'DELOAD') return [];
+  if (blockType === 'REALIZATION' && weekInBlock >= totalBlockWeeks) return [];
+
+  const maxKg  = getLiftMax(lift, profile);
+  const topRpe = clampRpe(7 + rpeOffset);
+  const topLoad = roundLoad(prescribeLoad(maxKg, topRpe, 1));
+  const bkLoad  = roundLoad(topLoad * 0.9);
+
+  return [
+    {
+      name:              `${getCompMovementName(lift)} — secondary`,
+      exerciseType:      'COMPETITION',
+      setStructure:      'STRAIGHT',
+      sets:              1,
+      reps:              1,
+      rpeTarget:         topRpe,
+      estimatedLoadKg:   topLoad,
+      order:             0, // re-numbered by caller
+      notes:             `Secondary top single @RPE ${topRpe}. Skip if fatigue flares — primary lift is the priority.`,
+      libraryExerciseId: getCompMovementLibraryId(lift),
+    },
+    {
+      name:              `${getCompMovementName(lift)} — backoff`,
+      exerciseType:      'VARIATION',
+      setStructure:      'STRAIGHT',
+      sets:              1,
+      reps:              3,
+      rpeTarget:         clampRpe(topRpe - 1),
+      estimatedLoadKg:   bkLoad,
+      order:             0,
+      notes:             `One backoff triple — feel for position + bar speed.`,
+      libraryExerciseId: getCompMovementLibraryId(lift),
+    },
+  ];
 }
 
 // ── Session Type Mapping ───────────────────────────────────────────────────────

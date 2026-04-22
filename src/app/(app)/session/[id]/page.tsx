@@ -21,7 +21,8 @@ import { readinessLabel }                                 from '@/lib/engine/rea
 import { detectMaxUpdate }                                from '@/lib/engine/calc';
 import type { MaxUpdateSuggestion }                       from '@/lib/engine/calc';
 import { C as _C }                                        from '@/lib/theme';
-import type { TrainingSession, TrainingBlock, SessionExercise, SetLog, AthleteProfile }  from '@/lib/db/types';
+import type { TrainingSession, TrainingBlock, SessionExercise, SetLog, AthleteProfile, GearConfig }  from '@/lib/db/types';
+import { DEFAULT_GEAR }                                   from '@/lib/db/types';
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
@@ -213,6 +214,11 @@ export default function SessionPage({
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [showModifications,setShowModifications]= useState(false);
 
+  // Gear for this session — initialised from profile.defaultGear (or DEFAULT_GEAR)
+  // and editable per session via the overview chip strip. Persisted back to
+  // the profile so the next session picks up the latest default.
+  const [gear, setGear] = useState<GearConfig>(DEFAULT_GEAR);
+
   // ── Logging: exercise tracking ────────────────────────────────────────
   const [activeExIdx,      setActiveExIdx]      = useState(0);
 
@@ -255,12 +261,13 @@ export default function SessionPage({
         });
       }
 
-      const [sess, exs, sets, readiness, eqProfile] = await Promise.all([
+      const [sess, exs, sets, readiness, eqProfile, profileRow] = await Promise.all([
         db.sessions.get(sessionId),
         db.exercises.where('sessionId').equals(sessionId).sortBy('order'),
         db.sets.where('sessionId').equals(sessionId).toArray(),
         db.readiness.where('date').equals(today()).first(),
         db.equipmentProfile.get('me'),
+        db.profile.get('me'),
       ]);
       if (cancelled) return;
       setSession(sess ?? null);
@@ -268,6 +275,7 @@ export default function SessionPage({
       setSetLogs(sets);
       setTodayReadiness(readiness?.readinessScore);
       setEquipmentProfile(eqProfile ?? null);
+      setGear(profileRow?.defaultGear ?? DEFAULT_GEAR);
       // Fetch the block so we can use its blockType for swap suggestions
       if (sess?.blockId) {
         const blk = await db.blocks.get(sess.blockId);
@@ -851,6 +859,52 @@ export default function SessionPage({
                 </div>
               ))
             )}
+          </div>
+
+          {/* Gear chips — tap to toggle. Persisted back to the profile. */}
+          <div className="mb-4">
+            <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: C.muted }}>
+              Gear today
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {([
+                ['belt',       'Belt',       '🔒'],
+                ['sleeves',    'Sleeves',    '🦵'],
+                ['chalk',      'Chalk',      '🧂'],
+                ['wristWraps', 'Wrist wraps','🤚'],
+                ['kneeWraps',  'Knee wraps', '🎗️'],
+              ] as const).map(([key, label, icon]) => {
+                const on = gear[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={async () => {
+                      const next: GearConfig = { ...gear, [key]: !on };
+                      setGear(next);
+                      await db.profile.update('me', {
+                        defaultGear: next,
+                        updatedAt: new Date().toISOString(),
+                      });
+                    }}
+                    className="px-3 py-1.5 rounded-full text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5"
+                    style={{
+                      backgroundColor: on ? `${C.accent}20` : C.dim,
+                      color:           on ? C.accent : C.muted,
+                      border:          `1px solid ${on ? C.accent : C.border}`,
+                    }}
+                    aria-pressed={on}
+                  >
+                    <span>{icon}</span>
+                    <span>{label}</span>
+                    {!on && <span>off</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs mt-2" style={{ color: C.muted }}>
+              Tap to flip. Defaults carry over; turn off for raw work.
+            </p>
           </div>
 
           {/* Start Session CTA */}

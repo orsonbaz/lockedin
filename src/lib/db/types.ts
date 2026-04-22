@@ -120,7 +120,29 @@ export interface AthleteProfile {
   trainingGoalTarget?: string;
   /** Target completion date (YYYY-MM-DD) for the current training goal. */
   trainingGoalDeadline?: string;
+  /**
+   * Default gear worn on comp lifts. All default to true — the coach prompt
+   * reads this to calibrate load prescriptions and cue the athlete.
+   */
+  defaultGear?: GearConfig;
 }
+
+/** Supportive equipment the athlete defaults to using on comp lifts. */
+export interface GearConfig {
+  belt: boolean;
+  sleeves: boolean;
+  chalk: boolean;
+  wristWraps: boolean;
+  kneeWraps: boolean;
+}
+
+export const DEFAULT_GEAR: GearConfig = {
+  belt:       true,
+  sleeves:    true,
+  chalk:      true,
+  wristWraps: true,
+  kneeWraps:  false, // wraps are a specialization — default off
+};
 
 /**
  * High-level training focus. Sets the tone for the coach's programming
@@ -399,6 +421,7 @@ export interface ReadinessRecord {
  */
 export type SessionModalityChoice =
   | 'FULL'        // full gym, no constraints
+  | 'SBD'         // explicit SBD day — all three comp lifts
   | 'QUICK'       // ~30 min — abbreviate aggressively
   | 'BODYWEIGHT'  // no weights available — calisthenics only
   | 'CALISTHENICS'// calisthenics focus this session (rings/bars ok)

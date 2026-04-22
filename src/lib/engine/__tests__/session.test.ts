@@ -61,6 +61,63 @@ const mondayDOW     = 1;
 
 // ── Primary lift rotation ─────────────────────────────────────────────────────
 
+describe('generateSession — adaptive primary-lift selection', () => {
+  const block = makeBlock('ACCUMULATION');
+
+  it('picks the most-due lift when exposures are provided', () => {
+    // DEADLIFT hasn't happened in 9 days, others are recent → adaptive selector
+    // should pick DEADLIFT regardless of sessionNumber.
+    const out = generateSession({
+      profile: baseProfile,
+      block,
+      weekDayOfWeek: 1,
+      readinessScore: 80,
+      sessionNumber: 1, // rotation would say SQUAT
+      recentLiftExposures: [
+        { lift: 'SQUAT',    daysSince: 1, weekCount: 2 },
+        { lift: 'BENCH',    daysSince: 2, weekCount: 3 },
+        { lift: 'DEADLIFT', daysSince: 9, weekCount: 0 },
+      ],
+    });
+    expect(out.primaryLift).toBe('DEADLIFT');
+  });
+
+  it('honors an explicit SBD day request with two secondary lifts', () => {
+    const out = generateSession({
+      profile: baseProfile,
+      block,
+      weekDayOfWeek: 6,
+      readinessScore: 80,
+      sessionNumber: 1,
+      recentLiftExposures: [
+        { lift: 'SQUAT',    daysSince: 5, weekCount: 1 },
+        { lift: 'BENCH',    daysSince: 5, weekCount: 1 },
+        { lift: 'DEADLIFT', daysSince: 5, weekCount: 1 },
+      ],
+      sbdToday: true,
+    });
+    expect(out.secondaryLifts?.length ?? 0).toBe(2);
+    expect(out.exercises.filter((e) => e.exerciseType === 'COMPETITION').length)
+      .toBeGreaterThanOrEqual(3);
+  });
+
+  it('stays single-lift when readiness is low even with roughly equal need', () => {
+    const out = generateSession({
+      profile: baseProfile,
+      block,
+      weekDayOfWeek: 3,
+      readinessScore: 40,
+      sessionNumber: 1,
+      recentLiftExposures: [
+        { lift: 'SQUAT',    daysSince: 4, weekCount: 1 },
+        { lift: 'BENCH',    daysSince: 4, weekCount: 1 },
+        { lift: 'DEADLIFT', daysSince: 4, weekCount: 1 },
+      ],
+    });
+    expect(out.secondaryLifts ?? []).toEqual([]);
+  });
+});
+
 describe('generateSession — primary lift rotation', () => {
   const block = makeBlock('ACCUMULATION');
 
