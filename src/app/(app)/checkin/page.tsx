@@ -25,6 +25,7 @@ import {
 } from '@/lib/engine/readiness';
 import { generateSession, abbreviateSession } from '@/lib/engine/session';
 import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
+import { reviewSessionPure, packReviewIssues } from '@/lib/engine/session-review';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
 import { addOverride, loadOverridesFor } from '@/lib/engine/schedule';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
@@ -459,6 +460,29 @@ function CheckInInner() {
             sbdToday: modality === 'SBD',
           });
 
+          // 4a. Post-generation review — swap primary lift on bench/squat/DL drought.
+          const reviewPass1 = reviewSessionPure({
+            session: generated, profile, block,
+            exposures: recentLiftExposures, weekDayOfWeek,
+          });
+          const blockSwap1 = reviewPass1.issues.find(
+            (i) => i.severity === 'BLOCK' && /_DROUGHT$/.test(i.code),
+          );
+          if (blockSwap1) {
+            const forced = blockSwap1.code === 'BENCH_DROUGHT' ? 'BENCH'
+                         : blockSwap1.code === 'SQUAT_DROUGHT' ? 'SQUAT' : 'DEADLIFT';
+            generated = generateSession({
+              profile, block, weekDayOfWeek, readinessScore, sessionNumber,
+              weekWithinBlock, overshootHistory, recentLiftExposures,
+              forcePrimary: forced,
+            });
+          }
+          const finalReview = reviewSessionPure({
+            session: generated, profile, block,
+            exposures: recentLiftExposures, weekDayOfWeek,
+          });
+          generated = finalReview.session;
+
           // 4b. If the athlete picked a time-capped modality, trim now so the
           // session they walk into matches what they said they could do.
           const modalityDef = MODALITY_OPTIONS.find((m) => m.key === modality);
@@ -474,6 +498,7 @@ function CheckInInner() {
             sessionType:      generated.sessionType,
             coachNote:        generated.coachNote,
             aiModifications:  JSON.stringify(generated.modifications),
+            reviewIssues:     packReviewIssues(finalReview.issues),
             status:           generated.modifications.length > 0 ? 'MODIFIED' : 'SCHEDULED',
           });
 

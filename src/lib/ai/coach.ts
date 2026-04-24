@@ -19,6 +19,7 @@ import { buildMemorySection, buildSummarySection } from './memory';
 import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
+import { unpackReviewIssues } from '@/lib/engine/session-review';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -203,6 +204,13 @@ export async function buildSystemPrompt(
     sessionInfo = `Today's session — ${todaySession.sessionType} ${todaySession.primaryLift}:\n${exList.join('\n')}`;
     if (todaySession.coachNote) {
       sessionInfo += `\nCoach note: ${todaySession.coachNote}`;
+    }
+    const reviewIssues = unpackReviewIssues(
+      (todaySession as unknown as { reviewIssues?: string }).reviewIssues,
+    );
+    if (reviewIssues.length > 0) {
+      const issueLines = reviewIssues.map((i) => `  - [${i.severity}] ${i.summary}`).join('\n');
+      sessionInfo += `\nSession review flagged:\n${issueLines}`;
     }
   }
 

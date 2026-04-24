@@ -21,7 +21,8 @@
 import { db, newId }          from '@/lib/db/database';
 import { generateSession }    from './session';
 import { loadRecentLiftExposures } from './lift-exposures';
-import type { SessionExercise, TrainingSession } from '@/lib/db/types';
+import { reviewSessionPure, packReviewIssues } from './session-review';
+import type { Lift, SessionExercise, TrainingSession } from '@/lib/db/types';
 
 export interface EnsureTodayResult {
   session: TrainingSession;
@@ -177,7 +178,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const readinessRow2 = await db.readiness.where('date').equals(dateStr).first().catch(() => undefined);
   const sbdToday = readinessRow2?.sessionModality === 'SBD';
 
-  const generated = generateSession({
+  let generated = generateSession({
     profile,
     block,
     weekDayOfWeek,
@@ -189,6 +190,41 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     sbdToday,
   });
 
+  // Post-generation sanity review. If the review flags a BLOCK-severity
+  // primary-lift swap (bench drought, etc.) we re-run the generator with
+  // the new primary pinned so the full accessory chain rebuilds cleanly.
+  const firstReview = reviewSessionPure({
+    session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek,
+  });
+  const blockSwap = firstReview.issues.find(
+    (i) => i.severity === 'BLOCK' && (
+      i.code === 'BENCH_DROUGHT' || i.code === 'SQUAT_DROUGHT' || i.code === 'DEADLIFT_DROUGHT'
+    ),
+  );
+  if (blockSwap) {
+    const forced: Lift = blockSwap.code === 'BENCH_DROUGHT' ? 'BENCH'
+                     : blockSwap.code === 'SQUAT_DROUGHT' ? 'SQUAT'
+                     : 'DEADLIFT';
+    generated = generateSession({
+      profile,
+      block,
+      weekDayOfWeek,
+      readinessScore,
+      sessionNumber,
+      weekWithinBlock,
+      overshootHistory,
+      recentLiftExposures,
+      forcePrimary: forced,
+    });
+  }
+  // Re-run review on the (possibly-regenerated) session to collect any
+  // non-swap issues (face pulls, warnings, etc.) and apply their fixes.
+  const finalReview = reviewSessionPure({
+    session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek,
+  });
+  generated = finalReview.session;
+  const reviewIssues = finalReview.issues;
+
   // Update session meta and replace exercises atomically.
   await db.transaction('rw', db.sessions, db.exercises, async () => {
     await db.sessions.update(session.id, {
@@ -197,6 +233,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
       sessionType:     generated.sessionType,
       coachNote:       generated.coachNote,
       aiModifications: JSON.stringify(generated.modifications),
+      reviewIssues:    packReviewIssues(reviewIssues),
       status:          generated.modifications.length > 0 ? 'MODIFIED' : session.status === 'MODIFIED' ? 'SCHEDULED' : session.status,
     });
 

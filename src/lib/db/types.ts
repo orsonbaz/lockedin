@@ -356,6 +356,8 @@ export interface TrainingSession {
   discipline?: Discipline;
   estimatedMinutes?: number;     // budgeted time for the session
   modality?: SessionModality;    // how the athlete will actually run it
+  /** JSON-serialized ReviewIssue[] — post-generation sanity findings. */
+  reviewIssues?: string;
 }
 
 export interface SessionExercise {

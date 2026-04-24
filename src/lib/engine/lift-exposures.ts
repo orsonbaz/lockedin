@@ -34,21 +34,26 @@ function daysBetween(from: string, to: string): number {
 
 /**
  * Returns per-lift exposure for SQUAT / BENCH / DEADLIFT relative to `onDate`.
- * Sessions scheduled *after* `onDate` are ignored so the caller can run this
- * for historical dates without leaking the future.
+ * Only COMPLETED sessions count — a SCHEDULED or MODIFIED session the athlete
+ * never actually did should not steal exposure credit. Sessions scheduled
+ * *after* `onDate` are ignored so the caller can run this for historical
+ * dates without leaking the future.
  */
 export async function loadRecentLiftExposures(onDate: string): Promise<LiftExposure[]> {
   const weekStart = mondayOf(onDate);
 
-  // Over-fetch slightly in case there are many duplicates — we only look at
-  // the past 21 days.
+  // Over-fetch to survive any number of recent skipped/scheduled rows, then
+  // filter by status. We read more than we need so the filter leaves at
+  // least a couple of weeks of real history for each lift.
   const sessions = await db.sessions
     .orderBy('scheduledDate')
     .reverse()
-    .limit(30)
+    .limit(60)
     .toArray();
 
-  const past = sessions.filter((s) => s.scheduledDate < onDate);
+  const past = sessions.filter(
+    (s) => s.scheduledDate < onDate && s.status === 'COMPLETED',
+  );
 
   return COMP_LIFTS.map<LiftExposure>((lift) => {
     const matching = past.filter((s) => s.primaryLift === lift);

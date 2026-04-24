@@ -57,6 +57,13 @@ export interface SessionInput {
    * top-singles at reduced volume.
    */
   sbdToday?: boolean;
+  /**
+   * Override both rotation and adaptive selection to force a specific primary
+   * lift. Used by the session review engine when it swaps today's primary
+   * (e.g. bench drought). Secondary-lift auto-stacking is disabled when this
+   * is set so the forced lift is the single focus.
+   */
+  forcePrimary?: Lift;
 }
 
 export interface GeneratedExercise {
@@ -111,9 +118,12 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const { profile, block, readinessScore, sessionNumber } = input;
 
   // ── 1. Determine primary lift(s) ───────────────────────────────────────────
-  // Adaptive selector when we have exposure history — otherwise fall back to
-  // the fixed S/B/D rotation (cold start + test fixtures).
-  const selection = input.recentLiftExposures && input.recentLiftExposures.length > 0
+  // If the caller pinned a primary (review-engine rewrite, athlete override)
+  // we honor it. Otherwise adaptive selector when we have exposure history,
+  // falling back to fixed S/B/D rotation (cold start + test fixtures).
+  const selection = input.forcePrimary
+    ? { primary: input.forcePrimary, secondary: [] as Lift[] }
+    : input.recentLiftExposures && input.recentLiftExposures.length > 0
     ? selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
         readinessScore,

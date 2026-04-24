@@ -27,6 +27,7 @@ import { suggestSwaps }                                   from '@/lib/exercises/
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
 import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
+import { unpackReviewIssues }                             from '@/lib/engine/session-review';
 
 // ── Design tokens (extends shared theme with session-specific colours) ───────
 const C = { ..._C, amber: '#D97706', green: _C.greenDeep } as const;
@@ -650,6 +651,12 @@ export default function SessionPage({
     catch { return []; }
   })();
 
+  // ── Parse session-review issues ────────────────────────────────────────
+  const reviewIssues = (() => {
+    const raw = (session as unknown as { reviewIssues?: string } | null)?.reviewIssues;
+    return unpackReviewIssues(raw);
+  })();
+
   // ─────────────────────────────────────────────────────────────────────
   // Render: Loading
   // ─────────────────────────────────────────────────────────────────────
@@ -731,6 +738,44 @@ export default function SessionPage({
               🎥 Form check
             </button>
           </div>
+
+          {/* Review banner — surfaces what the session-review engine caught */}
+          {reviewIssues.length > 0 && (
+            <div
+              className="rounded-xl p-4 mb-4"
+              style={{
+                backgroundColor: reviewIssues.some((i) => i.severity === 'BLOCK')
+                  ? `${C.gold}18`
+                  : `${C.blue}14`,
+                border: `1px solid ${reviewIssues.some((i) => i.severity === 'BLOCK') ? C.gold : C.blue}`,
+              }}
+            >
+              <p
+                className="text-xs font-bold uppercase tracking-widest mb-2"
+                style={{
+                  color: reviewIssues.some((i) => i.severity === 'BLOCK') ? C.gold : C.blue,
+                }}
+              >
+                ✓ Session reviewed
+              </p>
+              <ul className="space-y-1.5">
+                {reviewIssues.map((issue, i) => (
+                  <li key={i} className="text-xs" style={{ color: C.text }}>
+                    <span style={{
+                      color: issue.severity === 'BLOCK' ? C.gold : issue.severity === 'WARN' ? C.accent : C.muted,
+                    }}>
+                      {issue.severity === 'BLOCK' ? '✦' : issue.severity === 'WARN' ? '⚠' : '•'}
+                    </span>
+                    {' '}
+                    {issue.summary}
+                    {issue.fix && (
+                      <span style={{ color: C.muted }}> — {issue.fix}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* AI modifications banner */}
           {modifications.length > 0 && (
