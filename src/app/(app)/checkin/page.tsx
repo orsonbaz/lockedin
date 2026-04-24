@@ -493,6 +493,7 @@ function CheckInInner() {
             order:             ex.order,
             notes:             ex.notes,
             ...(ex.libraryExerciseId ? { libraryExerciseId: ex.libraryExerciseId } : {}),
+            ...(ex.tempo ? { tempo: ex.tempo } : {}),
           }));
           await db.exercises.bulkAdd(freshExercises);
         }

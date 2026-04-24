@@ -381,6 +381,11 @@ export interface SessionExercise {
   usingKneeSleeves?: boolean;
   /** Whether the athlete is wearing wrist wraps for this exercise. */
   usingWristWraps?: boolean;
+  /**
+   * Eccentric-pause-concentric tempo pattern (e.g. "3-1-0"). Present only for
+   * tempo variations. Persisted so the session UI renders a chip reminder.
+   */
+  tempo?: string;
 }
 
 export interface SetLog {

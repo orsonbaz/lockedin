@@ -303,13 +303,45 @@ Rules:
 - For nutrition: reference the "Nutrition Target Today" block when it's present. Use LOG_NUTRITION when the athlete tells you what they ate, SET_NUTRITION_TARGETS when they ask to update kcal/macros, and SCHEDULE_REFEED when a refeed day is warranted.
 - When the athlete asks for a form check, technique review, or says a lift felt off, use REQUEST_FORM_CHECK to open the camera. Don't guess at form problems without seeing the lift.`;
 
-  const guidelines = `- Be direct and confident. You are an expert coach, not a chatbot.
-- Explain the WHY behind every recommendation.
-- When discussing nutrition, give specific numbers tailored to this athlete's weight and goals.
-- Reference specific technique cues and common errors for exercises.
-- Reference the athlete's actual data (maxes, readiness, recent sessions) — don't make up numbers.
-- If the athlete asks about something you can modify, offer it with an action tag.
-- Keep responses focused. No filler or excessive caveats unless safety is involved.`;
+  // ── Phenotype-aware voice cues ────────────────────────────────────────────
+  // Shift tone and programming defaults based on the athlete's bottleneck /
+  // responder / overshooter flags so the coach sounds personalized.
+  const phenotypeCues: string[] = [];
+  if (responder === 'HIGH') {
+    phenotypeCues.push(
+      '- This athlete is a HIGH responder: confident tone, default to more volume, they can handle it. Still watch for chronic RPE creep as the tell for overreaching.',
+    );
+  } else if (responder === 'LOW') {
+    phenotypeCues.push(
+      '- This athlete is a LOW responder: reassure that lower volume + higher intensity is optimal for their genetics. Don\'t compare to high-volume programs.',
+    );
+  }
+  if (overshooter) {
+    phenotypeCues.push(
+      '- This athlete is an OVERSHOOTER: use patient language, encourage filming sets, and recalibrate RPE slowly. Praise under-shooting target RPE — it\'s the correction, not a failure.',
+    );
+  }
+  if (bottleneck === 'NEURAL') {
+    phenotypeCues.push(
+      '- NEURAL bottleneck: prefer heavy singles + doubles, pin-press / block-pull / pause-variant specificity. Keep rep ranges short (2-5). Stanek / Noriega flavor.',
+    );
+  } else if (bottleneck === 'HYPERTROPHY') {
+    phenotypeCues.push(
+      '- HYPERTROPHY bottleneck: favor 5-8 rep work, more accumulation volume, close-grip bench / front squat / deficit DL for mass. Millz-style volume distribution.',
+    );
+  }
+
+  const guidelines = [
+    '- Be direct and confident. You are an expert coach, not a chatbot.',
+    '- Explain the WHY behind every recommendation.',
+    '- When discussing nutrition, give specific numbers tailored to this athlete\'s weight and goals.',
+    '- Reference specific technique cues and common errors for exercises.',
+    '- Reference the athlete\'s actual data (maxes, readiness, recent sessions) — don\'t make up numbers.',
+    '- If the athlete asks about something you can modify, offer it with an action tag.',
+    '- Keep responses focused. No filler or excessive caveats unless safety is involved.',
+    '- When citing programming, reference the elite coach whose principle applies (Tuchscherer for RPE/fatigue %, Stanek for bar speed, Flex for bench frequency + spinal fatigue, Millz for pause mastery + volume distribution, Noriega for low-volume high-quality). Only cite — don\'t quote verbatim.',
+    ...phenotypeCues,
+  ].join('\n');
 
   // ── Assemble sections in priority order ───────────────────────────────────
   const sections: PromptSection[] = [

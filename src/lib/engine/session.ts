@@ -7,6 +7,7 @@ import type {
   AthleteProfile,
   TrainingBlock,
   BlockType,
+  Bottleneck,
   Lift,
   ExerciseType,
   SetStructure,
@@ -70,6 +71,12 @@ export interface GeneratedExercise {
   notes?: string;
   /** Stable library exercise id for swap suggestions. undefined = no library entry. */
   libraryExerciseId?: string;
+  /**
+   * Eccentric-pause-concentric tempo pattern (e.g. "3-1-0" — 3s down, 1s
+   * pause, normal drive). Only set for explicit tempo variations. When set
+   * the session UI renders a chip so the athlete respects the tempo.
+   */
+  tempo?: string;
 }
 
 export interface GeneratedSession {
@@ -441,7 +448,88 @@ function buildSessionExercises(
     exercises.push(...accessories);
   }
 
+  // Cross-discipline accessory overlay — auto-adds face pulls on bench days
+  // (elite-coach non-negotiable for shoulder health), and when the athlete's
+  // disciplines include street-lift / calisthenics, adds a compatible light
+  // street-lift accessory so hybrid training stays hybrid without the
+  // athlete babysitting it. Suppressed in DELOAD and REALIZATION (comp focus).
+  if (block.blockType !== 'REALIZATION' && block.blockType !== 'DELOAD') {
+    const overlay = buildCrossDisciplineOverlay(
+      primaryLift, profile, exercises.length + 1, reward,
+    );
+    exercises.push(...overlay);
+  }
+
   return exercises;
+}
+
+/**
+ * Returns accessory overlays that elite programs include as table-stakes:
+ *   - Face pulls on every bench day (shoulder health, Flex/Millz non-negotiable)
+ *   - Weighted pull-up on squat / deadlift days when grip + upper back matter
+ *     and the athlete trains any pulling discipline
+ *   - Weighted dip on bench days when street-lift is in the discipline mix
+ */
+function buildCrossDisciplineOverlay(
+  primaryLift: Lift,
+  profile: AthleteProfile,
+  startingOrder: number,
+  reward: RewardSystem,
+): GeneratedExercise[] {
+  const out: GeneratedExercise[] = [];
+  const disciplines = profile.disciplines ?? [];
+  const hasStreet = disciplines.includes('STREET_LIFT');
+  const hasCali   = disciplines.includes('CALISTHENICS') || disciplines.includes('HYBRID');
+  const hvBonus   = reward === 'HIGH_VOLUME' ? 1 : 0;
+  let order = startingOrder;
+
+  if (primaryLift === 'BENCH') {
+    out.push({
+      name:              'Face Pull',
+      exerciseType:      'ACCESSORY',
+      setStructure:      'STRAIGHT',
+      sets:              3 + hvBonus,
+      reps:              15,
+      rpeTarget:         7,
+      // Cable lift — no comp max reference. ~12% of bench gives a sane
+      // starting weight on most stacks; athlete fine-tunes by feel.
+      estimatedLoadKg:   Math.max(10, roundLoad((profile.maxBench ?? 80) * 0.12)),
+      order:             order++,
+      notes:             'Rear-delt + external rotation. Every bench day, non-negotiable.',
+      libraryExerciseId: 'face_pull',
+    });
+    if (hasStreet || hasCali) {
+      out.push({
+        name:              'Weighted Dip',
+        exerciseType:      'ACCESSORY',
+        setStructure:      'STRAIGHT',
+        sets:              3 + hvBonus,
+        reps:              6,
+        rpeTarget:         7,
+        estimatedLoadKg:   Math.max(5, roundLoad((profile.maxBench ?? 80) * 0.10)),
+        order:             order++,
+        notes:             'Street-lift carryover. Lean slightly forward. Stop each set with 2-3 reps in reserve.',
+        libraryExerciseId: 'tricep_dip',
+      });
+    }
+  } else if (primaryLift === 'SQUAT' || primaryLift === 'DEADLIFT') {
+    if (hasStreet || hasCali || disciplines.length === 0) {
+      out.push({
+        name:              'Weighted Pull-Up',
+        exerciseType:      'ACCESSORY',
+        setStructure:      'STRAIGHT',
+        sets:              3 + hvBonus,
+        reps:              5,
+        rpeTarget:         7,
+        estimatedLoadKg:   Math.max(5, roundLoad((profile.maxDeadlift ?? 120) * 0.10)),
+        order:             order++,
+        notes:             'Grip, lats, upper back — carries to every comp lift. Add weight via dip belt.',
+        libraryExerciseId: 'weighted_pull_up',
+      });
+    }
+  }
+
+  return out;
 }
 
 // ── Primary Exercise ───────────────────────────────────────────────────────────
@@ -467,8 +555,9 @@ function buildPrimaryExercises(
 
   const compName        = getCompMovementName(lift);
   const compLibraryId   = getCompMovementLibraryId(lift);
-  const variationName   = getVariationName(lift);
-  const variationLibId  = getVariationLibraryId(lift);
+  const variation       = selectVariation(lift, profile.bottleneck, blockType, weekInBlock);
+  const variationName   = variation?.name ?? null;
+  const variationLibId  = variation?.libraryId ?? null;
 
   // ── REALIZATION (with taper) ──────────────────────────────────────────────
   //   Week 1 of REAL: 3 sets of 2 (full ramp)
@@ -539,7 +628,15 @@ function buildPrimaryExercises(
   const baseReps  = getRepsForBlock(blockType, profile.bottleneck);
   const respMult  = responderMultiplier(profile.responder);
   const rawSets   = blockToSets(blockType) * respMult * volMult;
-  const finalSets = Math.max(1, Math.floor(rawSets));
+  const baseSets  = Math.max(1, Math.floor(rawSets));
+
+  // Week-within-block undulation (Juggernaut / Noriega style). Keeps total
+  // work roughly flat while shifting the stimulus from set-heavy → rep-heavy
+  // through the block. Only applies to ACCUMULATION; INTENSIFICATION already
+  // peaks via RPE ramp + lower set count.
+  const undulation = blockType === 'ACCUMULATION'
+    ? undulateSetsReps(baseSets, baseReps, weekInBlock, totalBlockWeeks)
+    : { sets: baseSets, reps: baseReps };
 
   // DUP: second appearance of the same lift in a week is a volume day.
   // Slightly lower RPE + one extra rep differentiates the stimulus from
@@ -547,7 +644,8 @@ function buildPrimaryExercises(
   const dupRpeAdj = isDupRepeat ? -0.5 : 0;
   const dupRepAdj = isDupRepeat ? 1    : 0;
   const finalRpe  = clampRpe(adjustedRpe + dupRpeAdj);
-  const finalReps = baseReps + dupRepAdj;
+  const finalReps = undulation.reps + dupRepAdj;
+  const finalSets = undulation.sets;
 
   const compLoad = roundLoad(prescribeLoad(maxKg, finalRpe, finalReps));
 
@@ -584,18 +682,22 @@ function buildPrimaryExercises(
     libraryExerciseId: compLibraryId,
   });
 
-  // Variation exercise — only in ACCUMULATION
-  if (blockType === 'ACCUMULATION' && variationName !== null) {
+  // Variation exercise — runs in ACCUMULATION and INTENSIFICATION.
+  // Intensification uses lower reps / fewer sets but keeps the variation
+  // (e.g. pin press, block pull) so lockout / position strength keeps
+  // developing during the strength phase.
+  if (variation !== null && (blockType === 'ACCUMULATION' || blockType === 'INTENSIFICATION')) {
     const varRpe    = clampRpe(adjustedRpe - 0.5);
-    const varReps   = baseReps + 1;
-    const varSets   = Math.max(1, Math.floor(3 * volMult));
-    // Discount the reference max — pause squat/bench/deficit DL are weaker
-    // than the competition lift. Without this, loads land 15-20 kg too heavy.
-    const varCoeff  = VARIATION_MAX_COEFFICIENT[variationName ?? ''] ?? 1.0;
-    const varLoad   = roundLoad(prescribeLoad(maxKg * varCoeff, varRpe, varReps));
+    const varReps   = blockType === 'INTENSIFICATION'
+      ? Math.max(2, baseReps - 1)
+      : baseReps + 1;
+    const varSets   = blockType === 'INTENSIFICATION'
+      ? Math.max(1, Math.floor(2 * volMult))
+      : Math.max(1, Math.floor(3 * volMult));
+    const varLoad   = roundLoad(prescribeLoad(maxKg * variation.coefficient, varRpe, varReps));
 
     result.push({
-      name:              variationName,
+      name:              variation.name,
       exerciseType:      'VARIATION',
       setStructure:      'STRAIGHT',
       sets:              varSets,
@@ -603,7 +705,8 @@ function buildPrimaryExercises(
       rpeTarget:         varRpe,
       estimatedLoadKg:   varLoad,
       order:             result.length + 1,
-      libraryExerciseId: variationLibId ?? undefined,
+      libraryExerciseId: variation.libraryId,
+      ...(variation.tempo ? { tempo: variation.tempo } : {}),
     });
   }
 
@@ -782,23 +885,169 @@ function getCompMovementLibraryId(lift: Lift): string {
 }
 
 /** Returns the variation exercise for ACCUMULATION blocks, or null if none. */
-function getVariationName(lift: Lift): string | null {
+/**
+ * Undulate sets × reps across an ACCUMULATION block so the athlete doesn't
+ * hit the same 5×5 every week. Pattern from Juggernaut / Noriega / Millz —
+ * keep total work ~flat while gradually shifting stimulus from set-dominant
+ * to rep-dominant as RPE ramps up:
+ *
+ *   Week 1: baseSets   × baseReps
+ *   Week 2: baseSets   × baseReps
+ *   Week 3: baseSets-1 × baseReps+1   ← drop a set, add a rep
+ *   Week 4: baseSets-2 × baseReps+2
+ *
+ * Clamps to sane floors (sets ≥ 2, reps ≤ baseReps + 3).
+ */
+function undulateSetsReps(
+  baseSets: number,
+  baseReps: number,
+  weekInBlock: number,
+  totalBlockWeeks: number,
+): { sets: number; reps: number } {
+  // Short blocks (≤2 weeks) don't undulate — not enough runway.
+  if (totalBlockWeeks < 3) return { sets: baseSets, reps: baseReps };
+
+  // Normalise weekInBlock to a 0-indexed "how far through the block" signal.
+  const week = Math.max(1, Math.min(weekInBlock, totalBlockWeeks));
+  const shift = week <= 2 ? 0 : week === 3 ? 1 : 2;
+
+  const sets = Math.max(2, baseSets - shift);
+  const reps = Math.min(baseReps + 3, baseReps + shift);
+  return { sets, reps };
+}
+
+/**
+ * Selects the variation lift for a primary day based on bottleneck phenotype,
+ * block type, and a week-within-block rotation so the athlete sees 2 different
+ * pause/tempo/pin variants per block rather than the same one every week.
+ *
+ * Design follows the elite-coach consensus the knowledge base cites:
+ *   • Millz + Noriega: pause work is the standard, not peaking-only.
+ *   • Tuchscherer: match the variation to the identified weak point.
+ *   • Flex: vary weekly to keep SFR high without staleness.
+ */
+interface VariationChoice {
+  name: string;
+  libraryId: string;
+  /** Fraction of the comp max used to prescribe load. */
+  coefficient: number;
+  /** Eccentric-pause-concentric tempo, if the variation imposes one. */
+  tempo?: string;
+}
+
+function selectVariation(
+  lift: Lift,
+  bottleneck: Bottleneck,
+  blockType: BlockType,
+  weekInBlock: number,
+): VariationChoice | null {
+  // REALIZATION + DELOAD don't run a variation — comp lift only.
+  if (blockType === 'REALIZATION' || blockType === 'DELOAD') return null;
+  if (lift === 'UPPER' || lift === 'LOWER' || lift === 'FULL') return null;
+
+  // Two-slot rotation by parity of weekInBlock. Slot A in odd weeks, slot B in
+  // even weeks. Table below is hand-curated per (lift × bottleneck × block).
+  const evenWeek = weekInBlock % 2 === 0;
+
   switch (lift) {
-    case 'SQUAT':     return 'Pause Squat';
-    case 'BENCH':     return 'Pause Bench Press';
-    case 'DEADLIFT':  return 'Deficit Deadlift';
-    default:          return null;
+    case 'SQUAT': {
+      if (blockType === 'INTENSIFICATION') {
+        if (bottleneck === 'NEURAL') {
+          return evenWeek ? VARIATIONS.pin_squat : VARIATIONS.pause_squat;
+        }
+        if (bottleneck === 'HYPERTROPHY') {
+          return evenWeek ? VARIATIONS.tempo_squat : VARIATIONS.pause_squat;
+        }
+        return evenWeek ? VARIATIONS.pause_squat : VARIATIONS.pin_squat;
+      }
+      // ACCUMULATION (default)
+      if (bottleneck === 'HYPERTROPHY') {
+        return evenWeek ? VARIATIONS.high_bar_squat : VARIATIONS.pause_squat;
+      }
+      if (bottleneck === 'NEURAL') {
+        return evenWeek ? VARIATIONS.pause_squat : VARIATIONS.pin_squat;
+      }
+      return evenWeek ? VARIATIONS.pause_squat : VARIATIONS.tempo_squat;
+    }
+    case 'BENCH': {
+      if (blockType === 'INTENSIFICATION') {
+        if (bottleneck === 'NEURAL') {
+          return evenWeek ? VARIATIONS.pin_press : VARIATIONS.board_press;
+        }
+        if (bottleneck === 'HYPERTROPHY') {
+          return evenWeek ? VARIATIONS.close_grip_bench : VARIATIONS.pause_bench;
+        }
+        return evenWeek ? VARIATIONS.pause_bench : VARIATIONS.pin_press;
+      }
+      // ACCUMULATION
+      if (bottleneck === 'HYPERTROPHY') {
+        return evenWeek ? VARIATIONS.close_grip_bench : VARIATIONS.spoto_press;
+      }
+      if (bottleneck === 'NEURAL') {
+        return evenWeek ? VARIATIONS.dead_bench : VARIATIONS.pause_bench;
+      }
+      return evenWeek ? VARIATIONS.spoto_press : VARIATIONS.tempo_bench;
+    }
+    case 'DEADLIFT': {
+      if (blockType === 'INTENSIFICATION') {
+        if (bottleneck === 'NEURAL') {
+          return evenWeek ? VARIATIONS.block_pull : VARIATIONS.pause_deadlift;
+        }
+        if (bottleneck === 'HYPERTROPHY') {
+          return evenWeek ? VARIATIONS.deficit_deadlift : VARIATIONS.pause_deadlift;
+        }
+        return evenWeek ? VARIATIONS.pause_deadlift : VARIATIONS.block_pull;
+      }
+      // ACCUMULATION
+      if (bottleneck === 'HYPERTROPHY') {
+        return evenWeek ? VARIATIONS.deficit_deadlift : VARIATIONS.tempo_deadlift;
+      }
+      if (bottleneck === 'NEURAL') {
+        return evenWeek ? VARIATIONS.block_pull : VARIATIONS.pause_deadlift;
+      }
+      return evenWeek ? VARIATIONS.deficit_deadlift : VARIATIONS.pause_deadlift;
+    }
+    default:
+      return null;
   }
+}
+
+/**
+ * Variation library registry. `coefficient` discounts the comp max because
+ * the variation is weaker than the competition lift (pause squat ≈ 87% comp,
+ * etc.) — prescribeLoad() would otherwise overload the bar.
+ */
+const VARIATIONS: Record<string, VariationChoice> = {
+  // Bench
+  pause_bench:        { name: 'Pause Bench Press', libraryId: 'pause_bench_press', coefficient: 0.85 },
+  close_grip_bench:   { name: 'Close Grip Bench Press', libraryId: 'close_grip_bench_press', coefficient: 0.88 },
+  spoto_press:        { name: 'Spoto Press', libraryId: 'spoto_press', coefficient: 0.85 },
+  dead_bench:         { name: 'Dead Bench Press', libraryId: 'dead_bench_press', coefficient: 0.80 },
+  pin_press:          { name: 'Pin Press', libraryId: 'pin_press', coefficient: 0.90 },
+  board_press:        { name: 'Board Press', libraryId: 'board_press', coefficient: 1.00 },
+  tempo_bench:        { name: 'Tempo Bench Press', libraryId: 'tempo_bench_press', coefficient: 0.78, tempo: '3-1-0' },
+  // Squat
+  pause_squat:        { name: 'Pause Squat', libraryId: 'pause_squat', coefficient: 0.87 },
+  high_bar_squat:     { name: 'High-Bar Squat', libraryId: 'high_bar_squat', coefficient: 0.90 },
+  pin_squat:          { name: 'Pin Squat', libraryId: 'pin_squat', coefficient: 0.88 },
+  tempo_squat:        { name: 'Tempo Squat', libraryId: 'tempo_squat', coefficient: 0.78, tempo: '4-1-0' },
+  // Deadlift
+  deficit_deadlift:   { name: 'Deficit Deadlift', libraryId: 'deficit_deadlift', coefficient: 0.88 },
+  pause_deadlift:     { name: 'Pause Deadlift', libraryId: 'pause_deadlift', coefficient: 0.86 },
+  block_pull:         { name: 'Block Pull', libraryId: 'block_pull', coefficient: 1.10 },
+  tempo_deadlift:     { name: 'Tempo Deadlift', libraryId: 'tempo_deadlift', coefficient: 0.72, tempo: '3-0-1' },
+};
+
+// Legacy shim for callers outside the primary-exercise builder.
+function getVariationName(lift: Lift): string | null {
+  const v = selectVariation(lift, 'BALANCED', 'ACCUMULATION', 1);
+  return v?.name ?? null;
 }
 
 /** Returns the stable library exercise ID for the ACCUMULATION variation, or null. */
 function getVariationLibraryId(lift: Lift): string | null {
-  switch (lift) {
-    case 'SQUAT':     return 'pause_squat';
-    case 'BENCH':     return 'pause_bench_press';
-    case 'DEADLIFT':  return 'deficit_deadlift';
-    default:          return null;
-  }
+  const v = selectVariation(lift, 'BALANCED', 'ACCUMULATION', 1);
+  return v?.libraryId ?? null;
 }
 
 /** Maps accessory display names to stable library exercise IDs. */
@@ -814,20 +1063,8 @@ const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
   'Lat Pulldowns':          'lat_pulldown',
 };
 
-/**
- * Variation exercise effective 1RM as a fraction of the competition lift 1RM.
- * Pause squat max ≈ 87% of comp squat (Tuchscherer/Noriega programming notes).
- * Pause bench max ≈ 85% of comp bench (widespread coach consensus).
- * Deficit DL max  ≈ 88% of comp DL   (harder off floor, similar top end).
- *
- * Without this discount, prescribeLoad() uses the full competition max and
- * produces loads 15–20 kg too heavy for the variation in an accumulation block.
- */
-const VARIATION_MAX_COEFFICIENT: Partial<Record<string, number>> = {
-  'Pause Squat':       0.87,
-  'Pause Bench Press': 0.85,
-  'Deficit Deadlift':  0.88,
-};
+// VARIATION_MAX_COEFFICIENT has been superseded by the coefficient field on
+// the VariationChoice records returned by selectVariation().
 
 /**
  * Accessory exercise effective 1RM as a fraction of the relevant competition

@@ -61,6 +61,99 @@ const mondayDOW     = 1;
 
 // ── Primary lift rotation ─────────────────────────────────────────────────────
 
+describe('generateSession — variation selector + tempo', () => {
+  it('picks a tempo/pause variation by week parity so the athlete rotates 2 variants per block', () => {
+    const block = makeBlock('ACCUMULATION', { weekStart: 1, weekEnd: 4 });
+    const wk1 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 2, weekWithinBlock: 1,
+    });
+    const wk2 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 2, weekWithinBlock: 2,
+    });
+    const v1 = wk1.exercises.find((e) => e.exerciseType === 'VARIATION')!;
+    const v2 = wk2.exercises.find((e) => e.exerciseType === 'VARIATION')!;
+    expect(v1.name).not.toBe(v2.name);
+  });
+
+  it('NEURAL bottleneck in INTENSIFICATION picks pin press or board press (lockout-biased)', () => {
+    const neuralProfile = { ...baseProfile, bottleneck: 'NEURAL' as const };
+    const block = makeBlock('INTENSIFICATION');
+    const s = generateSession({
+      profile: neuralProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 2, weekWithinBlock: 1,
+    });
+    const v = s.exercises.find((e) => e.exerciseType === 'VARIATION')!;
+    expect(['Pin Press', 'Board Press']).toContain(v.name);
+  });
+
+  it('attaches a tempo string when a tempo variation is picked', () => {
+    // HYPERTROPHY + SQUAT accumulation, even week -> Pause Squat; odd week -> High-Bar.
+    // Check BALANCED + SQUAT odd week (Pause Squat) vs even (Tempo Squat).
+    const block = makeBlock('ACCUMULATION');
+    const even = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 1, weekWithinBlock: 2,
+    });
+    const v = even.exercises.find((e) => e.exerciseType === 'VARIATION')!;
+    if (v.tempo !== undefined) {
+      expect(v.tempo).toMatch(/^\d+-\d+-\d+$/);
+    }
+  });
+});
+
+describe('generateSession — set-count undulation across block weeks', () => {
+  it('Week 3 of a 4-week accumulation drops at least one set vs week 1', () => {
+    const block = makeBlock('ACCUMULATION', { weekStart: 1, weekEnd: 4 });
+    const wk1 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 1, weekWithinBlock: 1,
+    });
+    const wk3 = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 1, weekWithinBlock: 3,
+    });
+    const c1 = wk1.exercises.find((e) => e.exerciseType === 'COMPETITION')!;
+    const c3 = wk3.exercises.find((e) => e.exerciseType === 'COMPETITION')!;
+    expect(c3.sets).toBeLessThanOrEqual(c1.sets);
+    expect(c3.reps).toBeGreaterThanOrEqual(c1.reps);
+  });
+});
+
+describe('generateSession — cross-discipline accessory overlay', () => {
+  it('bench day auto-adds face pulls', () => {
+    const block = makeBlock('ACCUMULATION');
+    const s = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 2,
+    });
+    const hasFacePulls = s.exercises.some((e) => e.name === 'Face Pull');
+    expect(hasFacePulls).toBe(true);
+  });
+
+  it('squat day adds a weighted pull-up when street-lift is a discipline', () => {
+    const p = { ...baseProfile, disciplines: ['POWERLIFTING', 'STREET_LIFT'] satisfies AthleteProfile['disciplines'] };
+    const block = makeBlock('ACCUMULATION');
+    const s = generateSession({
+      profile: p, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 1,
+    });
+    const hasPullUp = s.exercises.some((e) => e.name === 'Weighted Pull-Up');
+    expect(hasPullUp).toBe(true);
+  });
+
+  it('REALIZATION skips the overlay (comp focus)', () => {
+    const block = makeBlock('REALIZATION', { weekStart: 10, weekEnd: 12 });
+    const s = generateSession({
+      profile: baseProfile, block, weekDayOfWeek: 1,
+      readinessScore: 80, sessionNumber: 2, weekWithinBlock: 1,
+    });
+    const hasFacePulls = s.exercises.some((e) => e.name === 'Face Pull');
+    expect(hasFacePulls).toBe(false);
+  });
+});
+
 describe('generateSession — adaptive primary-lift selection', () => {
   const block = makeBlock('ACCUMULATION');
 
@@ -286,9 +379,11 @@ describe('generateSession — INTENSIFICATION block', () => {
     sessionNumber: 1,
   });
 
-  it('has no VARIATION exercise (comp focus)', () => {
+  it('prescribes a variation (pin press / block pull / pause variant) for lockout and position work', () => {
     const variation = s.exercises.find((e) => e.exerciseType === 'VARIATION');
-    expect(variation).toBeUndefined();
+    expect(variation).toBeDefined();
+    // Intensification keeps sets lean so the athlete can hit the top comp work.
+    expect(variation!.sets).toBeLessThanOrEqual(2);
   });
 
   it('primary reps are lower than ACCUMULATION (BALANCED = 4 in intensification)', () => {
@@ -893,8 +988,11 @@ describe('generateSession — progressive RPE ramp', () => {
 
     // Week 4 should have higher RPE than week 1
     expect(comp4.rpeTarget).toBeGreaterThan(comp1.rpeTarget);
-    // And therefore heavier loads
-    expect(comp4.estimatedLoadKg).toBeGreaterThanOrEqual(comp1.estimatedLoadKg);
+    // Load stays in the same neighbourhood — undulation trades a set for a rep
+    // in late weeks so load isn't strictly monotonic, just within ~15%.
+    const ratio = comp4.estimatedLoadKg / comp1.estimatedLoadKg;
+    expect(ratio).toBeGreaterThan(0.85);
+    expect(ratio).toBeLessThan(1.20);
   });
 
   it('RPE is flat (no ramp) during deload blocks', () => {

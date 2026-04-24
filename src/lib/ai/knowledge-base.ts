@@ -78,23 +78,29 @@ export const EXERCISE_KNOWLEDGE = `
 - Depth: Hip crease below top of knee (IPF standard). Film from the side to check.
 - Drive: "Push the floor away." Chest up. Knees out. Drive hips forward at top.
 - Common errors: Forward lean (weak quads or poor ankle mobility), knee cave (weak adductors/glutes), butt wink (hip mobility or going too deep).
-- Weak point fixes:
-  - Weak out of hole: Pause squats, pin squats, leg press, belt squats.
-  - Sticking point mid-range: Tempo squats, half squats, front squats.
-  - Forward lean: Front squats, SSB squats, heel-elevated squats.
-  - Knee cave: Banded squats, adductor work, single-leg pressing.
+- Weak point fixes (dosed — sets × reps @ RPE, weekly frequency):
+  - Weak out of hole: Pause squat 4×4 @ RPE 7, 1×/wk for 4-6 weeks. Or pin squat 3×3 @ RPE 7.5 as intensification variant.
+  - Sticking point mid-range: Tempo squat (4-1-0) 3×5 @ RPE 7, 1×/wk. Front squat 3×5 @ RPE 7 on a second squat day.
+  - Forward lean: Front squat or SSB 4×6 @ RPE 7 for 6+ weeks; heel-elevated paused squat if ankle mobility is the cause.
+  - Knee cave: Banded pause squat 3×5 @ RPE 7, 1×/wk; adductor machine 3×12; single-leg press 3×10 per leg.
+  - Bar speed drop > 15% between reps: Volume is done; move to backoffs or end the working sets (Stanek).
 
 ### Bench Press
 - Setup: Arch (natural thoracic extension, NOT lumbar). Shoulder blades retracted and depressed ("in your back pockets").
 - Grip: Ring finger on rings (standard), or adjusted for arm length. Wrists straight or slightly cocked back.
+  - Short arms (<6' / <75" wingspan): Try one notch inside the rings for more tricep leverage.
+  - Long arms (>78" wingspan): Widen to rings exactly; a narrower grip increases bar path distance.
 - Touch point: Just below nipple line (xiphoid process area). Varies by arch and arm length.
 - Drive: Leg drive — feet flat (IPF) or on toes (some feds). Press back toward face off chest, then straight up.
 - Pause: On competition commands — "Start," "Press," "Rack." Practice with a 1-2 second pause.
+- Federation arch rules: IPF requires butt contact with bench throughout. USAPL same. USPA allows hips lifting in some divisions — check your rulebook. Too much lumbar hyperextension risks facet irritation; aim for thoracic extension.
 - Common errors: Flaring elbows too early (shoulder stress), uneven press, losing leg drive.
-- Weak point fixes:
-  - Weak off chest: Spoto press, long pause bench, DB bench, push-ups.
-  - Weak at lockout: Board press, floor press, close-grip bench, tricep work.
-  - Shoulder pain: Widen grip slightly, improve arch, add rotator cuff work, reduce frequency.
+- Weak point fixes (dosed):
+  - Weak off chest: Spoto press 4×4 @ RPE 7, 1×/wk for 4-6 weeks. Rotate with long-pause bench (3 sec pause) 3×3 @ RPE 8.
+  - Weak at lockout (grinds at arms-extended): Pin press 3×3 @ RPE 7.5 OR board press 3×3 @ RPE 7-8, 1×/wk for 4-6 weeks.
+  - Uneven press (bar drifts / one side stalls): DB bench 3×8 per side 1×/wk for 4-6 weeks. Film every top set.
+  - Shoulder pain: Widen grip 1 finger, improve arch, swap comp bench → floor press for 2-4 weeks; add external rotation (band or DB pullover) 3×15 twice a week.
+  - Triceps lag pressing: CGBP 4×6 @ RPE 7 + dips 3×8 @ RPE 7, 1 session/wk.
 
 ### Deadlift
 - Conventional setup: Feet hip-width. Shins 1" from bar. Grip just outside knees. "Push the floor away."
@@ -102,11 +108,12 @@ export const EXERCISE_KNOWLEDGE = `
 - Brace: Same belly breath as squat. Lock lats ("protect your armpits" / "bend the bar around your shins").
 - Pull: Bar stays against body entire pull. Hips and shoulders rise together. Lock hips, don't hyperextend.
 - Common errors: Hips shooting up (weak quads or starting hips too low), rounded upper back (weak lats), hitching.
-- Weak point fixes:
-  - Weak off floor: Deficit deadlifts, pause deadlifts, front squats (quad strength).
-  - Weak at lockout: Block/rack pulls, hip thrusts, Romanian deadlifts, barbell rows.
-  - Grip failure: Hook grip, mixed grip rotation, heavy holds, fat grips.
-  - Rounding back: Pause deadlifts, rows, direct spinal erector work.
+- Weak point fixes (dosed):
+  - Weak off floor: Deficit deadlift (1-2") 4×3 @ RPE 7, 1×/wk for 4-6 weeks. Or pause deadlift 2" off floor 3×2 @ RPE 7.5 as intensification variant.
+  - Weak at lockout (hitch or grind mid-shin to lockout): Block pull (2-4") 3×3 @ RPE 7, 1×/wk for 4-6 weeks. Add heavy barbell rows 4×6 @ RPE 7.
+  - Upper back rounding: Pause deadlift 3×2 @ RPE 7 + heavy rows 4×5 @ RPE 8, 1×/wk for 6+ weeks.
+  - Grip failure: Hook grip (learn it now), heavy static holds 3×20s @ 110% DL weekly, fat-grip farmer's walks 3×30m.
+  - Hips shoot up: Pause deadlift, front squat 3×5 @ RPE 7 1×/wk (quad strength), focus on position rehearsal from the floor without load.
 
 ## Accessory Exercise Roles
 
@@ -400,6 +407,52 @@ export const NUTRITION_KNOWLEDGE = `
 - Add 500-750 ml for every hour of training.
 - Urine color: pale straw = hydrated. Dark yellow = under-hydrated. Clear = potentially over-hydrated (waste of electrolytes).
 - Sodium: 3-5 g/day for active training. Most athletes under-salt food, then cramp and blame it on magnesium.
+
+### Leucine Threshold (per-meal MPS)
+- Each meal should hit ~2.5-3.0 g leucine to maximally stimulate muscle protein synthesis.
+- ~30-40 g of whey, or ~120-150 g cooked lean beef / chicken breast / tilapia clears the threshold.
+- Vegan athletes need ~40-50% more total protein because plant sources are leucine-poor per gram;
+  supplement with pea + rice blends or add 5 g extra leucine to plant-heavy meals.
+- Meal distribution: 4-5 leucine-threshold meals / day > 2-3 bigger meals. MPS peaks for ~3-4 h
+  after a meal — spacing matters.
+
+### Creatine — Protocol Details
+- 3-5 g / day, every day, taken whenever is convenient. Timing doesn't matter.
+- Loading (20 g/day split × 4 doses for 5-7 days) gets you to saturation faster; not necessary.
+  5 g/day reaches the same saturation in ~3-4 weeks.
+- ~20% of people are non-responders (muscle creatine already high from diet or genetics).
+  If 8+ weeks of compliant loading yields no strength bump, don't chase — your baseline is high.
+- Water retention: creatine pulls ~1-2 kg of intramuscular water. Account for this in weight cuts;
+  consider pausing creatine 7-14 days before weigh-in and resuming after.
+- Creatine + caffeine myth: no evidence they conflict. Take both if you use both.
+
+### Caffeine — Half-Life + Tolerance
+- Half-life: ~5 h typical, but ranges 3-9 h. Genetics (CYP1A2), liver function, and medication
+  dramatically shift this.
+- Oral contraceptives roughly DOUBLE caffeine half-life — dose lower if on the pill.
+- Pregnancy doubles half-life too; flouroquinolone antibiotics slow clearance.
+- Dose: 3-6 mg / kg body weight, 30-60 min pre-training. Don't exceed your normal tolerance on
+  meet day — novel high doses spike anxiety.
+- Tolerance reset: 7-10 days off rebuilds sensitivity. Alternatively, cycle 5 days on / 2 days off.
+- Cutoff: stop caffeine ≥ 6 h before target sleep for most; sensitive responders need 8-10 h.
+
+### Weight-Cut Safety Band
+- Aggressive cuts (water manipulation for 24h/2h weigh-in): only for athletes above ~15% body fat
+  (men) / ~22% (women). Below that, aggressive cuts tank CNS performance.
+- Sustainable cut rate: 0.5-0.75% body weight / week. Leaner athletes hug the low end.
+- Minimum kcal: never below 30 kcal/kg FFM (fat-free mass) without medical supervision.
+- Signs the cut has gone too far: HRV drops > 15% for 3+ days, morning resting HR up > 5 bpm,
+  libido drops, cold hands/feet, strength plateau despite RPE targets. Pause the deficit or add
+  a diet break at maintenance for 7-14 days.
+- Don't cut and peak simultaneously. If a meet is inside 4 weeks and you need to drop > 2% body
+  weight, move up a class or withdraw.
+
+### Intra-Workout Sodium (sessions > 90 min or hot venues)
+- Target 300-500 mg sodium per hour of training.
+- Practical: 500 mL electrolyte drink (LMNT, Pedialyte, 1/4 tsp table salt in water with a pinch
+  of potassium) per hour. Sip, don't chug.
+- Signs you under-sodium: early-session fatigue, headaches, cramps that return after stretching,
+  dizziness on heavy attempts. More sodium beats more magnesium for most lifters.
 `;
 
 // ── Recovery ──────────────────────────────────────────────────────────────────
@@ -476,6 +529,57 @@ export const MEET_PREP_KNOWLEDGE = `
 - Don't try anything new on meet day. No new shoes, belt notch, technique cues, or foods.
 - Between lifts: Stay warm (keep sweats on), eat, hydrate, don't sit too long.
 - If you bomb a lift: It's data, not failure. Adjust the next attempt conservatively. Don't panic.
+
+### Week-by-Week Command Practice (Noriega / Stanek)
+Mental rehearsal is a skill; skills are practiced year-round, not peaking-week only.
+- 4 weeks out: Every comp single on the primary lift gets a full command simulation (partner or
+  self-cue). ~8-12 commanded reps across the week.
+- 3 weeks out: All comp-grip, comp-stance work gets commands. Add video review — bar must be
+  motionless on chest before "Press."
+- 2 weeks out: Openers-only singles with full commands. Practice the exact tempo of the referee.
+- Meet week: Only warm-up room reps get commands — on the platform itself, the command is live.
+
+### Attempt-Selection Decision Tree
+Call your second attempt based on how the opener moved, not your training log.
+- Opener flew (speed ≥ floor, RPE ≤ 7): aggressive 2nd — jump 5-7% for a comfortable heavy.
+- Opener was grindy (RPE 8.5+, bar speed off): conservative 2nd — jump 2.5-4%. Bank the total.
+- Opener missed: repeat at the same load on 2nd. Do not jump on a miss unless a technical fix is
+  obvious (e.g. uneven rack, wrong command cadence).
+- Second flew: aggressive 3rd — PR attempt (+2-3%).
+- Second was grindy: small PR or opener-of-next-meet on 3rd (+1-1.5%).
+- Second missed: take the missed weight again on 3rd; don't chase PRs off a miss. If you missed
+  the 2nd to bomb the lift, take a conservative 3rd (opener +2.5kg) just to board.
+
+### Meet Day — Hour-by-Hour Timeline
+Built for a 2-hour weigh-in; shift the meal plan back by 20h for a 24-hour weigh-in.
+- Weigh-in hour (T-2:00): Weighed. Start with 500-750 mL electrolyte drink (400-600 mg sodium).
+- T-1:45 to T-1:15: First meal — rice + chicken + honey or white potato + eggs + maple. Low fat,
+  low fibre. 80-120 g carb, 30-40 g protein.
+- T-1:00: Caffeine, 3-5 mg/kg (match your training dose; never exceed tolerance on meet day).
+- T-0:45: Start the squat warm-up. Bar → 40% → 60% → 70% → 80% → opener. 3-5 min between sets.
+- Between lifts (15-30 min between attempts): 10-20 g fast carb (rice cake, gummy bears, sport
+  drink). 150-250 mL fluid. Small sips, not chugs — bloating on squat day is real.
+- Between squat & bench: 45-90 min window. Eat 30-50 g carb + 20-30 g protein. Pedialyte sips.
+- Pre-bench: Re-dose caffeine if > 2 h since the first dose, half the original amount.
+- Between bench & deadlift: 60-120 min window. Small meal — rice + chicken + honey, same as
+  morning. Light stretching, no foam rolling (it will make you sleepy).
+- Pre-deadlift: Last caffeine hit (or nitric-oxide supplement if you use one). No food in the
+  60 min before your 3rd — full belly kills a deadlift.
+- After the meet: Eat. Seriously. A proper meal within 90 minutes supports recovery.
+
+### Meet Day — Fluid + Sodium Targets
+- Total fluid across a 6-8 h meet: 30-40 mL / kg body weight, sodium-dosed.
+- Sodium target: 400-700 mg / hour during the meet. Higher end for big bleeders and hot venues.
+- Electrolyte mix: LMNT, Pedialyte, or 1/4 tsp sea salt + pinch potassium + 500 mL water per hour.
+- Between-attempt sip: ≤ 150 mL at once. Drinking 500 mL in one go pre-squat is a recipe for
+  bloat and bail-outs.
+
+### Warm-up Room Protocol
+- Plan warmup with your timing coach — know how many lifters are between you and the bar.
+- Reps at warmup loads: 60% × 5, 70% × 3, 80% × 2, 87% × 1, opener × 1 (or just set-up rehearsal
+  at opener load — no rep).
+- Never take the opener in the warmup room. Set-up rehearsal only.
+- If the bar moves slow at 80% in warmups → drop opener 2.5-5 kg. Trust the signal.
 `;
 
 // ── Injury Prevention ─────────────────────────────────────────────────────────
@@ -555,6 +659,146 @@ export const PROGRAMMING_KNOWLEDGE = `
 - 5 days/week: S/B/D/S(light)/B(light) or DUP. Advanced. Recovery is critical.
 - 6 days/week: PPL-PPL or DUP. Only for advanced lifters with excellent recovery. High injury risk.
 `;
+
+// ── Velocity-Based Training ───────────────────────────────────────────────────
+
+export const VBT_KNOWLEDGE = `
+## Velocity-Based Training (VBT)
+Bar speed is the coach's lie-detector. RPE tells you how hard it felt; velocity tells you how hard
+it actually was. When they diverge, speed is usually right. Joe Stanek builds his peaking blocks
+around speed cutoffs; modern RTS uses VBT as the primary autoregulation signal alongside RPE.
+
+### Speed floors per lift (mean concentric velocity, m/s)
+- **Squat — low-bar competition**
+  - Opener-equivalent single: ≥ 0.40 m/s. Anything slower for an opener is a red flag on meet day.
+  - Heavy triple / double peaking: 0.30–0.40 m/s.
+  - 1RM attempts: 0.20–0.25 m/s — below 0.20 you either grind it or miss.
+- **Bench press — competition grip, paused**
+  - Opener-equivalent single: ≥ 0.30 m/s.
+  - Heavy triple / double: 0.20–0.30 m/s.
+  - 1RM attempts: 0.12–0.17 m/s. Below 0.12 = miss territory.
+- **Deadlift — conventional or sumo, off the floor**
+  - Opener single: ≥ 0.50 m/s (deadlift is the fastest comp lift).
+  - Heavy doubles: 0.40–0.50 m/s.
+  - 1RM attempts: 0.30–0.35 m/s.
+
+### When to bail a top set
+- Bar speed on rep 1 of a top set below the lift's 1RM floor → bail the set and go lighter.
+  Don't grind it — you'll take more fatigue than stimulus.
+- RPE on target but speed is off → CNS fatigue. Cut the rest of the working sets by 30-50%.
+- RPE low but speed is slow → technical breakdown (bracing, bar path). Fix position before loading.
+
+### Measuring without a sensor
+You do not need a Beast / Flex / RepOne to use VBT. Phone slow-mo is enough:
+1. Film from the side at 120 fps (240 on newer iPhones).
+2. In playback, count frames from the moment the bar leaves the chest / hole / floor to lockout.
+3. (Frames ÷ fps) = seconds. Divide the rep distance by that to get m/s.
+4. Track top-set velocity over the block — the number you care about is the trend, not the absolute.
+
+### VBT + RPE + fatigue percents
+When velocity drops more than ~15% on the next rep of the same set, the set is done — that's
+Stanek's "bar-speed-informed backoff." Combine with Tuchscherer fatigue percents to set backoff
+loads:
+- Top single RPE 8 → back-off triples at 2–4% less load per rep below the top.
+  Example: top single = 200 kg at 0.25 m/s. Backoff triples at ~185 kg, aiming for ~0.30 m/s.
+- If velocity is off on set 1 of the backoffs, cut load 5% and move on — don't chase the number.
+
+### What VBT changes about programming
+- Accumulation: target a speed range per set. Stop when you drop below it, even if RPE target
+  not yet hit. Volume earned, not prescribed.
+- Intensification: speed gates the next load increase. Hit the velocity target at load L twice
+  before moving to L+2.5 kg.
+- Realization: opener rehearsal = speed check. If the opener moves slower than 0.40/0.30/0.50
+  m/s two weeks out, lower the opener or extend the block.
+`;
+
+// ── Hybrid PL + Street Lift + Calisthenics Programming ────────────────────────
+
+export const HYBRID_PROGRAMMING_KNOWLEDGE = `
+## Hybrid PL + Street Lift + Calisthenics Templates
+The athlete who mixes powerlifting with street lifting and weighted calisthenics needs fatigue
+distribution as the primary lever — not total volume. Millz's "volume distribution beats volume
+magnitude" applies hardest here. These templates respect spinal-erector fatigue, grip recovery,
+and push-pull balance.
+
+### Systemic fatigue stacking rules (non-negotiable)
+- Never heavy squat + heavy deadlift the same day outside of an SBD rehearsal once every 3-4 weeks.
+- Never heavy deadlift + heavy weighted pull-up the same day during peaking — both hammer the grip,
+  lats, and spinal erectors. Leave 48h between them.
+- Bench is the lowest systemic cost; it can ride on any day.
+- Weighted dip = bench cousin. Count it against your bench frequency when programming shoulder
+  health work (face pulls, rows).
+- Calisthenics skill work (levers, planche, handstand) is CNS-costly but low tissue cost —
+  schedule 20 min before a light PL session or on an otherwise easy day, never after a heavy pull.
+
+### Template — PL-primary + street-lift (4 days, athlete with a meet on the calendar)
+Day 1 (Mon) — SQUAT day
+- Comp squat (primary)
+- Pause squat or high-bar squat (variation)
+- RDL + leg press (accessories)
+- Weighted pull-up 3×5 @ RPE 7 (grip + back carryover)
+Day 2 (Tue) — BENCH day
+- Comp bench (primary)
+- Spoto press / pin press / close-grip (variation, rotated)
+- Barbell row + overhead press + tricep (accessories)
+- Face pulls 3×15 (non-negotiable)
+Day 3 (Thu) — DEADLIFT day
+- Comp deadlift (primary, conventional or sumo)
+- Deficit DL or block pull (variation)
+- Good morning + lat pulldown (accessories)
+- Weighted pull-up 3×5 (grip, not heavy — grip already taxed by pulls)
+Day 4 (Sat) — STREET-LIFT day
+- Weighted pull-up (heavy) — the primary of this day
+- Weighted dip (heavy) — the secondary
+- Weighted muscle-up practice at RPE 7 if contest-bound
+- Light bench or OHP as upper-body backoff
+
+### Template — Street-lift-primary + PL (4 days)
+Day 1 (Mon) — WEIGHTED PULL-UP day (primary)
+- Weighted pull-up: 4×3 @ RPE 8
+- Weighted muscle-up: 3×2 @ RPE 7
+- Row variant + bicep work
+- Light squat (60% @ RPE 6, 3×5) for quad/glute maintenance
+Day 2 (Wed) — BENCH + WEIGHTED DIP day
+- Comp bench: 4×5 @ RPE 7
+- Weighted dip: 4×4 @ RPE 8
+- CGBP + face pulls + tricep iso
+Day 3 (Fri) — WEIGHTED DIP day (primary)
+- Weighted dip: 5×3 @ RPE 8
+- Pin press or board press: 3×3 @ RPE 7 (lockout support)
+- Front lever / planche progression (skill)
+- Light deadlift (60%, 2-3 top singles) for posterior chain
+Day 4 (Sat) — HYBRID LOWER
+- Squat or DL primary (alternate weekly)
+- Weighted pull-up: 3×5 @ RPE 7 (support volume)
+- Accessory lower work
+
+### Template — Hybrid (5 days, calisthenics skills in the mix)
+Day 1 — Squat + weighted pull-up
+Day 2 — Bench + face pulls + tricep (+ front lever on fresh days)
+Day 3 — Skill day: handstand work, planche progression, pistol squat progression (60-75 min)
+Day 4 — Deadlift + weighted pull-up (light)
+Day 5 — Weighted dip + OHP + row
+
+### Accessory overlap — don't double-dip
+- Rows (any flavor): carry to both bench and deadlift. 2 heavy row sessions/week is plenty.
+- Triceps: bench direct + CGBP + weighted dip all train triceps. Cap isolation at 1 session/week
+  when dip is programmed — otherwise elbow joint fatigue accumulates.
+- Lats: weighted pull-up + lat pulldown + rows all hit lats. If pull-up is the primary discipline,
+  drop lat pulldown and keep rows (different pattern).
+- Core: hanging leg raise + ab wheel + Pallof press is the full anti-ext/anti-rot palette. Two
+  of the three per week suffices; dropping all three costs you bracing.
+
+### Phase-specific rules
+- **Accumulation:** Hit all 3 PL lifts 2-3× / week, plus street-lift work 2× / week. Use the
+  overlay templates above.
+- **Intensification:** Drop total weekly exposures by ~20%. Keep comp lifts at 2× / week,
+  street-lift at 1-2× / week. Add pin press / block pull for lockout specificity.
+- **Realization (peaking):** Only the discipline that's competing gets heavy work. The other
+  disciplines drop to maintenance — 1 exposure/week at RPE 6-7 to keep grooves alive.
+- **Deload:** All disciplines at ~50% volume, ~70% intensity. Skill work OK; avoid PRs of any kind.
+`;
+
 
 // ── Elite Coaching Principles ─────────────────────────────────────────────────
 
@@ -640,10 +884,12 @@ export function getFullKnowledge(): string {
   return [
     COACH_PRINCIPLES_KNOWLEDGE,
     RPE_KNOWLEDGE,
+    VBT_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
     STREET_LIFT_KNOWLEDGE,
+    HYBRID_PROGRAMMING_KNOWLEDGE,
     NUTRITION_KNOWLEDGE,
     RECOVERY_KNOWLEDGE,
     MEET_PREP_KNOWLEDGE,
@@ -661,6 +907,7 @@ export function getCompactKnowledge(): string {
     COACH_PRINCIPLES_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
+    HYBRID_PROGRAMMING_KNOWLEDGE,
     NUTRITION_KNOWLEDGE,
     PROGRAMMING_KNOWLEDGE,
   ].join('\n');
@@ -712,8 +959,18 @@ const KW_COACH         = [
   'joe stanek', 'stanek',
   'marcellus', 'millz', 'wallace',
   'noriega', 'sean noriega',
-  'autoregul', 'bar speed', 'velocity', 'specificity', 'adherence',
+  'autoregul', 'specificity', 'adherence',
   'philosoph', 'princip', 'approach',
+] as const;
+const KW_VBT           = [
+  'bar speed', 'bar-speed', 'velocity', 'm/s', 'vbt', 'tempo',
+  'grind', 'grinder', 'speed drop', 'fast bar', 'slow bar',
+] as const;
+const KW_HYBRID        = [
+  'hybrid', 'mix', 'combine', 'split', 'template', 'day-by-day',
+  'street-lift', 'street lift', 'weighted pull', 'weighted dip',
+  'calisthenic', 'fatigue stacking', 'stacking',
+  'upper body', 'lower body', 'push pull', 'push-pull',
 ] as const;
 
 /**
@@ -725,10 +982,12 @@ export function getTopicKnowledge(topic: string): string {
   const sections: string[] = [];
 
   if (hasAny(t, KW_RPE))           sections.push(RPE_KNOWLEDGE);
+  if (hasAny(t, KW_VBT))           sections.push(VBT_KNOWLEDGE);
   if (hasAny(t, KW_PERIODIZATION)) sections.push(PERIODIZATION_KNOWLEDGE);
   if (hasAny(t, KW_EXERCISE))      sections.push(EXERCISE_KNOWLEDGE);
   if (hasAny(t, KW_CALISTHENICS))  sections.push(CALISTHENICS_KNOWLEDGE);
   if (hasAny(t, KW_STREET_LIFT))   sections.push(STREET_LIFT_KNOWLEDGE);
+  if (hasAny(t, KW_HYBRID))        sections.push(HYBRID_PROGRAMMING_KNOWLEDGE);
   if (hasAny(t, KW_NUTRITION))     sections.push(NUTRITION_KNOWLEDGE);
   if (hasAny(t, KW_RECOVERY))      sections.push(RECOVERY_KNOWLEDGE);
   if (hasAny(t, KW_MEET))          sections.push(MEET_PREP_KNOWLEDGE);

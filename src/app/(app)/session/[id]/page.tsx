@@ -847,6 +847,15 @@ export default function SessionPage({
                     <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: C.dim, color: C.muted }}>
                       ~{ex.estimatedLoadKg} kg
                     </span>
+                    {ex.tempo && (
+                      <span
+                        className="text-xs font-bold px-2 py-0.5 rounded-full"
+                        style={{ backgroundColor: `${C.accent}20`, color: C.accent }}
+                        title="Eccentric-Pause-Concentric tempo (seconds)"
+                      >
+                        Tempo {ex.tempo}
+                      </span>
+                    )}
                     <span className="text-xs capitalize" style={{ color: C.muted }}>
                       {ex.setStructure.toLowerCase()} sets
                     </span>
