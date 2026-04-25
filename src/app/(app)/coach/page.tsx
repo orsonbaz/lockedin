@@ -6,7 +6,7 @@
  * Full-screen conversational interface.
  * Supports two modes selected automatically from the athlete's profile:
  *   MODE A — On-device  (Phi-3.5-mini via Transformers.js Worker, offline-first)
- *   MODE B — Gemini     (Gemini 2.0 Flash, free tier, needs a Google AI Studio key)
+ *   MODE B — Gemini     (Gemini 2.5 Flash, free tier, needs a Google AI Studio key)
  *
  * Chat history is persisted to db.chat (IndexedDB).
  * Only the last 10 messages are sent as context to the AI backend.
@@ -148,7 +148,7 @@ function SettingsSheet({
         {geminiKey ? (
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Gemini 2.0 Flash — Online</span>
+            <span className="font-semibold" style={{ color: C.green }}>Gemini 2.5 Flash — Online</span>
           </div>
         ) : (
           <div className="flex items-center gap-2">
@@ -164,7 +164,7 @@ function SettingsSheet({
           Google Gemini API Key <span style={{ color: C.green }}>(Free — Recommended)</span>
         </label>
         <p className="text-xs mb-3" style={{ color: C.muted }}>
-          Uses Gemini 2.0 Flash — free tier, no credit card. Get a key at{' '}
+          Uses Gemini 2.5 Flash — free tier, no credit card. Get a key at{' '}
           <span style={{ color: C.gold }}>aistudio.google.com</span> in under a minute.
         </p>
         <div className="flex gap-2 mb-2">
@@ -594,7 +594,7 @@ export default function CoachPage() {
             style={{ backgroundColor: C.bg, borderColor: C.accent }}
           >
             <p className="font-bold mb-0.5" style={{ color: C.accent }}>
-              ⚡ Gemini 2.0 Flash — Recommended
+              ⚡ Gemini 2.5 Flash — Recommended
             </p>
             <p className="text-sm" style={{ color: C.muted }}>
               Free API key at <span style={{ color: C.gold }}>aistudio.google.com</span>.
@@ -717,7 +717,7 @@ export default function CoachPage() {
               className="text-xs font-semibold px-2 py-0.5 rounded-full"
               style={{ backgroundColor: `${C.green}20`, color: C.green }}
             >
-              Gemini 2.0 Flash
+              Gemini 2.5 Flash
             </span>
           ) : (
             <span

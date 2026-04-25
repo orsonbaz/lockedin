@@ -495,7 +495,7 @@ export default function SettingsPage() {
             <RowLabel
               label="Google Gemini API Key"
               sub={geminiKey.trim()
-                ? 'Online mode active — Gemini 2.0 Flash'
+                ? 'Online mode active — Gemini 2.5 Flash'
                 : 'Free key at aistudio.google.com · Leave blank for on-device AI'}
             />
           </Row>

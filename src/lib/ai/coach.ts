@@ -527,7 +527,7 @@ async function* streamFromWorker(
 // ── Main public API ───────────────────────────────────────────────────────────
 
 /**
- * Stream a response from Google Gemini 2.0 Flash.
+ * Stream a response from Google Gemini 2.5 Flash.
  * Free tier; significantly smarter than on-device Phi.
  * The system prompt is passed as a system instruction; user/assistant turns
  * are mapped to Gemini's 'user'/'model' role names.
@@ -573,7 +573,7 @@ async function* geminiStream(
  * Route a chat turn to the correct AI backend.
  * Yields string tokens as they stream from the model.
  *
- * If geminiApiKey is set → Gemini 2.0 Flash; otherwise → on-device Worker.
+ * If geminiApiKey is set → Gemini 2.5 Flash; otherwise → on-device Worker.
  *
  * @param messages     Conversation history including system prompt as first message.
  * @param geminiApiKey Google Gemini API key (online, free tier).
@@ -587,7 +587,7 @@ export async function* sendMessage(
   const trimmedGeminiKey = geminiApiKey?.trim();
 
   if (trimmedGeminiKey) {
-    // ── Gemini 2.0 Flash (online, free tier) ─────────────────────────
+    // ── Gemini 2.5 Flash (online, free tier) ─────────────────────────
     yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
     return;
   }
