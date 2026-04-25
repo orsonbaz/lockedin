@@ -122,7 +122,14 @@ export function generateSession(input: SessionInput): GeneratedSession {
   // we honor it. Otherwise adaptive selector when we have exposure history,
   // falling back to fixed S/B/D rotation (cold start + test fixtures).
   const selection = input.forcePrimary
-    ? { primary: input.forcePrimary, secondary: [] as Lift[] }
+    ? {
+        primary:   input.forcePrimary,
+        secondary: pickSecondary(
+          input.forcePrimary, input.recentLiftExposures, profile,
+          readinessScore, block.blockType,
+          input.weekWithinBlock ?? 1, block.weekEnd - block.weekStart + 1,
+        ),
+      }
     : input.recentLiftExposures && input.recentLiftExposures.length > 0
     ? selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
@@ -134,7 +141,13 @@ export function generateSession(input: SessionInput): GeneratedSession {
       })
     : (() => {
         const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
-        return { primary, secondary: sbdSecondaries(primary, block.blockType) };
+        return {
+          primary,
+          secondary: pickSecondary(
+            primary, [], profile, readinessScore, block.blockType,
+            input.weekWithinBlock ?? 1, block.weekEnd - block.weekStart + 1,
+          ),
+        };
       })();
   const primaryLift = selection.primary;
   const secondaryLifts = selection.secondary;
@@ -214,14 +227,36 @@ export function generateSession(input: SessionInput): GeneratedSession {
 // ── SBD Secondary Helpers ─────────────────────────────────────────────────────
 
 /**
- * Returns the two competition lifts that are NOT the primary, in S→B→D order.
- * Returns empty array for non-comp primaries (UPPER, LOWER, FULL) or DELOAD/REALIZATION
- * where secondary volume is skipped or handled separately.
+ * Returns exactly one secondary competition lift — the most-due comp lift
+ * that is NOT the primary. Returns [] for REALIZATION, DELOAD, or non-comp
+ * primaries. When exposure data is available the adaptive scorer picks the
+ * most-due secondary; otherwise falls back to the next lift in S→B→D order.
  */
-function sbdSecondaries(primary: Lift, blockType: BlockType): Lift[] {
-  if (blockType === 'REALIZATION') return [];
+function pickSecondary(
+  primary: Lift,
+  exposures: LiftExposure[] | undefined,
+  profile: AthleteProfile,
+  readinessScore: number,
+  blockType: BlockType,
+  weekInBlock: number,
+  totalBlockWeeks: number,
+): Lift[] {
+  if (blockType === 'REALIZATION' || blockType === 'DELOAD') return [];
   if (primary !== 'SQUAT' && primary !== 'BENCH' && primary !== 'DEADLIFT') return [];
-  return (['SQUAT', 'BENCH', 'DEADLIFT'] as Lift[]).filter((l) => l !== primary);
+
+  const compLifts: Lift[] = ['SQUAT', 'BENCH', 'DEADLIFT'];
+
+  if (exposures && exposures.length > 0) {
+    const scored = scoreAdaptiveLifts({
+      exposures, profile, readinessScore, blockType, weekInBlock, totalBlockWeeks,
+    });
+    const pick = scored.find((s) => s.lift !== primary);
+    return pick ? [pick.lift] : [];
+  }
+
+  // Cold start: next comp lift in S→B→D order after the primary.
+  const next = compLifts.find((l) => l !== primary);
+  return next ? [next] : [];
 }
 
 // ── Primary Lift Rotation ──────────────────────────────────────────────────────
@@ -309,11 +344,10 @@ function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
     return { primary, secondary: [] };
   }
 
-  // All other blocks: always include the other two comp lifts as secondaries.
-  return {
-    primary,
-    secondary: scored.slice(1, 3).map((s) => s.lift),
-  };
+  // Add the most-due remaining comp lift as secondary. The third lift appears
+  // through accessories and variations — it doesn't need its own comp block.
+  const secondary = scored.filter((s) => s.lift !== primary).slice(0, 1).map((s) => s.lift);
+  return { primary, secondary };
 }
 
 interface ScoredLift { lift: Lift; score: number; }

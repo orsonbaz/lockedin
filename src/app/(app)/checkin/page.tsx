@@ -32,8 +32,9 @@ import { RingProgress }    from '@/components/lockedin/RingProgress';
 import { C }               from '@/lib/theme';
 import type {
   HRVSource, ReadinessRecord, SessionExercise, BodyweightEntry,
-  SessionModalityChoice,
+  SessionModalityChoice, Lift,
 } from '@/lib/db/types';
+import type { LiftExposure } from '@/lib/engine/session';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -206,10 +207,12 @@ function CheckInInner() {
   const [modality,     setModality]     = useState<SessionModalityChoice>('FULL');
 
   // ── Async state ─────────────────────────────────────────────────────────
-  const [hrvBaseline, setHrvBaseline] = useState<number | undefined>();
-  const [ready,       setReady]       = useState(false); // init done, safe to render
-  const [submitting,  setSubmitting]  = useState(false);
-  const [autoFilled,  setAutoFilled]  = useState<HRVSource | null>(null);
+  const [hrvBaseline,     setHrvBaseline]     = useState<number | undefined>();
+  const [ready,           setReady]           = useState(false); // init done, safe to render
+  const [submitting,      setSubmitting]      = useState(false);
+  const [autoFilled,      setAutoFilled]      = useState<HRVSource | null>(null);
+  const [liftExposures,   setLiftExposures]   = useState<LiftExposure[]>([]);
+  const [preferredPrimary, setPreferredPrimary] = useState<'SQUAT' | 'BENCH' | 'DEADLIFT' | null>(null);
 
   // ── HRV tooltip ─────────────────────────────────────────────────────────
   const [showHrvTip, setShowHrvTip] = useState(false);
@@ -256,6 +259,19 @@ function CheckInInner() {
           setAutoFilled(wearable.hrvSource);
         }
 
+        // Load lift exposures and auto-suggest the most overdue comp lift.
+        const exposures = await loadRecentLiftExposures(today()).catch(() => []);
+        if (!cancelled) {
+          setLiftExposures(exposures);
+          const compLifts: Array<'SQUAT' | 'BENCH' | 'DEADLIFT'> = ['SQUAT', 'BENCH', 'DEADLIFT'];
+          const compExposures = compLifts.map((l) => ({
+            lift: l,
+            daysSince: exposures.find((e) => e.lift === l)?.daysSince ?? Infinity,
+          }));
+          const suggested = compExposures.sort((a, b) => b.daysSince - a.daysSince)[0];
+          if (suggested) setPreferredPrimary(suggested.lift);
+        }
+
         setReady(true);
       }
     }
@@ -290,6 +306,19 @@ function CheckInInner() {
   );
 
   const { label: rdLabel, colour: rdColour } = readinessLabel(readinessScore);
+
+  // Lift with the highest daysSince — used to show "SUGGESTED" badge.
+  const suggestedLift = useMemo(() => {
+    const compLifts = ['SQUAT', 'BENCH', 'DEADLIFT'] as const;
+    let maxDays = -1;
+    let best: 'SQUAT' | 'BENCH' | 'DEADLIFT' | null = null;
+    for (const lift of compLifts) {
+      const days = liftExposures.find((e) => e.lift === lift)?.daysSince ?? Infinity;
+      const numeric = isFinite(days) ? days : 999;
+      if (numeric > maxDays) { maxDays = numeric; best = lift; }
+    }
+    return best;
+  }, [liftExposures]);
 
   // True once the user has touched at least one input beyond the sleep-hours default
   const hasAnyInput =
@@ -457,14 +486,17 @@ function CheckInInner() {
             weekWithinBlock,
             overshootHistory,
             recentLiftExposures,
-                      });
+            // Honor the athlete's lift preference from the check-in picker.
+            ...(preferredPrimary ? { forcePrimary: preferredPrimary as Lift } : {}),
+          });
 
-          // 4a. Post-generation review — swap primary lift on bench/squat/DL drought.
+          // 4a. Post-generation review — swap primary lift on bench/squat/DL drought,
+          // but only when the athlete hasn't explicitly picked their focus lift.
           const reviewPass1 = reviewSessionPure({
             session: generated, profile, block,
             exposures: recentLiftExposures, weekDayOfWeek,
           });
-          const blockSwap1 = reviewPass1.issues.find(
+          const blockSwap1 = !preferredPrimary && reviewPass1.issues.find(
             (i) => i.severity === 'BLOCK' && /_DROUGHT$/.test(i.code),
           );
           if (blockSwap1) {
@@ -473,8 +505,8 @@ function CheckInInner() {
             generated = generateSession({
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
-              forcePrimary: forced,
-                          });
+              forcePrimary: forced as Lift,
+            });
           }
           const finalReview = reviewSessionPure({
             session: generated, profile, block,
@@ -703,6 +735,51 @@ function CheckInInner() {
                 </p>
               )}
             </div>
+          </Section>
+
+          {/* ── SECTION: Focus lift today ────────────────────────────── */}
+          <Section title="What's your focus lift today?">
+            <div className="grid grid-cols-3 gap-2">
+              {(['SQUAT', 'BENCH', 'DEADLIFT'] as const).map((lift) => {
+                const daysSince = liftExposures.find((e) => e.lift === lift)?.daysSince ?? Infinity;
+                const on = preferredPrimary === lift;
+                const isSuggested = suggestedLift === lift;
+                const daysLabel = !isFinite(daysSince)
+                  ? 'Never'
+                  : daysSince === 0
+                  ? 'Today'
+                  : daysSince === 1
+                  ? 'Yesterday'
+                  : `${Math.round(daysSince)}d ago`;
+                const liftLabel = lift === 'SQUAT' ? 'Squat'
+                  : lift === 'BENCH' ? 'Bench' : 'Deadlift';
+                return (
+                  <button
+                    key={lift}
+                    type="button"
+                    onClick={() => setPreferredPrimary(lift)}
+                    className="rounded-xl p-3 text-center transition-all active:scale-[0.97]"
+                    style={{
+                      backgroundColor: on ? `${ACCENT}18` : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${on ? ACCENT : C.border}`,
+                    }}
+                  >
+                    <p className="text-sm font-bold leading-tight" style={{ color: on ? ACCENT : TEXT }}>
+                      {liftLabel}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: MUTED }}>{daysLabel}</p>
+                    {isSuggested && !on && (
+                      <p className="text-[10px] font-semibold mt-1" style={{ color: C.gold }}>
+                        suggested
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs" style={{ color: MUTED }}>
+              We&apos;ll pair this with secondary work — tap any lift to change the focus.
+            </p>
           </Section>
 
           {/* ── SECTION 1a: Training style today ─────────────────────── */}
