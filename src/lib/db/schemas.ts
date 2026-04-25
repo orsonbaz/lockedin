@@ -65,6 +65,8 @@ export const AthleteProfileSchema = z.object({
   updatedAt: isoTimestamp,
 });
 
+export const SetOutcomeSchema = z.enum(['COMPLETE', 'PARTIAL', 'MISS']);
+
 export const SetLogSchema = z.object({
   id: z.string().min(1),
   exerciseId: z.string().min(1),
@@ -75,6 +77,7 @@ export const SetLogSchema = z.object({
   rpeLogged: rpe.optional(),
   velocityMs: z.number().min(0).optional(),
   loggedAt: isoTimestamp,
+  outcome: SetOutcomeSchema.optional(),
 });
 
 export const ReadinessRecordSchema = z.object({

@@ -390,6 +390,13 @@ export interface SessionExercise {
   tempo?: string;
 }
 
+/**
+ * How a set was actually completed. Absent ⇒ COMPLETE for back-compat with
+ * sets logged before the field existed. PARTIAL = some reps made, target not
+ * hit. MISS = bailed before completing a single rep.
+ */
+export type SetOutcome = 'COMPLETE' | 'PARTIAL' | 'MISS';
+
 export interface SetLog {
   id: string;
   exerciseId: string;
@@ -400,6 +407,8 @@ export interface SetLog {
   rpeLogged?: number;
   velocityMs?: number;
   loggedAt: string;
+  /** Optional — undefined = COMPLETE. */
+  outcome?: SetOutcome;
 }
 
 export interface ReadinessRecord {
