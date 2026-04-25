@@ -127,6 +127,7 @@ export function generateSession(input: SessionInput): GeneratedSession {
     : input.recentLiftExposures && input.recentLiftExposures.length > 0
     ? selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
+        profile,
         readinessScore,
         blockType:       block.blockType,
         weekInBlock:     input.weekWithinBlock ?? 1,
@@ -264,6 +265,7 @@ const SYSTEMIC_LOAD: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
 
 interface AdaptiveInput {
   exposures: LiftExposure[];
+  profile: AthleteProfile;
   readinessScore: number;
   blockType: BlockType;
   weekInBlock: number;
@@ -329,7 +331,7 @@ function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
 interface ScoredLift { lift: Lift; score: number; }
 
 function scoreAdaptiveLifts(input: AdaptiveInput): ScoredLift[] {
-  const { exposures, readinessScore } = input;
+  const { exposures, readinessScore, profile } = input;
   const byLift = new Map<Lift, LiftExposure>();
   for (const e of exposures) byLift.set(e.lift, e);
 
@@ -339,27 +341,76 @@ function scoreAdaptiveLifts(input: AdaptiveInput): ScoredLift[] {
     const weekCount = exp?.weekCount ?? 0;
     const target    = WEEKLY_TARGET[lift];
 
-    // Dueness: cap influence after ~7 days so a 30-day absence doesn't pin
-    // everything to a single lift. Normalize to roughly 0–1.
+    // Dueness: cap influence after ~10 days so a long absence doesn't
+    // permanently pin everything to one lift. Normalize to 0–1.
     const dueness = Math.min(daysSince, 10) / 10;
     // Gap: positive when under weekly target, negative when over. Normalize.
-    const gap     = Math.max(-1, Math.min(1, (target - weekCount) / target));
-    // Readiness fit: on a poor day bias toward bench (low systemic); on a
-    // great day don't penalize squat/deadlift.
-    const readFit = (1 - SYSTEMIC_LOAD[lift] / 10) * (1 - readinessScore / 100)
-                  + (SYSTEMIC_LOAD[lift] / 10) * (readinessScore / 100);
-    // Systemic damp: only hurts when readiness is actually borderline.
-    const systemicDamp = readinessScore < 60
-      ? (SYSTEMIC_LOAD[lift] / 10) * (1 - readinessScore / 100)
-      : 0;
+    const gap = Math.max(-1, Math.min(1, (target - weekCount) / target));
+    // Readiness fit: neutral at good readiness (≥60); only penalise
+    // high-systemic lifts when readiness is genuinely low. This prevents
+    // the old biased formula from always picking Deadlift at readiness 70.
+    const systemicFrac = SYSTEMIC_LOAD[lift] / 10;
+    const readFit = readinessScore >= 60
+      ? 1.0
+      : 1.0 - systemicFrac * (60 - readinessScore) / 60;
+    // Goal boost: weight each lift based on the athlete's declared goal,
+    // training focus, and bottleneck phenotype so the session plan emerges
+    // from what the athlete is actually working toward.
+    const goalBoost = computeGoalBoost(lift, profile);
 
-    const score = 0.35 * dueness + 0.35 * gap + 0.20 * readFit - 0.10 * systemicDamp;
+    const score = 0.30 * dueness + 0.30 * gap + 0.20 * readFit + 0.20 * goalBoost;
     return { lift, score };
   }
 
   const entries: ScoredLift[] = [read('SQUAT'), read('BENCH'), read('DEADLIFT')];
   entries.sort((a, b) => b.score - a.score);
   return entries;
+}
+
+/**
+ * Compute a 0–1 priority boost for a given lift based on the athlete's
+ * declared goal and profile characteristics. Lifts the programmer uses to
+ * build sessions from the athlete's actual goal rather than from arbitrary
+ * rotation order.
+ *
+ * Signals used (in priority order):
+ *   1. trainingGoalTarget — free-text mention of a specific lift
+ *   2. bottleneck — HYPERTROPHY → more bench; NEURAL → lift with biggest gym gap
+ *   3. trainingGoal — COMPETITION_PREP equally weights all three; others neutral
+ */
+function computeGoalBoost(
+  lift: 'SQUAT' | 'BENCH' | 'DEADLIFT',
+  profile: AthleteProfile,
+): number {
+  let boost = 0;
+
+  // Explicit goal target: parse free-text for lift mentions.
+  const targetText = (profile.trainingGoalTarget ?? '').toLowerCase();
+  if (targetText.includes('squat') && lift === 'SQUAT') boost += 0.20;
+  if ((targetText.includes('bench') || targetText.includes('press')) && lift === 'BENCH') boost += 0.20;
+  if ((targetText.includes('deadlift') || targetText.includes('pull')) && lift === 'DEADLIFT') boost += 0.20;
+
+  // Bottleneck phenotype.
+  if (profile.bottleneck === 'HYPERTROPHY' && lift === 'BENCH') {
+    // Bench has the best hypertrophy-to-fatigue ratio among the three lifts —
+    // more pressing volume builds the triceps/pecs that are almost always the
+    // hypertrophy bottleneck for powerlifters.
+    boost += 0.15;
+  }
+  if (profile.bottleneck === 'NEURAL') {
+    // Find the lift where the athlete's gym PR significantly exceeds their
+    // competition max — that gap signals untapped neural potential; practicing
+    // that lift more often reduces it.
+    const gymGaps: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
+      SQUAT:    (profile.gymSquat    ?? profile.maxSquat)    - profile.maxSquat,
+      BENCH:    (profile.gymBench    ?? profile.maxBench)    - profile.maxBench,
+      DEADLIFT: (profile.gymDeadlift ?? profile.maxDeadlift) - profile.maxDeadlift,
+    };
+    const maxGap = Math.max(gymGaps.SQUAT, gymGaps.BENCH, gymGaps.DEADLIFT);
+    if (maxGap > 5 && gymGaps[lift] === maxGap) boost += 0.15;
+  }
+
+  return Math.min(0.5, boost);
 }
 
 // ── Secondary Comp Block Builder ──────────────────────────────────────────────
