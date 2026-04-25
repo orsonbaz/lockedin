@@ -546,16 +546,23 @@ async function* geminiStream(
     generationConfig: { maxOutputTokens: maxTokens },
   });
 
-  const history = messages
-    .filter((m) => m.role !== 'system')
+  const nonSystem = messages.filter((m) => m.role !== 'system');
+  const lastMsg   = nonSystem.at(-1);
+  if (!lastMsg) return;
+
+  // Gemini requires strictly alternating user→model history.
+  // If a previous turn errored (assistant message not saved), the DB may have
+  // a trailing user entry — sending another user turn on top causes a 400.
+  // Fix: drop any trailing user-role entries so history ends with 'model' or [].
+  const history = nonSystem
     .slice(0, -1)
     .map((m) => ({
-      role:  m.role === 'assistant' ? 'model' : 'user',
+      role:  m.role === 'assistant' ? 'model' : 'user' as 'user' | 'model',
       parts: [{ text: m.content }],
     }));
-
-  const lastMsg = messages.filter((m) => m.role !== 'system').at(-1);
-  if (!lastMsg) return;
+  while (history.length > 0 && history[history.length - 1].role === 'user') {
+    history.pop();
+  }
 
   const chat = model.startChat({ history });
   const result = await chat.sendMessageStream(lastMsg.content);

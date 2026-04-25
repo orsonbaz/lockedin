@@ -59,6 +59,7 @@ export const AthleteProfileSchema = z.object({
   weeklyFrequency: z.number().int().min(2).max(7),
   peakDayOfWeek: z.number().int().min(0).max(6),
   unitSystem: z.enum(['KG', 'LBS']),
+  geminiApiKey: z.string().optional(),
   groqApiKey: z.string().optional(),
   onboardingComplete: z.boolean(),
   createdAt: isoTimestamp,
