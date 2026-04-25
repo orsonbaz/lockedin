@@ -382,11 +382,12 @@ function CheckInInner() {
         await db.bodyweight.add(bwEntry);
       }
 
-      // 2. Find today's scheduled session
+      // 2. Find today's active session — accept MODIFIED too because
+      //    ensureSessionFresh may have already set that status before check-in.
       const session = await db.sessions
         .where('scheduledDate')
         .equals(dateStr)
-        .filter((s) => s.status === 'SCHEDULED')
+        .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
         .first();
 
       if (session) {
@@ -475,6 +476,7 @@ function CheckInInner() {
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
               forcePrimary: forced,
+              sbdToday: modality === 'SBD',
             });
           }
           const finalReview = reviewSessionPure({

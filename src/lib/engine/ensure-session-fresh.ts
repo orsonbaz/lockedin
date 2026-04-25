@@ -117,6 +117,19 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     return { status: 'skipped', reason: 'sets-logged', session };
   }
 
+  // If check-in has already been submitted today and the session was generated
+  // from that same readiness score, skip regeneration. This preserves any
+  // post-check-in coach modifications (load adjustments, exercise swaps, etc.)
+  // that would otherwise be wiped by the delete+bulkAdd at the end.
+  const earlyReadiness = await db.readiness.where('date').equals(dateStr).first();
+  if (
+    earlyReadiness &&
+    session.readinessScore !== undefined &&
+    session.readinessScore === earlyReadiness.readinessScore
+  ) {
+    return { status: 'skipped', reason: 'readiness-in-sync', session };
+  }
+
   const [profile, block, cycle] = await Promise.all([
     db.profile.get('me'),
     db.blocks.get(session.blockId),
@@ -141,7 +154,8 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
 
   // Latest readiness score for today if present (falls back to session value or 70).
-  const readinessRow = await db.readiness.where('date').equals(dateStr).first();
+  // earlyReadiness was already fetched for the in-sync check above; reuse it.
+  const readinessRow = earlyReadiness;
   const readinessScore =
     readinessRow?.readinessScore ?? session.readinessScore ?? 70;
 
@@ -215,6 +229,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
       overshootHistory,
       recentLiftExposures,
       forcePrimary: forced,
+      sbdToday,
     });
   }
   // Re-run review on the (possibly-regenerated) session to collect any
