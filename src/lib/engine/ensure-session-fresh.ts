@@ -106,8 +106,12 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const session = await db.sessions.where('scheduledDate').equals(dateStr).first();
   if (!session) return { status: 'missing', reason: 'no-session' };
 
-  // Don't touch a completed session; the athlete's log is the record of truth.
-  if (session.status === 'COMPLETED' || session.status === 'SKIPPED') {
+  // Don't regenerate completed, skipped, or coach-modified sessions.
+  // MODIFIED means either the engine already applied readiness adjustments
+  // (in which case re-running would produce identical output) or a coach
+  // action changed exercises (in which case regeneration would wipe it).
+  // Check-in handles MODIFIED sessions directly so this early-out is safe.
+  if (session.status === 'COMPLETED' || session.status === 'SKIPPED' || session.status === 'MODIFIED') {
     return { status: 'skipped', reason: `session-${session.status.toLowerCase()}`, session };
   }
 

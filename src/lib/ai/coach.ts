@@ -14,6 +14,7 @@
 
 import Groq                 from 'groq-sdk';
 import Anthropic            from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
@@ -603,6 +604,44 @@ async function* groqStreamWithWatchdog(
 }
 
 /**
+ * Stream a response from Google Gemini 2.0 Flash.
+ * Free tier; significantly smarter than on-device Phi.
+ * The system prompt is passed as a system instruction; user/assistant turns
+ * are mapped to Gemini's 'user'/'model' role names.
+ */
+async function* geminiStream(
+  apiKey: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+): AsyncGenerator<string> {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const systemMsg = messages.find((m) => m.role === 'system');
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    systemInstruction: systemMsg?.content ?? '',
+    generationConfig: { maxOutputTokens: maxTokens },
+  });
+
+  const history = messages
+    .filter((m) => m.role !== 'system')
+    .slice(0, -1)
+    .map((m) => ({
+      role:  m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+  const lastMsg = messages.filter((m) => m.role !== 'system').at(-1);
+  if (!lastMsg) return;
+
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessageStream(lastMsg.content);
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+/**
  * Stream a response from the Anthropic Claude API.
  * Splits the messages array: the first 'system' role message becomes the
  * system prompt; the rest are user/assistant turns.
@@ -639,24 +678,32 @@ async function* anthropicStream(
  * Route a chat turn to the correct AI backend.
  * Yields string tokens as they stream from the model.
  *
- * Priority: Anthropic (Claude) → Groq → on-device Worker.
+ * Priority: Gemini → Groq → Claude API → on-device Worker.
  * When Groq is configured we auto-retry once on a stalled/idle stream and
  * fall back to the on-device worker if all Groq attempts fail.
  *
- * @param messages        Conversation history (user + assistant turns). Include
- *                        the system prompt as the first message with role 'system'.
- * @param groqApiKey      If set, use Groq (unless anthropicApiKey is also set).
+ * @param messages        Conversation history including system prompt as first message.
+ * @param groqApiKey      Groq API key (fallback if no Gemini key).
  * @param maxTokens       Max tokens to generate (default 512).
- * @param anthropicApiKey If set, use Claude (takes priority over Groq).
+ * @param anthropicApiKey Anthropic API key (fallback if no Gemini or Groq key).
+ * @param geminiApiKey    Google Gemini API key (highest priority when set).
  */
 export async function* sendMessage(
   messages:         ChatMessage[],
   groqApiKey?:      string,
   maxTokens         = 512,
   anthropicApiKey?: string,
+  geminiApiKey?:    string,
 ): AsyncGenerator<string> {
+  const trimmedGeminiKey    = geminiApiKey?.trim();
   const trimmedAnthropicKey = anthropicApiKey?.trim();
-  const trimmedGroqKey = groqApiKey?.trim();
+  const trimmedGroqKey      = groqApiKey?.trim();
+
+  if (trimmedGeminiKey) {
+    // ── MODE A: Google Gemini 2.0 Flash (free tier, recommended) ─────
+    yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
+    return;
+  }
 
   if (trimmedAnthropicKey) {
     // ── MODE B: Anthropic Claude ──────────────────────────────────────
