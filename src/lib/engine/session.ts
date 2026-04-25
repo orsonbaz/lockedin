@@ -227,10 +227,18 @@ export function generateSession(input: SessionInput): GeneratedSession {
 // ── SBD Secondary Helpers ─────────────────────────────────────────────────────
 
 /**
- * Returns exactly one secondary competition lift — the most-due comp lift
- * that is NOT the primary. Returns [] for REALIZATION, DELOAD, or non-comp
- * primaries. When exposure data is available the adaptive scorer picks the
- * most-due secondary; otherwise falls back to the next lift in S→B→D order.
+ * Returns exactly one secondary competition lift for the session.
+ * Returns [] for REALIZATION, DELOAD, or non-comp primaries.
+ *
+ * Hard pairing rules (knowledge base: "Never heavy squat + heavy deadlift
+ * the same day outside of an SBD rehearsal once every 3–4 weeks"):
+ *   SQUAT primary    → BENCH secondary (always)
+ *   DEADLIFT primary → BENCH secondary (always)
+ *   BENCH primary    → adaptive pick from SQUAT or DEADLIFT only
+ *
+ * Bench achieves its 3-4×/week total through primaries (1-2×) + secondaries
+ * (1-2× as secondary on every SQ/DL day). WEEKLY_TARGET for bench is set
+ * lower (1.5) to reflect that only primary sessions are tracked in weekCount.
  */
 function pickSecondary(
   primary: Lift,
@@ -244,19 +252,65 @@ function pickSecondary(
   if (blockType === 'REALIZATION' || blockType === 'DELOAD') return [];
   if (primary !== 'SQUAT' && primary !== 'BENCH' && primary !== 'DEADLIFT') return [];
 
-  const compLifts: Lift[] = ['SQUAT', 'BENCH', 'DEADLIFT'];
+  // SQUAT or DEADLIFT primary always pairs with BENCH.
+  if (primary === 'SQUAT' || primary === 'DEADLIFT') return ['BENCH'];
 
+  // BENCH primary: pick the most-due of SQUAT or DEADLIFT.
   if (exposures && exposures.length > 0) {
     const scored = scoreAdaptiveLifts({
       exposures, profile, readinessScore, blockType, weekInBlock, totalBlockWeeks,
     });
-    const pick = scored.find((s) => s.lift !== primary);
-    return pick ? [pick.lift] : [];
+    const pick = scored.find((s) => s.lift === 'SQUAT' || s.lift === 'DEADLIFT');
+    return pick ? [pick.lift] : ['SQUAT'];
   }
+  // Cold start when bench is primary: default SQUAT secondary.
+  return ['SQUAT'];
+}
 
-  // Cold start: next comp lift in S→B→D order after the primary.
-  const next = compLifts.find((l) => l !== primary);
-  return next ? [next] : [];
+/**
+ * Return the expected secondary lift for a given primary without running the
+ * full engine. Used by the check-in page to show a pairing preview before the
+ * athlete submits. When bench is primary and exposures are available, picks
+ * whichever of SQUAT/DEADLIFT is more overdue.
+ */
+export function getExpectedSecondary(
+  primary: 'SQUAT' | 'BENCH' | 'DEADLIFT',
+  exposures?: LiftExposure[],
+): 'SQUAT' | 'BENCH' | 'DEADLIFT' {
+  if (primary === 'SQUAT' || primary === 'DEADLIFT') return 'BENCH';
+  // BENCH primary: whichever of SQ/DL has more daysSince
+  if (exposures && exposures.length > 0) {
+    const sq = exposures.find((e) => e.lift === 'SQUAT')?.daysSince ?? Infinity;
+    const dl = exposures.find((e) => e.lift === 'DEADLIFT')?.daysSince ?? Infinity;
+    return sq >= dl ? 'SQUAT' : 'DEADLIFT';
+  }
+  return 'SQUAT';
+}
+
+/**
+ * Suggest the most-due primary lift for today's session. Uses
+ * frequency-weighted scoring (dueness + weekly-target gap) so that bench,
+ * whose total frequency comes partly from secondaries, isn't over-suggested
+ * as primary when the athlete is due for a big leg or pull day.
+ */
+export function suggestPrimaryLift(
+  exposures: LiftExposure[],
+): 'SQUAT' | 'BENCH' | 'DEADLIFT' | null {
+  if (exposures.length === 0) return null;
+  const compLifts: Array<'SQUAT' | 'BENCH' | 'DEADLIFT'> = ['SQUAT', 'BENCH', 'DEADLIFT'];
+  let best: 'SQUAT' | 'BENCH' | 'DEADLIFT' | null = null;
+  let bestScore = -Infinity;
+  for (const lift of compLifts) {
+    const exp = exposures.find((e) => e.lift === lift);
+    const daysSince = exp?.daysSince ?? 14;
+    const weekCount = exp?.weekCount ?? 0;
+    const target    = WEEKLY_TARGET[lift];
+    const dueness   = Math.min(daysSince, 10) / 10;
+    const gap       = Math.max(0, Math.min(1, (target - weekCount) / target));
+    const score     = 0.6 * dueness + 0.4 * gap;
+    if (score > bestScore) { bestScore = score; best = lift; }
+  }
+  return best;
 }
 
 // ── Primary Lift Rotation ──────────────────────────────────────────────────────
@@ -288,15 +342,22 @@ function selectPrimaryLift(sessionNumber: number, weeklyFrequency: number): Lift
 // ── Adaptive Primary-Lift Selector ────────────────────────────────────────────
 
 /**
- * Weekly exposure targets per elite-coach consensus:
- *   Squat     — 2 to 3 sessions
- *   Bench     — 3 to 4 sessions (higher SFR, lower systemic cost)
- *   Deadlift  — 2 to 3 sessions (highest systemic cost)
+ * Weekly PRIMARY-session targets per elite-coach consensus.
+ *
+ * These count only sessions where the lift is the primary focus. Secondary
+ * appearances (bench on every squat/DL day) are not tracked in weekCount,
+ * so bench's total frequency (3-4x) comes from primaries (1-2x) + secondaries
+ * (1-2x from the pairing rules). Setting bench's primary target lower prevents
+ * the adaptive selector from making bench primary every single day.
+ *
+ *   Squat     — 2 primary sessions/week
+ *   Bench     — 1.5 primary sessions/week (rest of its frequency comes as secondary)
+ *   Deadlift  — 2 primary sessions/week
  */
 const WEEKLY_TARGET: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
-  SQUAT:    2.5,
-  BENCH:    3.5,
-  DEADLIFT: 2.5,
+  SQUAT:    2.0,
+  BENCH:    1.5,
+  DEADLIFT: 2.0,
 };
 
 /**
@@ -325,8 +386,8 @@ interface AdaptiveOutput {
 
 /**
  * Score each of SQUAT / BENCH / DEADLIFT and pick the most "due" lift as
- * primary. All three competition lifts are always trained in the same session
- * (Sheiko model) — the primary simply receives slightly more volume.
+ * primary, then apply the same hard pairing rules as pickSecondary so the
+ * adaptive path never produces a SQUAT+DEADLIFT same-session combination.
  * REALIZATION (meet week) is the only exception: single-lift focus preserves
  * peaking specificity.
  *
@@ -344,9 +405,15 @@ function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
     return { primary, secondary: [] };
   }
 
-  // Add the most-due remaining comp lift as secondary. The third lift appears
-  // through accessories and variations — it doesn't need its own comp block.
-  const secondary = scored.filter((s) => s.lift !== primary).slice(0, 1).map((s) => s.lift);
+  // Hard pairing rules — mirror pickSecondary (never SQ+DL same session).
+  let secondary: Lift[];
+  if (primary === 'SQUAT' || primary === 'DEADLIFT') {
+    secondary = ['BENCH'];
+  } else {
+    // BENCH primary: most-due of SQUAT or DEADLIFT
+    const pick = scored.find((s) => s.lift === 'SQUAT' || s.lift === 'DEADLIFT');
+    secondary = pick ? [pick.lift] : ['SQUAT'];
+  }
   return { primary, secondary };
 }
 

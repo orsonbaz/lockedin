@@ -23,7 +23,7 @@ import {
   calcReadinessScore,
   readinessLabel,
 } from '@/lib/engine/readiness';
-import { generateSession, abbreviateSession } from '@/lib/engine/session';
+import { generateSession, abbreviateSession, getExpectedSecondary, suggestPrimaryLift } from '@/lib/engine/session';
 import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import { reviewSessionPure, packReviewIssues } from '@/lib/engine/session-review';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
@@ -259,17 +259,12 @@ function CheckInInner() {
           setAutoFilled(wearable.hrvSource);
         }
 
-        // Load lift exposures and auto-suggest the most overdue comp lift.
+        // Load lift exposures and auto-suggest the most-due primary lift.
         const exposures = await loadRecentLiftExposures(today()).catch(() => []);
         if (!cancelled) {
           setLiftExposures(exposures);
-          const compLifts: Array<'SQUAT' | 'BENCH' | 'DEADLIFT'> = ['SQUAT', 'BENCH', 'DEADLIFT'];
-          const compExposures = compLifts.map((l) => ({
-            lift: l,
-            daysSince: exposures.find((e) => e.lift === l)?.daysSince ?? Infinity,
-          }));
-          const suggested = compExposures.sort((a, b) => b.daysSince - a.daysSince)[0];
-          if (suggested) setPreferredPrimary(suggested.lift);
+          const suggested = suggestPrimaryLift(exposures);
+          if (suggested) setPreferredPrimary(suggested);
         }
 
         setReady(true);
@@ -307,18 +302,9 @@ function CheckInInner() {
 
   const { label: rdLabel, colour: rdColour } = readinessLabel(readinessScore);
 
-  // Lift with the highest daysSince — used to show "SUGGESTED" badge.
-  const suggestedLift = useMemo(() => {
-    const compLifts = ['SQUAT', 'BENCH', 'DEADLIFT'] as const;
-    let maxDays = -1;
-    let best: 'SQUAT' | 'BENCH' | 'DEADLIFT' | null = null;
-    for (const lift of compLifts) {
-      const days = liftExposures.find((e) => e.lift === lift)?.daysSince ?? Infinity;
-      const numeric = isFinite(days) ? days : 999;
-      if (numeric > maxDays) { maxDays = numeric; best = lift; }
-    }
-    return best;
-  }, [liftExposures]);
+  // Most-due primary lift — uses frequency-weighted scoring so bench (lower
+  // primary target) isn't over-suggested when the athlete is due for SQ/DL.
+  const suggestedLift = useMemo(() => suggestPrimaryLift(liftExposures), [liftExposures]);
 
   // True once the user has touched at least one input beyond the sleep-hours default
   const hasAnyInput =
@@ -777,9 +763,23 @@ function CheckInInner() {
                 );
               })}
             </div>
-            <p className="text-xs" style={{ color: MUTED }}>
-              We&apos;ll pair this with secondary work — tap any lift to change the focus.
-            </p>
+            {/* Pairing preview — updates as the athlete taps different lifts */}
+            {preferredPrimary ? (
+              <p className="text-xs text-center" style={{ color: MUTED }}>
+                {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
+                <span style={{ color: TEXT }}>primary</span>
+                {' · '}
+                {(() => {
+                  const sec = getExpectedSecondary(preferredPrimary, liftExposures);
+                  return sec === 'SQUAT' ? 'Squat' : sec === 'BENCH' ? 'Bench' : 'Deadlift';
+                })()}{' '}
+                <span style={{ color: TEXT }}>secondary</span>
+              </p>
+            ) : (
+              <p className="text-xs" style={{ color: MUTED }}>
+                Tap a lift — we&apos;ll pair it with secondary work automatically.
+              </p>
+            )}
           </Section>
 
           {/* ── SECTION 1a: Training style today ─────────────────────── */}
