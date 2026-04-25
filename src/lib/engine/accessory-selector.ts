@@ -31,6 +31,8 @@ export interface AccessorySelectorInput {
   /** 1-based session number within the week — drives swap-group rotation for variety. */
   sessionNumber:      number;
   reward:             RewardSystem;
+  /** Signed offset applied to the base accessory count (e.g. -1 when a secondary comp lift is present). */
+  countOverride?:     number;
 }
 
 // ── Movement pattern caps ─────────────────────────────────────────────────────
@@ -120,12 +122,12 @@ const LOAD_REF: Record<string, LoadRef> = {
 // ── Main selector ─────────────────────────────────────────────────────────────
 
 export function selectAccessories(input: AccessorySelectorInput): GeneratedExercise[] {
-  const { primaryLift, blockType, profile, existingExercises, volMult, rpeOffset, sessionNumber, reward } = input;
+  const { primaryLift, blockType, profile, existingExercises, volMult, rpeOffset, sessionNumber, reward, countOverride = 0 } = input;
 
   if (blockType === 'REALIZATION') return [];
 
   const base        = BASE_ACCESSORY_COUNT[blockType] ?? 3;
-  const targetCount = reward === 'HIGH_VOLUME' ? base + 1 : base;
+  const targetCount = Math.max(1, (reward === 'HIGH_VOLUME' ? base + 1 : base) + countOverride);
   const primaryPat  = LIFT_TO_PATTERN[primaryLift] ?? null;
 
   // ── 1. Count patterns already in the session ───────────────────────────────

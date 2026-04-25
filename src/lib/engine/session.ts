@@ -216,12 +216,13 @@ export function generateSession(input: SessionInput): GeneratedSession {
 
   // ── 4. Build exercises ─────────────────────────────────────────────────────
   const isDupRepeat = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
-  // SBD-style day already fills the session with 3 comp blocks — skip
-  // accessories and variation so the session doesn't balloon past ~60 min.
-  const sbdDay = secondaryLifts.length > 0;
+  // Full SBD (3 comp lifts) already fills the session — skip variation + accessories.
+  // A regular 2-lift session (primary + one secondary) still gets variation + accessories.
+  const sbdDay = secondaryLifts.length >= 2;
+  const hasSecondaryBench = secondaryLifts.includes('BENCH');
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlockVal, isDupRepeat,
-    sessionNumber, sbdDay,
+    sessionNumber, sbdDay, secondaryLifts.length === 1, hasSecondaryBench,
   );
 
   // SBD day: rebuild all exercises in competition order (S→B→D) so the
@@ -614,6 +615,8 @@ function buildSessionExercises(
   isDupRepeat = false,
   sessionNumber = 1,
   sbdDay = false,
+  hasSecondary = false,
+  hasSecondaryBench = false,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
@@ -627,12 +630,8 @@ function buildSessionExercises(
   exercises.push(...primaryExercises);
 
   if (!sbdDay) {
-    // Accessories — library-driven selection. selectAccessories() reads exercise
-    // metadata (primaryLiftTarget, movementPattern, specificity, FatigueProfile,
-    // swapGroups) to pick the best candidates for this session's primary lift
-    // within the pattern diversity and spinal-load constraints. Adding a new
-    // exercise to the library automatically makes it a candidate here — no code
-    // changes needed.
+    // Accessories — library-driven selection. When a secondary comp lift is
+    // present the session already has more volume, so target 1 fewer accessory.
     if (block.blockType !== 'REALIZATION') {
       const accessories = selectAccessories({
         primaryLift,
@@ -643,18 +642,18 @@ function buildSessionExercises(
         rpeOffset,
         sessionNumber,
         reward,
+        countOverride: hasSecondary ? -1 : 0,
       });
       exercises.push(...accessories);
     }
 
-    // Cross-discipline accessory overlay — auto-adds face pulls on bench days
-    // (elite-coach non-negotiable for shoulder health), and when the athlete's
-    // disciplines include street-lift / calisthenics, adds a compatible light
-    // street-lift accessory so hybrid training stays hybrid without the
-    // athlete babysitting it. Suppressed in DELOAD and REALIZATION (comp focus).
+    // Cross-discipline accessory overlay — face pulls on any session that
+    // includes bench (primary or secondary), and discipline-specific extras.
+    // Suppressed in DELOAD and REALIZATION (comp focus only).
     if (block.blockType !== 'REALIZATION' && block.blockType !== 'DELOAD') {
+      const overlayLift = hasSecondaryBench ? 'BENCH' : primaryLift;
       const overlay = buildCrossDisciplineOverlay(
-        primaryLift, profile, exercises.length + 1, reward,
+        overlayLift, profile, exercises.length + 1, reward,
       );
       exercises.push(...overlay);
     }
