@@ -745,7 +745,7 @@ async function executeSetRpeTarget(params: Record<string, string>): Promise<Acti
 async function executeAdjustSetLoad(params: Record<string, string>): Promise<ActionResult> {
   const session = await db.sessions
     .where('scheduledDate').equals(today())
-    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED' || s.status === 'IN_PROGRESS')
+    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
     .first();
   if (!session) {
     return { success: false, message: 'No active session today.' };
