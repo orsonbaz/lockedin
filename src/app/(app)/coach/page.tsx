@@ -473,10 +473,13 @@ export default function CoachPage() {
     } catch (err) {
       const msg  = err instanceof Error ? err.message : String(err);
       console.error('[coach] generation error:', msg);
-      if (/api key|unauthoriz|401/i.test(msg)) {
-        fullResponse = 'Gemini rejected the API key. Update it in Settings → AI Coach.';
+      if (/api.?key|unauthoriz|401|API_KEY_INVALID|invalid.*key/i.test(msg)) {
+        fullResponse = 'Gemini rejected the API key — update it in Settings → AI Coach.';
+      } else if (/fetch|network|connect|ECONNREFUSED/i.test(msg)) {
+        fullResponse = 'Connection failed. Check your internet and try again.';
       } else if (!fullResponse) {
-        fullResponse = 'Something went wrong. Check your connection or API key.';
+        // Show the actual error to help diagnose — truncated for readability
+        fullResponse = `Something went wrong: ${msg.slice(0, 300)}`;
       }
     }
 

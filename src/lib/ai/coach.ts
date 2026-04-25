@@ -7,7 +7,6 @@
  * This module is imported only by client components ('use client').
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
@@ -533,41 +532,39 @@ async function* streamFromWorker(
  * The system prompt is passed as a system instruction; user/assistant turns
  * are mapped to Gemini's 'user'/'model' role names.
  */
+/**
+ * Streams Gemini via the server-side /api/chat route.
+ * Runs server-to-server (no browser CORS restrictions).
+ * Error signals arrive as `__ERROR__:message` in the stream body.
+ */
 async function* geminiStream(
   apiKey: string,
   messages: ChatMessage[],
   maxTokens: number,
 ): AsyncGenerator<string> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const systemMsg = messages.find((m) => m.role === 'system');
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
-    systemInstruction: systemMsg?.content ?? '',
-    generationConfig: { maxOutputTokens: maxTokens },
+  const res = await fetch('/api/chat', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ messages, apiKey, maxTokens }),
   });
 
-  const nonSystem = messages.filter((m) => m.role !== 'system');
-  const lastMsg   = nonSystem.at(-1);
-  if (!lastMsg) return;
-
-  // Gemini requires strictly alternating user→model history.
-  // If a previous turn errored (assistant message not saved), the DB may have
-  // a trailing user entry — sending another user turn on top causes a 400.
-  // Fix: drop any trailing user-role entries so history ends with 'model' or [].
-  const history = nonSystem
-    .slice(0, -1)
-    .map((m) => ({
-      role:  m.role === 'assistant' ? 'model' : 'user' as 'user' | 'model',
-      parts: [{ text: m.content }],
-    }));
-  while (history.length > 0 && history[history.length - 1].role === 'user') {
-    history.pop();
+  if (!res.ok) {
+    const errText = await res.text().catch(() => `HTTP ${res.status}`);
+    throw new Error(`Gemini API error (${res.status}): ${errText}`);
   }
 
-  const chat = model.startChat({ history });
-  const result = await chat.sendMessageStream(lastMsg.content);
-  for await (const chunk of result.stream) {
-    const text = chunk.text();
+  if (!res.body) throw new Error('No response body from /api/chat');
+
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value, { stream: true });
+    if (text.startsWith('__ERROR__:')) {
+      throw new Error(text.slice('__ERROR__:'.length));
+    }
     if (text) yield text;
   }
 }
