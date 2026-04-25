@@ -464,7 +464,7 @@ export default function CoachPage() {
     // Stream response (increased token limit for richer responses)
     let fullResponse = '';
     try {
-      const gen = sendMessage(context, geminiKey || undefined, 1024);
+      const gen = sendMessage(context, geminiKey || undefined, 4096);
       for await (const token of gen) {
         if (abortRef.current) break;
         fullResponse += token;

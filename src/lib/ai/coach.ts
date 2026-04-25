@@ -577,12 +577,12 @@ async function* geminiStream(
  *
  * @param messages     Conversation history including system prompt as first message.
  * @param geminiApiKey Google Gemini API key (online, free tier).
- * @param maxTokens    Max tokens to generate (default 512).
+ * @param maxTokens    Max tokens to generate (default 2048).
  */
 export async function* sendMessage(
   messages:      ChatMessage[],
   geminiApiKey?: string,
-  maxTokens      = 512,
+  maxTokens      = 2048,
 ): AsyncGenerator<string> {
   const trimmedGeminiKey = geminiApiKey?.trim();
 

@@ -919,9 +919,12 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
     .first();
   if (!session) return { success: false, message: 'No session found for today.' };
 
-  // Clear readinessScore so ensureSessionFresh is forced to regenerate
-  // even if the in-sync guard would otherwise skip it.
-  await db.sessions.update(session.id, { readinessScore: undefined as unknown as number });
+  // Reset to SCHEDULED and clear readinessScore so ensureSessionFresh runs
+  // fresh, bypassing both the MODIFIED guard and the readiness-in-sync guard.
+  await db.sessions.update(session.id, {
+    status: 'SCHEDULED',
+    readinessScore: undefined as unknown as number,
+  });
 
   const { ensureSessionFresh } = await import('@/lib/engine/ensure-session-fresh');
   const result = await ensureSessionFresh(today());
