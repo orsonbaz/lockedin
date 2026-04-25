@@ -105,6 +105,7 @@ export interface AthleteProfile {
   unitSystem: 'KG' | 'LBS';
   // Settings
   groqApiKey?: string;           // optional Groq key for online AI
+  anthropicApiKey?: string;      // optional Anthropic key for Claude (takes priority over Groq)
   onboardingComplete: boolean;
   createdAt: string;             // ISO date string
   updatedAt: string;

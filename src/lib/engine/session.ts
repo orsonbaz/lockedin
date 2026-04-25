@@ -170,11 +170,11 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const weekInBlock  = input.weekWithinBlock ?? 1;
   const isDupRepeat  = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
   // SBD-style day already fills the session with 3 comp blocks — skip
-  // accessories so the session doesn't balloon past ~60 min.
-  const skipAccessories = secondaryLifts.length > 0;
+  // accessories and variation so the session doesn't balloon past ~60 min.
+  const sbdDay = secondaryLifts.length > 0;
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock, isDupRepeat,
-    sessionNumber, skipAccessories,
+    sessionNumber, sbdDay,
   );
 
   // Secondary comp blocks: low-volume top singles per additional lift. Ordering
@@ -440,7 +440,7 @@ function buildSessionExercises(
   weekWithinBlock = 1,
   isDupRepeat = false,
   sessionNumber = 1,
-  skipAccessories = false,
+  sbdDay = false,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
@@ -449,11 +449,11 @@ function buildSessionExercises(
   const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
-    weekWithinBlock, totalBlockWeeks, isDupRepeat, reward,
+    weekWithinBlock, totalBlockWeeks, isDupRepeat, reward, sbdDay,
   );
   exercises.push(...primaryExercises);
 
-  if (!skipAccessories) {
+  if (!sbdDay) {
     // Accessories — library-driven selection. selectAccessories() reads exercise
     // metadata (primaryLiftTarget, movementPattern, specificity, FatigueProfile,
     // swapGroups) to pick the best candidates for this session's primary lift
@@ -571,6 +571,7 @@ function buildPrimaryExercises(
   totalBlockWeeks = 1,
   isDupRepeat = false,
   reward: RewardSystem = 'CONSISTENCY',
+  sbdDay = false,
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
   const baseRpe = getBaseRpeForBlock(blockType, weekInBlock, totalBlockWeeks);
@@ -713,7 +714,7 @@ function buildPrimaryExercises(
   // Intensification uses lower reps / fewer sets but keeps the variation
   // (e.g. pin press, block pull) so lockout / position strength keeps
   // developing during the strength phase.
-  if (variation !== null && (blockType === 'ACCUMULATION' || blockType === 'INTENSIFICATION')) {
+  if (!sbdDay && variation !== null && (blockType === 'ACCUMULATION' || blockType === 'INTENSIFICATION')) {
     const varRpe    = clampRpe(adjustedRpe - 0.5);
     const varReps   = blockType === 'INTENSIFICATION'
       ? Math.max(2, baseReps - 1)
@@ -1031,9 +1032,10 @@ function computeOvershootOffset(overshootHistory?: number): number {
   return -Math.min(1.0, overshootHistory * 0.5);
 }
 
-/** Clamp RPE to the valid [5, 10] range. */
+/** Clamp RPE to the valid [5, 10] range and round to nearest 0.5. */
 function clampRpe(rpe: number): number {
-  return Math.max(5, Math.min(10, rpe));
+  const rounded = Math.round(rpe * 2) / 2;
+  return Math.max(5, Math.min(10, rounded));
 }
 
 /**

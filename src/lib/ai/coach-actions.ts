@@ -49,7 +49,8 @@ export type CoachActionType =
   | 'SET_NUTRITION_TARGETS'
   | 'SCHEDULE_REFEED'
   | 'REQUEST_FORM_CHECK'
-  | 'IMPORT_WEARABLE';
+  | 'IMPORT_WEARABLE'
+  | 'REGENERATE_SESSION';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -308,6 +309,16 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
         confirmText: 'Open importer',
       };
 
+    case 'REGENERATE_SESSION': {
+      const reason = params.reason || 'Rebuild session from current data';
+      return {
+        type,
+        params,
+        displayText: `Regenerate today's session — ${reason}`,
+        confirmText: 'Regenerate session',
+      };
+    }
+
     default:
       return null;
   }
@@ -358,6 +369,8 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
           message: 'Opening wearable importer…',
           navigateTo: '/settings/wearables',
         };
+      case 'REGENERATE_SESSION':
+        return await executeRegenerateSession(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -897,6 +910,30 @@ async function executeSetWeekAvailability(params: Record<string, string>): Promi
     success: true,
     message: `Week of ${weekStart} capped at ${minutes} min/day (${created.length} days).`,
   };
+}
+
+async function executeRegenerateSession(params: Record<string, string>): Promise<ActionResult> {
+  const session = await db.sessions
+    .where('scheduledDate').equals(today())
+    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
+    .first();
+  if (!session) return { success: false, message: 'No session found for today.' };
+
+  // Clear readinessScore so ensureSessionFresh is forced to regenerate
+  // even if the in-sync guard would otherwise skip it.
+  await db.sessions.update(session.id, { readinessScore: undefined as unknown as number });
+
+  const { ensureSessionFresh } = await import('@/lib/engine/ensure-session-fresh');
+  const result = await ensureSessionFresh(today());
+
+  if (result.status === 'regenerated') {
+    const reason = params.reason ? ` (${params.reason})` : '';
+    return {
+      success: true,
+      message: `Session rebuilt${reason} — ${result.exerciseCount} exercises generated.`,
+    };
+  }
+  return { success: false, message: `Could not regenerate: ${result.reason ?? 'unknown error'}.` };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

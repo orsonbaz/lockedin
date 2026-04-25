@@ -1,17 +1,19 @@
 /**
  * AI Coach — routing layer for Lockedin.
  *
- * Two modes:
- *   MODE A  On-device   Phi-3.5-mini via Transformers.js Web Worker (offline-first)
- *   MODE B  Groq online llama-3.3-70b-versatile (better quality, needs API key)
+ * Three modes:
+ *   MODE A  On-device      Phi-3.5-mini via Transformers.js Web Worker (offline-first)
+ *   MODE B  Anthropic      claude-haiku-4-5 (cost-efficient; preferred when key is set)
+ *   MODE C  Groq online    llama-3.3-70b-versatile (fallback when Groq key set)
  *
- * Routing: if profile.groqApiKey is set, use Groq; otherwise use the Worker.
+ * Routing: if profile.anthropicApiKey is set, use Claude; else if profile.groqApiKey is set, use Groq; otherwise use the Worker.
  *
  * All exports are pure functions / async generators — no React hooks.
  * This module is imported only by client components ('use client').
  */
 
 import Groq                 from 'groq-sdk';
+import Anthropic            from '@anthropic-ai/sdk';
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
@@ -106,15 +108,17 @@ function hasWorker(): boolean {
 /**
  * Read athlete context from IndexedDB and build a comprehensive system prompt.
  *
- * @param userMessage  Optional — the user's latest message. Used to select
- *                     relevant knowledge-base sections (topic-aware injection).
- * @param isGroqMode   If true, includes the full knowledge base (larger context
- *                     window). Otherwise uses the compact version.
+ * @param userMessage   Optional — the user's latest message. Used to select
+ *                      relevant knowledge-base sections (topic-aware injection).
+ * @param isCloudMode   If true, includes the full knowledge base (larger context
+ *                      window). Otherwise uses the compact version.
  */
 export async function buildSystemPrompt(
   userMessage?: string,
-  isGroqMode = false,
+  isCloudMode = false,
 ): Promise<string> {
+  // keep legacy parameter name working internally
+  const isGroqMode = isCloudMode;
   // ── Read profile ─────────────────────────────────────────────────────────
   const profile = await db.profile.get('me');
   const name        = profile?.name       ?? 'Athlete';
@@ -357,6 +361,7 @@ Available actions:
 - [ACTION:SCHEDULE_REFEED|date=2026-04-20] — Mark today (or another date) as a refeed day
 - [ACTION:REQUEST_FORM_CHECK|lift=SQUAT] — Open the camera for a quick video form check (lift: SQUAT/BENCH/DEADLIFT/UPPER/LOWER/FULL)
 - [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
+- [ACTION:REGENERATE_SESSION|reason=Athlete wants different session type] — Fully rebuild today's session from current profile, readiness, and block data
 
 Rules:
 - IF THE ATHLETE ASKS YOU TO CHANGE / SWAP / ADD / REMOVE / ADJUST / SKIP / ABBREVIATE / LOG anything, you MUST emit the matching ACTION tag — without it, nothing happens. Always pair "Yes I'll do X" with the tag for X.
@@ -369,6 +374,7 @@ Rules:
 - Use ADJUST_SET_LOAD when "Live Session Feedback" shows a deviation ≥ 0.75 RPE, or when the athlete reports an RPE during a session. Always reference the exact exercise name and the corrected kg from the feedback.
 - For nutrition: reference "Nutrition Target Today" when present. LOG_NUTRITION when the athlete tells you what they ate; SET_NUTRITION_TARGETS for kcal/macro updates; SCHEDULE_REFEED for refeed days.
 - For form check / technique review / "felt off": REQUEST_FORM_CHECK. Don't guess form problems without seeing the lift.
+- Use REGENERATE_SESSION when the athlete wants to completely redo today's session, change the session type, or when multiple exercise changes would be easier as a clean rebuild.
 
 Worked example (the format the parser actually requires):
 > User: "Switch the RDL out for good mornings today and drop my squat sets to 3."
@@ -597,32 +603,76 @@ async function* groqStreamWithWatchdog(
 }
 
 /**
+ * Stream a response from the Anthropic Claude API.
+ * Splits the messages array: the first 'system' role message becomes the
+ * system prompt; the rest are user/assistant turns.
+ */
+async function* anthropicStream(
+  anthropicApiKey: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+): AsyncGenerator<string> {
+  const anthropic = new Anthropic({ apiKey: anthropicApiKey, dangerouslyAllowBrowser: true });
+
+  // Extract system prompt (first message with role 'system')
+  const systemMsg = messages.find((m) => m.role === 'system');
+  const systemPrompt = systemMsg?.content ?? '';
+  const apiMessages = messages
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+  const stream = anthropic.messages.stream({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: apiMessages,
+  });
+
+  for await (const chunk of stream) {
+    if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+      yield chunk.delta.text;
+    }
+  }
+}
+
+/**
  * Route a chat turn to the correct AI backend.
  * Yields string tokens as they stream from the model.
  *
+ * Priority: Anthropic (Claude) → Groq → on-device Worker.
  * When Groq is configured we auto-retry once on a stalled/idle stream and
  * fall back to the on-device worker if all Groq attempts fail.
  *
- * @param messages   Conversation history (user + assistant turns). Include
- *                   the system prompt as the first message with role 'system'.
- * @param groqApiKey If set, use Groq. Otherwise use the on-device Worker.
- * @param maxTokens  Max tokens to generate (default 512).
+ * @param messages        Conversation history (user + assistant turns). Include
+ *                        the system prompt as the first message with role 'system'.
+ * @param groqApiKey      If set, use Groq (unless anthropicApiKey is also set).
+ * @param maxTokens       Max tokens to generate (default 512).
+ * @param anthropicApiKey If set, use Claude (takes priority over Groq).
  */
 export async function* sendMessage(
-  messages:    ChatMessage[],
-  groqApiKey?: string,
-  maxTokens    = 512,
+  messages:         ChatMessage[],
+  groqApiKey?:      string,
+  maxTokens         = 512,
+  anthropicApiKey?: string,
 ): AsyncGenerator<string> {
-  const trimmedKey = groqApiKey?.trim();
+  const trimmedAnthropicKey = anthropicApiKey?.trim();
+  const trimmedGroqKey = groqApiKey?.trim();
 
-  if (trimmedKey) {
+  if (trimmedAnthropicKey) {
+    // ── MODE B: Anthropic Claude ──────────────────────────────────────
+    yield* anthropicStream(trimmedAnthropicKey, messages, maxTokens);
+    return;
+  }
+
+  if (trimmedGroqKey) {
+    // ── MODE C: Groq ─────────────────────────────────────────────────
     // Retry the whole call up to GROQ_MAX_RETRIES times on a stall. We only
     // retry when the stream produced zero tokens so we don't double-emit
     // partial responses to the UI.
     for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
       let emitted = 0;
       try {
-        for await (const token of groqStreamWithWatchdog(trimmedKey, messages, maxTokens)) {
+        for await (const token of groqStreamWithWatchdog(trimmedGroqKey, messages, maxTokens)) {
           emitted++;
           yield token;
         }
