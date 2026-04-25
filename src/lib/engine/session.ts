@@ -455,7 +455,27 @@ function buildSessionExercises(
       primaryLift, block.blockType, profile, volMult, rpeOffset, nextOrder,
       reward, sessionNumber,
     );
-    exercises.push(...accessories);
+    // Drop any accessory that duplicates a competition or variation exercise
+    // already in the session (e.g. Close Grip Bench selected as both variation
+    // and hardcoded accessory). Match by libraryExerciseId when present,
+    // fall back to name equality.
+    const existingIds = new Set(
+      exercises
+        .filter((e) => e.exerciseType !== 'ACCESSORY')
+        .map((e) => e.libraryExerciseId)
+        .filter(Boolean),
+    );
+    const existingNames = new Set(
+      exercises
+        .filter((e) => e.exerciseType !== 'ACCESSORY')
+        .map((e) => e.name),
+    );
+    const deduped = accessories.filter(
+      (a) =>
+        !(a.libraryExerciseId && existingIds.has(a.libraryExerciseId)) &&
+        !existingNames.has(a.name),
+    );
+    exercises.push(...deduped);
   }
 
   // Cross-discipline accessory overlay — auto-adds face pulls on bench days
@@ -790,7 +810,11 @@ function buildAccessories(
       break;
 
     // ── DEADLIFT DAY ──────────────────────────────────────────────────────
-    // Lats are the primary DL stabiliser; RDL for hamstring/glute volume
+    // Lats are the primary DL stabiliser; RDL for hamstring/glute volume.
+    // Hip Thrust replaces any fourth hinge: targets glutes (primary lockout
+    // mover) with LOW spinal load — the opposite of stacking another floor
+    // pull on already-taxed posterior chain. Deficit DL belongs in the
+    // variation slot (selectVariation), not here.
     case 'DEADLIFT':
       defs = isDeload
         ? [
@@ -798,10 +822,10 @@ function buildAccessories(
             ['Lat Pulldowns',     10, dl],
           ]
         : [
-            ['Romanian Deadlift', 10, dl],  // hamstrings/glutes
+            ['Romanian Deadlift', 10, dl],  // hamstring/glute eccentric
             ['Lat Pulldowns',     10, dl],  // lats (bar path control)
             ['Barbell Rows',      10, bp],  // upper back — bp reference, not dl
-            ['Deficit Deadlift',   5, dl],  // off-the-floor strength
+            ['Hip Thrust',        10, dl],  // glute lockout — low spinal load
           ];
       break;
 
@@ -1071,6 +1095,7 @@ const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
   'Barbell Rows':           'barbell_row',
   'Deficit Deadlift':       'deficit_deadlift',
   'Lat Pulldowns':          'lat_pulldown',
+  'Hip Thrust':             'hip_thrust',
 };
 
 // VARIATION_MAX_COEFFICIENT has been superseded by the coefficient field on
@@ -1095,6 +1120,7 @@ const ACCESSORY_REF_COEFFICIENT: Record<string, number> = {
   'Close Grip Bench Press': 0.90,  // of BP — slight ROM assist
   'Overhead Press':         0.65,  // of BP — strict press limited by delts
   'Tricep Pushdowns':       0.48,  // of BP — cable isolation
+  'Hip Thrust':             0.70,  // of DL — glute-dominant, no floor pull
 };
 
 

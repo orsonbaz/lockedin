@@ -800,6 +800,98 @@ Day 5 — Weighted dip + OHP + row
 `;
 
 
+// ── Session Design Constraints ────────────────────────────────────────────────
+
+export const SESSION_DESIGN_KNOWLEDGE = `
+## Session Design Constraints
+
+### Movement Pattern Caps Per Session
+The same movement pattern should not dominate a session. Violating these caps is the
+most common amateur programming mistake — it produces redundant fatigue with no extra
+adaptive return, then bleeds recovery capacity into the next session.
+
+- **HINGE (deadlift pattern): maximum 2 per session** (outside explicit SBD days).
+  Acceptable: Competition Deadlift + one variation (Pause DL, Deficit DL, Block Pull).
+  Also acceptable: Competition Deadlift + RDL — because RDL is eccentric-dominant at
+  sub-maximal load, not a floor pull, making it a mechanically distinct stimulus.
+  NOT acceptable: Competition Deadlift + Pause DL + RDL + Deficit DL.
+  All four movements load the same spinal erectors, hamstrings, and grip. You are not
+  getting four times the stimulus — you are accumulating four times the fatigue on tissue
+  that has already reached its adaptive ceiling by set 3 of the comp lift.
+
+- **SQUAT pattern: maximum 2 per session** (competition + variation). Leg Press does not
+  count — it is quad isolation, no axial spinal load, genuinely different stimulus.
+
+- **HORIZONTAL PUSH: maximum 2 per session**. If the variation slot is already Close Grip
+  Bench, the accessory list should substitute a different tricep stimulus (pushdowns, dips).
+  Close Grip Bench as both variation and accessory is a programming duplicate.
+
+### Posterior Chain Overload — The #1 Session Design Error
+The spinal erectors are the bottleneck of posterior chain fatigue. Every hinge movement
+— regardless of load — recruits them. Their recovery capacity per session is finite.
+
+Fatigue cost by exercise type on a deadlift day:
+  1. Competition Deadlift (4-6 sets, high load) → spinal load: HIGH
+  2. Pause / Deficit DL (variation, 2-3 sets) → spinal load: HIGH
+  3. Romanian Deadlift (accessory, 2-3 sets) → spinal load: MEDIUM (eccentric-dominant)
+  4. Deficit Deadlift as a second accessory → spinal load: HIGH again
+
+Option 4 does not build more off-the-floor strength than option 2 (same stimulus, more
+fatigue). It extends recovery time from ~48h to 72-96h, directly compromising the next
+session's quality.
+
+**The correct deadlift day structure:**
+  1. Competition Deadlift — primary, full prescription
+  2. ONE floor-pull variation: Pause DL *or* Deficit DL *or* Block Pull (not two or three)
+  3. Romanian Deadlift — hamstring/glute eccentric load; different enough to keep
+  4. Upper back work: Lat Pulldowns + Barbell Rows (lats, upper back for bar path / lockout)
+  5. Hip Thrust — replaces any additional hinge. Targets the glutes (primary lockout mover)
+     with LOW spinal load via the hip-extension pattern, not axial spine compression.
+     This is the correct fourth posterior chain exercise, not a second floor pull.
+
+### Hip Thrust as the Deadlift Day Posterior Chain Complement
+- **Why Hip Thrust belongs on deadlift day:**
+  Glutes are the primary driver of the lockout phase of the deadlift. Strengthening them
+  directly (barbell hip thrust, hip extension against load) improves the finish of the pull
+  without competing for the same spinal erector recovery window.
+- **Load guideline:** ~70% of deadlift 1RM at 8-12 reps (RPE 7-8). Barbell sits across
+  the hips, not the spine — axial compression is near zero.
+- **Elite coaching consensus:** Bret Contreras' glute research; endorsed by Noriega for
+  posterior chain GPP on high-frequency programs. Juggernaut Method uses hip thrust as a
+  DL posterior chain complement at the accumulation phase.
+
+### Spinal Load Budget Per Session
+Every session has an implied spinal load budget. Exceeding it delays recovery and suppresses
+the next session's output:
+  - HIGH spinal load exercises (competition DL, deficit DL, good mornings): max 2 per session
+  - MEDIUM spinal load (RDL, barbell row): up to 3 per session
+  - LOW spinal load (hip thrust, leg press, lat pulldown): no practical per-session cap
+
+Practical rule: if the primary lift is DEADLIFT, no other HIGH spinal load exercise should
+appear after the variation slot. Replace with MEDIUM or LOW alternatives.
+
+### Exercise Redundancy vs. Legitimate Variety
+- **Redundant (bad):** Pause Deadlift + Deficit Deadlift in the same session.
+  Both train off-the-floor mechanics. Same muscles, same positions, doubled fatigue.
+- **Legitimate (good):** Romanian Deadlift + Hip Thrust in the same session.
+  RDL = eccentric hamstring overload. Hip Thrust = concentric glute peak contraction.
+  Mechanically distinct, different adaptation signal, minimal fatigue competition.
+- The variation slot exists to address a specific weak point the comp lift does not target.
+  Fill it with one exercise that closes that gap, then route accessories to pulling and
+  non-overlapping movement patterns.
+
+### Squat Day and Bench Day Design
+- Squat day: Competition Squat + squat variation + RDL (posterior chain support) + upper
+  back pulling (rows, pulldowns). Adding a third squat-pattern exercise is acceptable only
+  if it is truly different (e.g. leg press = quad isolation, acceptable; box squat = just
+  another squat, not needed when pause squat is already present).
+- Bench day: Competition Bench + bench variation + row (mandatory for shoulder health) +
+  face pulls (non-negotiable, every bench day) + one tricep accessory. If the variation
+  is already a tricep-emphasis bench (CGBP, pin press), swap the tricep accessory to
+  pushdowns or dips rather than repeating the close-grip pattern.
+`;
+
+
 // ── Elite Coaching Principles ─────────────────────────────────────────────────
 
 export const COACH_PRINCIPLES_KNOWLEDGE = `
@@ -887,6 +979,7 @@ export function getFullKnowledge(): string {
     VBT_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
+    SESSION_DESIGN_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
     STREET_LIFT_KNOWLEDGE,
     HYBRID_PROGRAMMING_KNOWLEDGE,
@@ -906,6 +999,7 @@ export function getCompactKnowledge(): string {
   return [
     COACH_PRINCIPLES_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
+    SESSION_DESIGN_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
     HYBRID_PROGRAMMING_KNOWLEDGE,
     NUTRITION_KNOWLEDGE,
@@ -923,6 +1017,13 @@ const KW_PERIODIZATION = ['periodiz', 'block', 'program', 'volume', 'mrv', 'mev'
 const KW_EXERCISE      = [
   'exercis', 'squat', 'bench', 'deadlift', 'technique', 'cue', 'weak',
   'accessory', 'rdl', 'row', 'press', 'hinge',
+] as const;
+const KW_SESSION_DESIGN = [
+  'session design', 'session layout', 'too many', 'redundant', 'duplicate',
+  'movement pattern', 'spinal load', 'posterior chain', 'hip thrust',
+  'deadlift day', 'squat day', 'bench day', 'accessory select',
+  'exercise select', 'programme quality', 'program quality',
+  'four deadlift', '4 deadlift', 'hinge cap', 'hinge limit',
 ] as const;
 const KW_CALISTHENICS  = [
   'calisthen', 'bodyweight', 'muscle-up', 'muscleup', 'muscle up',
@@ -981,11 +1082,12 @@ export function getTopicKnowledge(topic: string): string {
   const t = topic.toLowerCase();
   const sections: string[] = [];
 
-  if (hasAny(t, KW_RPE))           sections.push(RPE_KNOWLEDGE);
-  if (hasAny(t, KW_VBT))           sections.push(VBT_KNOWLEDGE);
-  if (hasAny(t, KW_PERIODIZATION)) sections.push(PERIODIZATION_KNOWLEDGE);
-  if (hasAny(t, KW_EXERCISE))      sections.push(EXERCISE_KNOWLEDGE);
-  if (hasAny(t, KW_CALISTHENICS))  sections.push(CALISTHENICS_KNOWLEDGE);
+  if (hasAny(t, KW_RPE))            sections.push(RPE_KNOWLEDGE);
+  if (hasAny(t, KW_VBT))            sections.push(VBT_KNOWLEDGE);
+  if (hasAny(t, KW_PERIODIZATION))  sections.push(PERIODIZATION_KNOWLEDGE);
+  if (hasAny(t, KW_EXERCISE))       sections.push(EXERCISE_KNOWLEDGE);
+  if (hasAny(t, KW_SESSION_DESIGN)) sections.push(SESSION_DESIGN_KNOWLEDGE);
+  if (hasAny(t, KW_CALISTHENICS))   sections.push(CALISTHENICS_KNOWLEDGE);
   if (hasAny(t, KW_STREET_LIFT))   sections.push(STREET_LIFT_KNOWLEDGE);
   if (hasAny(t, KW_HYBRID))        sections.push(HYBRID_PROGRAMMING_KNOWLEDGE);
   if (hasAny(t, KW_NUTRITION))     sections.push(NUTRITION_KNOWLEDGE);
@@ -997,7 +1099,7 @@ export function getTopicKnowledge(topic: string): string {
 
   // If nothing matched, return the most universally useful sections
   if (sections.length === 0) {
-    sections.push(COACH_PRINCIPLES_KNOWLEDGE, EXERCISE_KNOWLEDGE, CALISTHENICS_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
+    sections.push(COACH_PRINCIPLES_KNOWLEDGE, EXERCISE_KNOWLEDGE, SESSION_DESIGN_KNOWLEDGE, CALISTHENICS_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
   }
 
   return sections.join('\n');
