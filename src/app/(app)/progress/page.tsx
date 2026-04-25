@@ -18,6 +18,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { db }             from '@/lib/db/database';
 import { estimateMax, calcDots, calcWilks, calcIpfPoints } from '@/lib/engine/calc';
+import { buildProgramProgress, type ProgramProgress } from '@/lib/engine/program-progress';
+import { ProgramTimeline } from '@/components/lockedin/ProgramTimeline';
 import { C }              from '@/lib/theme';
 import { nWeeksAgo, shortDate, weekStart } from '@/lib/date-utils';
 import type { BlockType, AthleteProfile, BodyweightEntry } from '@/lib/db/types';
@@ -148,6 +150,7 @@ interface ProgressData {
   bwData:     BwPoint[];
   compScores: CompScores | null;
   history:    SessionHistoryItem[];
+  program:    ProgramProgress | null;
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
@@ -162,6 +165,7 @@ export default function ProgressPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [chartData, setChartData] = useState<ProgressData>({
     volumeData: [], e1rmData: [], rpeData: [], bwData: [], compScores: null, history: [],
+    program: null,
   });
 
   const loadData = useCallback(async (weeks: number) => {
@@ -173,6 +177,21 @@ export default function ProgressPage() {
       .where('scheduledDate').aboveOrEqual(cutoffAll)
       .filter((s) => s.status === 'COMPLETED')
       .toArray();
+
+    // ── Program progress (current cycle + linked meet) ────────────────
+    const activeCycle = await db.cycles.filter((c) => c.status === 'ACTIVE').first();
+    let program: ProgramProgress | null = null;
+    if (activeCycle) {
+      const [cycleBlocks, linkedMeet] = await Promise.all([
+        db.blocks.where('cycleId').equals(activeCycle.id).toArray(),
+        activeCycle.meetId
+          ? db.meets.get(activeCycle.meetId)
+          : db.meets.filter((m) => m.status === 'UPCOMING').first(),
+      ]);
+      if (cycleBlocks.length > 0) {
+        program = buildProgramProgress(activeCycle, cycleBlocks, linkedMeet ?? null);
+      }
+    }
 
     // ── Profile + Bodyweight ──────────────────────────────────────────
     const profile: AthleteProfile | undefined = await db.profile.get('me');
@@ -206,7 +225,7 @@ export default function ProgressPage() {
 
     const sessionIds = allSessions.map((s) => s.id);
     if (sessionIds.length === 0) {
-      return { volumeData: [], e1rmData: [], rpeData: [], bwData, compScores, history: [] };
+      return { volumeData: [], e1rmData: [], rpeData: [], bwData, compScores, history: [], program };
     }
 
     // Get all exercises & sets for these sessions
@@ -351,7 +370,7 @@ export default function ProgressPage() {
       }),
     );
 
-    return { volumeData, e1rmData, rpeData, bwData, compScores, history };
+    return { volumeData, e1rmData, rpeData, bwData, compScores, history, program };
   }, []);
 
   // Initial load
@@ -428,11 +447,12 @@ export default function ProgressPage() {
     );
   }
 
-  const { volumeData, e1rmData, rpeData, bwData, compScores, history } = chartData;
+  const { volumeData, e1rmData, rpeData, bwData, compScores, history, program } = chartData;
   const hasVolume = volumeData.some((d) => d.volume > 0);
   const hasE1rm   = e1rmData.some((d) => d.squat || d.bench || d.deadlift);
   const hasRpe    = rpeData.length > 0;
   const hasBw     = bwData.length > 0;
+  const completedCount = history.length;
 
   const axisProps = {
     tick:   { fill: C.muted, fontSize: 10 },
@@ -449,6 +469,55 @@ export default function ProgressPage() {
             Your training trends over time
           </p>
         </div>
+
+        {/* ── PROGRAM TIMELINE ───────────────────────────────────────────── */}
+        {program && (
+          <div
+            className="rounded-3xl p-4 mb-5"
+            style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+          >
+            <ProgramTimeline progress={program} variant="full" />
+          </div>
+        )}
+
+        {/* ── FIRST-RUN MILESTONE SCAFFOLDING ────────────────────────────── */}
+        {completedCount < 3 && (
+          <div
+            className="rounded-3xl p-4 mb-5"
+            style={{ backgroundColor: C.surface, border: `1px dashed ${C.border}` }}
+          >
+            <p className="text-sm font-bold mb-3" style={{ color: C.text }}>
+              Charts unlock as you train
+            </p>
+            <ul className="space-y-2 text-sm" style={{ color: C.muted }}>
+              {[
+                { needed: 1, label: '1 logged session — first volume bar' },
+                { needed: 3, label: '3 sessions — RPE accuracy trend' },
+                { needed: 4, label: '4+ on the same lift — 1RM trend & weak-points' },
+                { needed: 8, label: '8 weeks — block-coloured volume history' },
+              ].map((m) => {
+                const done = completedCount >= m.needed;
+                return (
+                  <li key={m.needed} className="flex items-center gap-2">
+                    <span
+                      className="inline-flex w-4 h-4 rounded-full items-center justify-center text-[10px] font-bold"
+                      style={{
+                        backgroundColor: done ? C.green : C.dim,
+                        color: done ? '#000' : C.muted,
+                      }}
+                      aria-hidden
+                    >
+                      {done ? '✓' : ''}
+                    </span>
+                    <span style={{ color: done ? C.text : C.muted }}>
+                      {m.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
 
         {/* ── COMPETITION SCORES ─────────────────────────────────────────── */}
         {compScores && (
