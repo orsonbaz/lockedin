@@ -260,17 +260,42 @@ async function buildAdvisorContext(
 
   // ── 1. Athlete snapshot ──────────────────────────────────────────────────
   const total = profile.maxSquat + profile.maxBench + profile.maxDeadlift;
+  const disciplines = profile.disciplines ?? ['POWERLIFTING'];
+  const primaryDisc = profile.primaryDiscipline ?? disciplines[0];
+  const hasStreetLift = disciplines.some((d) => d === 'STREET_LIFT' || d === 'CALISTHENICS' || d === 'HYBRID');
+
+  const streetLiftLines: string[] = [];
+  if (hasStreetLift) {
+    const pullMax = profile.maxWeightedPullUp;
+    const dipMax  = profile.maxWeightedDip;
+    const muMax   = profile.maxWeightedMuscleUp;
+    if (pullMax !== undefined) streetLiftLines.push(`Weighted pull-up max: +${pullMax} kg`);
+    if (dipMax  !== undefined) streetLiftLines.push(`Weighted dip max: +${dipMax} kg`);
+    if (muMax   !== undefined) streetLiftLines.push(`Weighted muscle-up max: +${muMax} kg`);
+    if (streetLiftLines.length === 0) streetLiftLines.push('Street lift maxes not yet logged — use bodyweight fraction for load estimates');
+  }
+
+  const goalLine = [
+    profile.trainingGoal,
+    profile.trainingGoalTarget ? `"${profile.trainingGoalTarget}"` : '',
+    profile.trainingGoalDeadline ? `by ${profile.trainingGoalDeadline}` : '',
+  ].filter(Boolean).join(' — ');
+
+  const skillGoals = profile.calisthenicsGoals?.length
+    ? `Skill goals: ${profile.calisthenicsGoals.join(', ')}`
+    : '';
+
   sections.push(`# ATHLETE
 Name: ${profile.name || 'Athlete'}
-Maxes: S${profile.maxSquat} / B${profile.maxBench} / D${profile.maxDeadlift} (total: ${total} kg)
+Primary discipline: ${primaryDisc}${disciplines.length > 1 ? `  |  All disciplines: ${disciplines.join(', ')}` : ''}
+${goalLine ? `Goal: ${goalLine}` : ''}${skillGoals ? `\n${skillGoals}` : ''}
+Powerlifting maxes: S${profile.maxSquat} / B${profile.maxBench} / D${profile.maxDeadlift} (total: ${total} kg)
+Gym PRs: S${profile.gymSquat ?? profile.maxSquat} / B${profile.gymBench ?? profile.maxBench} / D${profile.gymDeadlift ?? profile.maxDeadlift}${streetLiftLines.length ? `\nStreet lift: ${streetLiftLines.join('  |  ')}` : ''}
 Bodyweight: ${profile.weightKg} kg  |  Target class: ${profile.targetWeightClass} kg
 Federation: ${profile.federation}  |  Equipment: ${profile.equipment}
 Training age: ${profile.trainingAgeMonths ? `${(profile.trainingAgeMonths / 12).toFixed(1)} years` : 'unknown'}
 Phenotype: bottleneck=${profile.bottleneck}, responder=${profile.responder}, overshooter=${profile.overshooter ? 'YES' : 'no'}
-Reward system: ${profile.rewardSystem}
-Goal: ${profile.trainingGoal}${profile.trainingGoalTarget ? ` — "${profile.trainingGoalTarget}"` : ''}${profile.trainingGoalDeadline ? ` by ${profile.trainingGoalDeadline}` : ''}
-Disciplines: ${(profile.disciplines ?? []).join(', ') || 'powerlifting'}
-Gym PRs: S${profile.gymSquat ?? profile.maxSquat} / B${profile.gymBench ?? profile.maxBench} / D${profile.gymDeadlift ?? profile.maxDeadlift}`);
+Reward system: ${profile.rewardSystem}`);
 
   // ── 2. Full program map (all blocks in active cycle) ─────────────────────
   const cycle = await db.cycles.filter((c) => c.status === 'ACTIVE').first();

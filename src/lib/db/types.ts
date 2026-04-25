@@ -93,6 +93,11 @@ export interface AthleteProfile {
   gymSquat?: number;
   gymBench?: number;
   gymDeadlift?: number;
+  // Street lift / calisthenics maxes (added weight in kg, not including bodyweight)
+  // Used for load prescription on weighted pull-up, dip, and muscle-up.
+  maxWeightedPullUp?: number;
+  maxWeightedDip?: number;
+  maxWeightedMuscleUp?: number;
   // AI diagnostics
   bottleneck: Bottleneck;
   rewardSystem: RewardSystem;

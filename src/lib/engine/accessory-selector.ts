@@ -77,7 +77,10 @@ const LIFT_TO_PATTERN: Partial<Record<Lift, MovementPattern>> = {
 //
 // Sources: Tuchscherer, Noriega, Stanek, Swolefessor programming references.
 
-type LoadRef = [fraction: number, anchor: Lift | 'primary'];
+// Street lift anchors use the athlete's own max added weight when known.
+// The 'PULL_UP' / 'DIP' / 'MUSCLE_UP' values are resolved in resolveAnchorMax.
+type StreetLiftAnchor = 'PULL_UP' | 'DIP' | 'MUSCLE_UP';
+type LoadRef = [fraction: number, anchor: Lift | 'primary' | StreetLiftAnchor];
 
 const LOAD_REF: Record<string, LoadRef> = {
   // ── Hinge / posterior chain ────────────────────────────────────────────────
@@ -94,10 +97,20 @@ const LOAD_REF: Record<string, LoadRef> = {
   seal_row:                 [0.65, 'BENCH'],
   t_bar_row:                [0.70, 'BENCH'],
   landmine_row:             [0.60, 'BENCH'],
-  // ── Vertical pull (fraction of deadlift — lat strength correlates with DL) ─
-  weighted_pull_up:         [0.10, 'DEADLIFT'],   // additional load, not total
+  // ── Vertical pull ──────────────────────────────────────────────────────────
+  // Pull-up/chin-up variants: use athlete's known max added weight as the
+  // anchor so load prescription reflects their actual strength, not a DL fraction.
+  weighted_pull_up:         [1.0, 'PULL_UP'],
+  weighted_chin_up:         [1.0, 'PULL_UP'],
+  ring_pull_up:             [0.9, 'PULL_UP'],
+  archer_pull_up:           [0.6, 'PULL_UP'],
   lat_pulldown:             [0.45, 'DEADLIFT'],
   assisted_pull_up:         [0.30, 'DEADLIFT'],
+  // ── Calisthenics / street lift ─────────────────────────────────────────────
+  weighted_muscle_up:       [1.0, 'MUSCLE_UP'],
+  weighted_ring_dip:        [1.0, 'DIP'],
+  weighted_bar_dip:         [1.0, 'DIP'],
+  tricep_dip:               [1.0, 'DIP'],
   // ── Squat pattern / single leg ─────────────────────────────────────────────
   leg_press:                [1.25, 'SQUAT'],       // favourable leverage
   bulgarian_split_squat:    [0.40, 'SQUAT'],
@@ -112,7 +125,6 @@ const LOAD_REF: Record<string, LoadRef> = {
   overhead_press:           [0.65, 'BENCH'],
   dumbbell_overhead_press:  [0.55, 'BENCH'],
   tricep_pushdown:          [0.48, 'BENCH'],
-  tricep_dip:               [0.10, 'BENCH'],       // additional load
   // ── Core / carry ──────────────────────────────────────────────────────────
   farmers_walk:             [0.60, 'DEADLIFT'],
   ab_wheel:                 [0.00, 'primary'],      // bodyweight
@@ -250,7 +262,14 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function resolveAnchorMax(anchor: Lift | 'primary', primaryLift: Lift, profile: AthleteProfile): number {
+function resolveAnchorMax(anchor: Lift | 'primary' | StreetLiftAnchor, primaryLift: Lift, profile: AthleteProfile): number {
+  // Street lift anchors: use the athlete's known max added weight.
+  // When not set, fall back to a conservative fraction of bodyweight
+  // (pull-up ~15% BW, dip ~20% BW, muscle-up ~10% BW as starting points).
+  if (anchor === 'PULL_UP')   return profile.maxWeightedPullUp   ?? Math.round(profile.weightKg * 0.15);
+  if (anchor === 'DIP')       return profile.maxWeightedDip       ?? Math.round(profile.weightKg * 0.20);
+  if (anchor === 'MUSCLE_UP') return profile.maxWeightedMuscleUp  ?? Math.round(profile.weightKg * 0.10);
+
   const lift = anchor === 'primary' ? primaryLift : anchor;
   switch (lift) {
     case 'SQUAT':    return profile.maxSquat    ?? 100;

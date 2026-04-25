@@ -443,6 +443,17 @@ Worked example (the format the parser actually requires):
         `Federation: ${federation}. Equipment: ${profile?.equipment ?? 'RAW'}. Training age: ${trainingAge}.`,
         `Current competition maxes — Squat: ${squat} kg, Bench: ${bench} kg, Deadlift: ${deadlift} kg. Total: ${typeof squat === 'number' && typeof bench === 'number' && typeof deadlift === 'number' ? squat + bench + deadlift : '?'} kg.`,
         profile?.gymSquat ? `Gym PRs — Squat: ${profile.gymSquat} kg, Bench: ${profile.gymBench} kg, Deadlift: ${profile.gymDeadlift} kg.` : '',
+        (() => {
+          const hasStreet = profile?.disciplines?.some((d) => d === 'STREET_LIFT' || d === 'CALISTHENICS' || d === 'HYBRID');
+          if (!hasStreet) return '';
+          const parts: string[] = [];
+          if (profile?.maxWeightedPullUp !== undefined) parts.push(`pull-up +${profile.maxWeightedPullUp} kg`);
+          if (profile?.maxWeightedDip    !== undefined) parts.push(`dip +${profile.maxWeightedDip} kg`);
+          if (profile?.maxWeightedMuscleUp !== undefined) parts.push(`muscle-up +${profile.maxWeightedMuscleUp} kg`);
+          return parts.length > 0
+            ? `Street lift maxes: ${parts.join(', ')}.`
+            : 'Street lift maxes not yet logged.';
+        })(),
         `Phenotype — Bottleneck: ${bottleneck}. Responder: ${responder}. Overshooter: ${overshooter ? 'YES' : 'no'}. Reward system: ${rewardSys}. Peak time: ${profile?.timeToPeakWeeks ?? 3} weeks.`,
         profile?.disciplines?.length
           ? `Disciplines: ${profile.disciplines.join(', ')}${profile.primaryDiscipline ? ` (primary: ${profile.primaryDiscipline})` : ''}.`
