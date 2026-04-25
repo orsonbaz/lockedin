@@ -26,6 +26,7 @@ import {
 import { generateSession, abbreviateSession, getExpectedSecondary, suggestPrimaryLift } from '@/lib/engine/session';
 import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import { reviewSessionPure, packReviewIssues } from '@/lib/engine/session-review';
+import { advisorReviewSession, applyAdvisorModifications } from '@/lib/ai/session-advisor';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
 import { addOverride, loadOverridesFor } from '@/lib/engine/schedule';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
@@ -508,6 +509,13 @@ function CheckInInner() {
           const modalityDef = MODALITY_OPTIONS.find((m) => m.key === modality);
           if (modalityDef?.minutes) {
             generated = abbreviateSession(generated, { maxMinutes: modalityDef.minutes });
+          }
+
+          // AI coach pre-save review — silent fallback on timeout/error.
+          const advisorResult = await advisorReviewSession(generated, profile, block)
+            .catch(() => null);
+          if (advisorResult) {
+            generated = applyAdvisorModifications(generated, advisorResult);
           }
 
           // 5a. Update session metadata — primaryLift can change on the fly

@@ -22,6 +22,7 @@ import { db, newId }          from '@/lib/db/database';
 import { generateSession }    from './session';
 import { loadRecentLiftExposures } from './lift-exposures';
 import { reviewSessionPure, packReviewIssues } from './session-review';
+import { advisorReviewSession, applyAdvisorModifications } from '@/lib/ai/session-advisor';
 import type { Lift, SessionExercise, TrainingSession } from '@/lib/db/types';
 
 export interface EnsureTodayResult {
@@ -260,6 +261,14 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   });
   generated = finalReview.session;
   const reviewIssues = finalReview.issues;
+
+  // AI coach pre-save review — fires after rule engine, before DB write.
+  // Silent fallback on timeout/error so training is never blocked.
+  const advisorResult = await advisorReviewSession(generated, profile, block)
+    .catch(() => null);
+  if (advisorResult) {
+    generated = applyAdvisorModifications(generated, advisorResult);
+  }
 
   // Update session meta and replace exercises atomically.
   await db.transaction('rw', db.sessions, db.exercises, async () => {

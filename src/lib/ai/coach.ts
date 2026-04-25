@@ -38,12 +38,13 @@ export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: stri
 const SECTION_CAPS = {
   role:       600,
   profile:    500,
+  program:    800,
   state:      500,
   summary:    800,
   memories:   1500,
   session:    700,
   liveSession: 500,
-  history:    600,
+  history:    1200,
   weakPoints: 400,
   nutrition:  200,
   schedule:   400,
@@ -127,22 +128,38 @@ export async function buildSystemPrompt(
     ? `${Math.round(profile.trainingAgeMonths / 12 * 10) / 10} years`
     : '?';
 
-  // ── Active cycle + block ──────────────────────────────────────────────────
+  // ── Active cycle + full program map ──────────────────────────────────────
   const cycle = await db.cycles
     .filter((c) => c.status === 'ACTIVE')
     .first();
 
   let blockInfo = '';
   let blockType = '';
+  let programMapInfo = '';
   if (cycle) {
-    const block = await db.blocks
+    const allBlocks = await db.blocks
       .where('cycleId')
       .equals(cycle.id)
-      .filter((b) => b.weekStart <= cycle.currentWeek && b.weekEnd >= cycle.currentWeek)
-      .first();
-    if (block) {
-      blockType = block.blockType;
-      blockInfo = `Training block: ${block.blockType}, week ${cycle.currentWeek} of ${cycle.totalWeeks}. Volume target: ${block.volumeTarget}x, intensity target: ${Math.round(block.intensityTarget * 100)}%.`;
+      .sortBy('weekStart');
+
+    const currentBlock = allBlocks.find(
+      (b) => b.weekStart <= cycle.currentWeek && b.weekEnd >= cycle.currentWeek,
+    );
+    if (currentBlock) {
+      blockType = currentBlock.blockType;
+      const weekInBlock = cycle.currentWeek - currentBlock.weekStart + 1;
+      const totalWeeks  = currentBlock.weekEnd - currentBlock.weekStart + 1;
+      blockInfo = `Training block: ${currentBlock.blockType}, week ${weekInBlock}/${totalWeeks} (program week ${cycle.currentWeek}/${cycle.totalWeeks}). Volume target: ${currentBlock.volumeTarget}x, intensity: ${Math.round(currentBlock.intensityTarget * 100)}%.`;
+    }
+
+    if (allBlocks.length > 0) {
+      const blockLines = allBlocks.map((b) => {
+        const isCurrent = currentBlock && b.id === currentBlock.id;
+        const totalW    = b.weekEnd - b.weekStart + 1;
+        const weekInB   = isCurrent ? cycle.currentWeek - b.weekStart + 1 : null;
+        return `  ${isCurrent ? '▶' : ' '} ${b.blockType} (weeks ${b.weekStart}–${b.weekEnd}, ${totalW}w | vol×${b.volumeTarget} int${Math.round(b.intensityTarget * 100)}%)${isCurrent && weekInB !== null ? ` ← CURRENT (week ${weekInB}/${totalW})` : ''}`;
+      });
+      programMapInfo = `Cycle: ${cycle.totalWeeks} total weeks (currently week ${cycle.currentWeek})\nBlocks:\n${blockLines.join('\n')}`;
     }
   }
 
@@ -189,6 +206,7 @@ export async function buildSystemPrompt(
     const daysLeft = Math.ceil(msUntil / 86_400_000);
     if (daysLeft >= 0) {
       meetInfo = `Upcoming meet: "${meet.name}" in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Federation: ${meet.federation}. Weight class: ${meet.weightClass} kg. Weigh-in: ${meet.weighIn === 'TWO_HOUR' ? '2-hour' : '24-hour'}.`;
+      if (programMapInfo) programMapInfo += `\n${meetInfo}`;
     }
   }
 
@@ -266,18 +284,18 @@ export async function buildSystemPrompt(
     }
   }
 
-  // ── Last 5 completed sessions (richer data) ────────────────────────────────
+  // ── Last 14 completed sessions ────────────────────────────────────────────
   const recentSessions = await db.sessions
     .filter((s) => s.status === 'COMPLETED')
     .toArray();
-  const last5 = recentSessions
+  const last14 = recentSessions
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
-    .slice(0, 5);
+    .slice(0, 14);
 
   let sessionHistory = '';
-  if (last5.length > 0) {
+  if (last14.length > 0) {
     const summaries = await Promise.all(
-      last5.map(async (s) => {
+      last14.map(async (s) => {
         const sets = await db.sets
           .where('sessionId')
           .equals(s.id)
@@ -288,10 +306,10 @@ export async function buildSystemPrompt(
           : '—';
         const totalVol = sets.reduce((sum, sl) => sum + sl.loadKg * sl.reps, 0);
         const volStr = totalVol > 1000 ? `${(totalVol / 1000).toFixed(1)}t` : `${Math.round(totalVol)}kg`;
-        return `${s.scheduledDate} ${s.primaryLift}: avg RPE ${avgRpe}, volume ${volStr}, ${sets.length} sets`;
+        return `${s.scheduledDate} ${s.primaryLift} (${s.sessionType}): avg RPE ${avgRpe}, volume ${volStr}, ${sets.length} sets`;
       }),
     );
-    sessionHistory = `Recent completed sessions:\n${summaries.map((s) => `  - ${s}`).join('\n')}`;
+    sessionHistory = `Recent completed sessions (newest first):\n${summaries.map((s) => `  - ${s}`).join('\n')}`;
   }
 
   // ── Bodyweight trend ──────────────────────────────────────────────────────
@@ -452,6 +470,11 @@ Worked example (the format the parser actually requires):
       ].filter(Boolean).join('\n'),
     },
     {
+      name: 'program',
+      heading: 'Full Program Map',
+      content: programMapInfo,
+    },
+    {
       name: 'state',
       heading: 'Current Training State',
       content: [
@@ -459,7 +482,7 @@ Worked example (the format the parser actually requires):
         readinessDetails || (rdScore !== undefined ? `Readiness today: ${rdScore}/100 (${rdLabel}).` : 'No readiness check-in today.'),
         readinessTrend,
         bwTrend,
-        meetInfo,
+        programMapInfo ? '' : meetInfo,
       ].filter(Boolean).join('\n'),
     },
     { name: 'summary',  heading: 'Conversation Summary', content: summaryBody },
