@@ -106,12 +106,8 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const session = await db.sessions.where('scheduledDate').equals(dateStr).first();
   if (!session) return { status: 'missing', reason: 'no-session' };
 
-  // Don't regenerate completed, skipped, or coach-modified sessions.
-  // MODIFIED means either the engine already applied readiness adjustments
-  // (in which case re-running would produce identical output) or a coach
-  // action changed exercises (in which case regeneration would wipe it).
-  // Check-in handles MODIFIED sessions directly so this early-out is safe.
-  if (session.status === 'COMPLETED' || session.status === 'SKIPPED' || session.status === 'MODIFIED') {
+  // Never touch completed or skipped sessions.
+  if (session.status === 'COMPLETED' || session.status === 'SKIPPED') {
     return { status: 'skipped', reason: `session-${session.status.toLowerCase()}`, session };
   }
 
@@ -119,6 +115,28 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const loggedSetCount = await db.sets.where('sessionId').equals(session.id).count();
   if (loggedSetCount > 0) {
     return { status: 'skipped', reason: 'sets-logged', session };
+  }
+
+  // MODIFIED sessions were already processed by check-in or a prior
+  // ensureSessionFresh run. Skip unless they're missing their secondary
+  // comp block — which indicates the session was generated with old
+  // pre-pairing-rules code and needs a one-time regeneration.
+  if (session.status === 'MODIFIED') {
+    const [blockForCheck, compCount] = await Promise.all([
+      db.blocks.get(session.blockId),
+      db.exercises
+        .where('sessionId').equals(session.id)
+        .filter((e) => e.exerciseType === 'COMPETITION')
+        .count(),
+    ]);
+    const expectsSecondary =
+      blockForCheck &&
+      blockForCheck.blockType !== 'DELOAD' &&
+      blockForCheck.blockType !== 'REALIZATION';
+    if (!expectsSecondary || compCount >= 2) {
+      return { status: 'skipped', reason: 'session-modified', session };
+    }
+    // Fall through — stale session missing secondary comp block; regenerate.
   }
 
   // If check-in has already been submitted today and the session was generated

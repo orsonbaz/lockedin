@@ -60,10 +60,19 @@ export interface SessionInput {
   /**
    * Override both rotation and adaptive selection to force a specific primary
    * lift. Used by the session review engine when it swaps today's primary
-   * (e.g. bench drought). Secondary-lift auto-stacking is disabled when this
-   * is set so the forced lift is the single focus.
+   * (e.g. bench drought). Secondary is auto-picked via `pickSecondary`.
    */
   forcePrimary?: Lift;
+  /**
+   * When true, include all three competition lifts in a single session
+   * (S→B→D rehearsal). Primary gets full block volume; the other two comp
+   * lifts each get 3 submaximal working sets. `forcePrimary` determines which
+   * lift is primary; omit to let the adaptive selector decide.
+   *
+   * Use sparingly — full SBD is a rehearsal format best deployed once every
+   * 3–4 weeks, not as an everyday session.
+   */
+  forceSBD?: boolean;
 }
 
 export interface GeneratedExercise {
@@ -118,37 +127,64 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const { profile, block, readinessScore, sessionNumber } = input;
 
   // ── 1. Determine primary lift(s) ───────────────────────────────────────────
-  // If the caller pinned a primary (review-engine rewrite, athlete override)
-  // we honor it. Otherwise adaptive selector when we have exposure history,
-  // falling back to fixed S/B/D rotation (cold start + test fixtures).
-  const selection = input.forcePrimary
-    ? {
+  const weekInBlockVal     = input.weekWithinBlock ?? 1;
+  const totalBlockWeeksVal = block.weekEnd - block.weekStart + 1;
+
+  const selection = (() => {
+    // Resolve primary via forcePrimary → adaptive → cold-start rotation.
+    const resolvePrimary = (): Lift => {
+      if (input.forcePrimary) return input.forcePrimary;
+      if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
+        return selectAdaptivePrimary({
+          exposures:       input.recentLiftExposures,
+          profile,
+          readinessScore,
+          blockType:       block.blockType,
+          weekInBlock:     weekInBlockVal,
+          totalBlockWeeks: totalBlockWeeksVal,
+        }).primary;
+      }
+      return selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+    };
+
+    if (input.forceSBD && block.blockType !== 'DELOAD' && block.blockType !== 'REALIZATION') {
+      // Full SBD rehearsal: primary gets block volume, the other two each get
+      // 3 submaximal working sets. Order enforced S→B→D later.
+      const primary = resolvePrimary();
+      const secondary = (['SQUAT', 'BENCH', 'DEADLIFT'] as Lift[]).filter((l) => l !== primary);
+      return { primary, secondary };
+    }
+
+    if (input.forcePrimary) {
+      return {
         primary:   input.forcePrimary,
         secondary: pickSecondary(
           input.forcePrimary, input.recentLiftExposures, profile,
-          readinessScore, block.blockType,
-          input.weekWithinBlock ?? 1, block.weekEnd - block.weekStart + 1,
+          readinessScore, block.blockType, weekInBlockVal, totalBlockWeeksVal,
         ),
-      }
-    : input.recentLiftExposures && input.recentLiftExposures.length > 0
-    ? selectAdaptivePrimary({
+      };
+    }
+
+    if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
+      return selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
         profile,
         readinessScore,
         blockType:       block.blockType,
-        weekInBlock:     input.weekWithinBlock ?? 1,
-        totalBlockWeeks: block.weekEnd - block.weekStart + 1,
-      })
-    : (() => {
-        const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
-        return {
-          primary,
-          secondary: pickSecondary(
-            primary, [], profile, readinessScore, block.blockType,
-            input.weekWithinBlock ?? 1, block.weekEnd - block.weekStart + 1,
-          ),
-        };
-      })();
+        weekInBlock:     weekInBlockVal,
+        totalBlockWeeks: totalBlockWeeksVal,
+      });
+    }
+
+    const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+    return {
+      primary,
+      secondary: pickSecondary(
+        primary, [], profile, readinessScore, block.blockType,
+        weekInBlockVal, totalBlockWeeksVal,
+      ),
+    };
+  })();
   const primaryLift = selection.primary;
   const secondaryLifts = selection.secondary;
 
@@ -179,29 +215,28 @@ export function generateSession(input: SessionInput): GeneratedSession {
   }
 
   // ── 4. Build exercises ─────────────────────────────────────────────────────
-  const weekInBlock  = input.weekWithinBlock ?? 1;
-  const isDupRepeat  = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
+  const isDupRepeat = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
   // SBD-style day already fills the session with 3 comp blocks — skip
   // accessories and variation so the session doesn't balloon past ~60 min.
   const sbdDay = secondaryLifts.length > 0;
   const exercises = buildSessionExercises(
-    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock, isDupRepeat,
+    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlockVal, isDupRepeat,
     sessionNumber, sbdDay,
   );
 
-  // Full SBD day: rebuild all exercises in competition order (S→B→D) so the
+  // SBD day: rebuild all exercises in competition order (S→B→D) so the
   // session matches how the lifts appear on the platform. Primary gets the
   // reduced-volume block from buildPrimaryExercises; secondaries each get 3
   // working sets via buildSecondaryCompExercises.
   if (secondaryLifts.length > 0) {
-    const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
+    const totalBlockWeeks = totalBlockWeeksVal;
 
     const liftMap = new Map<Lift, GeneratedExercise[]>();
     liftMap.set(primaryLift, [...exercises]);
     for (const lift of secondaryLifts) {
       liftMap.set(
         lift,
-        buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlock, totalBlockWeeks),
+        buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlockVal, totalBlockWeeks),
       );
     }
 
@@ -213,8 +248,11 @@ export function generateSession(input: SessionInput): GeneratedSession {
     }
     exercises.forEach((e, i) => { e.order = i + 1; });
 
+    const isFull = secondaryLifts.length === 2;
     modifications.push(
-      `Full SBD session in competition order (S→B→D): ${primaryLift} primary at reduced volume, ${secondaryLifts.join(' + ')} at 3 working sets each.`,
+      isFull
+        ? `Full SBD rehearsal (S→B→D): ${primaryLift} primary at block volume, ${secondaryLifts.join(' + ')} at 3 working sets each.`
+        : `Session includes ${primaryLift} primary + ${secondaryLifts[0]} secondary (3 working sets) in competition order.`,
     );
   }
 

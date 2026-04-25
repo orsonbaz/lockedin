@@ -211,8 +211,9 @@ function CheckInInner() {
   const [ready,           setReady]           = useState(false); // init done, safe to render
   const [submitting,      setSubmitting]      = useState(false);
   const [autoFilled,      setAutoFilled]      = useState<HRVSource | null>(null);
-  const [liftExposures,   setLiftExposures]   = useState<LiftExposure[]>([]);
+  const [liftExposures,    setLiftExposures]    = useState<LiftExposure[]>([]);
   const [preferredPrimary, setPreferredPrimary] = useState<'SQUAT' | 'BENCH' | 'DEADLIFT' | null>(null);
+  const [sbdMode,          setSbdMode]          = useState(false);
 
   // ── HRV tooltip ─────────────────────────────────────────────────────────
   const [showHrvTip, setShowHrvTip] = useState(false);
@@ -472,8 +473,9 @@ function CheckInInner() {
             weekWithinBlock,
             overshootHistory,
             recentLiftExposures,
-            // Honor the athlete's lift preference from the check-in picker.
+            // Honor the athlete's lift preference and session format.
             ...(preferredPrimary ? { forcePrimary: preferredPrimary as Lift } : {}),
+            ...(sbdMode ? { forceSBD: true } : {}),
           });
 
           // 4a. Post-generation review — swap primary lift on bench/squat/DL drought,
@@ -729,7 +731,7 @@ function CheckInInner() {
               {(['SQUAT', 'BENCH', 'DEADLIFT'] as const).map((lift) => {
                 const daysSince = liftExposures.find((e) => e.lift === lift)?.daysSince ?? Infinity;
                 const on = preferredPrimary === lift;
-                const isSuggested = suggestedLift === lift;
+                const isSuggested = suggestedLift === lift && !sbdMode;
                 const daysLabel = !isFinite(daysSince)
                   ? 'Never'
                   : daysSince === 0
@@ -763,8 +765,52 @@ function CheckInInner() {
                 );
               })}
             </div>
-            {/* Pairing preview — updates as the athlete taps different lifts */}
-            {preferredPrimary ? (
+
+            {/* SBD mode toggle — occasional full rehearsal, not every day */}
+            <button
+              type="button"
+              onClick={() => setSbdMode((prev) => !prev)}
+              className="w-full flex items-center justify-between rounded-xl px-4 py-3 transition-all active:scale-[0.99]"
+              style={{
+                backgroundColor: sbdMode ? `${C.gold}18` : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${sbdMode ? C.gold : C.border}`,
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-base leading-none">🏆</span>
+                <div className="text-left">
+                  <p className="text-sm font-bold" style={{ color: sbdMode ? C.gold : TEXT }}>
+                    Full SBD day
+                  </p>
+                  <p className="text-xs" style={{ color: MUTED }}>
+                    All three comp lifts — squat, bench, deadlift
+                  </p>
+                </div>
+              </div>
+              <div
+                className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
+                style={{
+                  borderColor:     sbdMode ? C.gold : MUTED,
+                  backgroundColor: sbdMode ? C.gold : 'transparent',
+                }}
+              >
+                {sbdMode && <span className="text-[10px] text-black font-bold">✓</span>}
+              </div>
+            </button>
+
+            {/* Pairing preview — updates live */}
+            {sbdMode && preferredPrimary ? (
+              <p className="text-xs text-center" style={{ color: MUTED }}>
+                {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
+                <span style={{ color: TEXT }}>primary</span>
+                {' · '}
+                {(['SQUAT', 'BENCH', 'DEADLIFT'] as const)
+                  .filter((l) => l !== preferredPrimary)
+                  .map((l) => l === 'SQUAT' ? 'Squat' : l === 'BENCH' ? 'Bench' : 'Deadlift')
+                  .join(' + ')}{' '}
+                <span style={{ color: TEXT }}>secondary</span>
+              </p>
+            ) : preferredPrimary ? (
               <p className="text-xs text-center" style={{ color: MUTED }}>
                 {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
                 <span style={{ color: TEXT }}>primary</span>
@@ -777,7 +823,7 @@ function CheckInInner() {
               </p>
             ) : (
               <p className="text-xs" style={{ color: MUTED }}>
-                Tap a lift — we&apos;ll pair it with secondary work automatically.
+                Tap a lift above — we&apos;ll pair it with secondary work automatically.
               </p>
             )}
           </Section>
