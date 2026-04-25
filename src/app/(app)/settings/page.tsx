@@ -8,7 +8,7 @@
  *   2. Update maxes — inline editable S / B / D
  *   3. Unit system toggle (kg / lbs)
  *   4. Peak day of week selector
- *   5. Groq API key field
+ *   5. Gemini API key field
  *   6. Reset all data (type 'DELETE' to confirm)
  *
  * Accessible via the ⚙️ icon on the home header.
@@ -86,8 +86,8 @@ export default function SettingsPage() {
   const [federation,   setFederation]   = useState<Federation>('IPF');
   const [unitSystem,   setUnitSystem]   = useState<'KG' | 'LBS'>('KG');
   const [peakDay,      setPeakDay]      = useState(6); // Saturday
-  const [groqKey,      setGroqKey]      = useState('');
-  const [showGroqKey,  setShowGroqKey]  = useState(false);
+  const [geminiKey,    setGeminiKey]    = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Reset flow
   const [resetOpen,    setResetOpen]    = useState(false);
@@ -121,7 +121,7 @@ export default function SettingsPage() {
         setFederation(p.federation);
         setUnitSystem(p.unitSystem);
         setPeakDay(p.peakDayOfWeek);
-        setGroqKey(p.groqApiKey ?? '');
+        setGeminiKey(p.geminiApiKey ?? '');
       }
       if (eq) {
         setHasBelt(eq.hasBelt);
@@ -493,41 +493,41 @@ export default function SettingsPage() {
         <SettingsCard>
           <Row>
             <RowLabel
-              label="Groq API Key"
-              sub={groqKey.trim()
-                ? 'Online mode active (llama-3.3-70b)'
-                : 'Leave blank for on-device AI (Phi-3.5-mini)'}
+              label="Google Gemini API Key"
+              sub={geminiKey.trim()
+                ? 'Online mode active — Gemini 2.0 Flash'
+                : 'Free key at aistudio.google.com · Leave blank for on-device AI'}
             />
           </Row>
           <Row>
             <div className="flex-1 relative">
               <input
-                id="settings-groq-key"
-                type={showGroqKey ? 'text' : 'password'}
-                value={groqKey}
-                onChange={(e) => setGroqKey(e.target.value)}
-                onBlur={() => void save({ groqApiKey: groqKey.trim() || undefined })}
-                placeholder="gsk_…"
+                id="settings-gemini-key"
+                type={showGeminiKey ? 'text' : 'password'}
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                onBlur={() => void save({ geminiApiKey: geminiKey.trim() || undefined })}
+                placeholder="AIza…"
                 className="w-full rounded-xl border px-3 py-2.5 text-sm outline-none pr-24"
                 style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
               />
               <button
                 type="button"
-                onClick={() => setShowGroqKey((v) => !v)}
+                onClick={() => setShowGeminiKey((v) => !v)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-xs"
                 style={{ color: C.muted }}
               >
-                {showGroqKey ? 'Hide' : 'Show'}
+                {showGeminiKey ? 'Hide' : 'Show'}
               </button>
             </div>
           </Row>
-          {groqKey.trim() && (
+          {geminiKey.trim() && (
             <Row>
               <button
                 type="button"
                 onClick={() => {
-                  setGroqKey('');
-                  void save({ groqApiKey: undefined });
+                  setGeminiKey('');
+                  void save({ geminiApiKey: undefined });
                 }}
                 className="text-xs"
                 style={{ color: C.accent }}
