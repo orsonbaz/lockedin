@@ -219,10 +219,9 @@ export function generateSession(input: SessionInput): GeneratedSession {
   // Full SBD (3 comp lifts) already fills the session — skip variation + accessories.
   // A regular 2-lift session (primary + one secondary) still gets variation + accessories.
   const sbdDay = secondaryLifts.length >= 2;
-  const hasSecondaryBench = secondaryLifts.includes('BENCH');
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlockVal, isDupRepeat,
-    sessionNumber, sbdDay, secondaryLifts.length === 1, hasSecondaryBench,
+    sessionNumber, sbdDay, secondaryLifts.length === 1,
   );
 
   // SBD day: rebuild all exercises in competition order (S→B→D) so the
@@ -616,12 +615,10 @@ function buildSessionExercises(
   sessionNumber = 1,
   sbdDay = false,
   hasSecondary = false,
-  hasSecondaryBench = false,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
 
-  // Primary comp movement(s)
   const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
@@ -630,8 +627,8 @@ function buildSessionExercises(
   exercises.push(...primaryExercises);
 
   if (!sbdDay) {
-    // Accessories — library-driven selection. When a secondary comp lift is
-    // present the session already has more volume, so target 1 fewer accessory.
+    // Accessories — library-driven, discipline-aware selection. When a secondary
+    // comp lift is present the session has more volume, so target 1 fewer accessory.
     if (block.blockType !== 'REALIZATION') {
       const accessories = selectAccessories({
         primaryLift,
@@ -646,89 +643,9 @@ function buildSessionExercises(
       });
       exercises.push(...accessories);
     }
-
-    // Cross-discipline accessory overlay — face pulls on any session that
-    // includes bench (primary or secondary), and discipline-specific extras.
-    // Suppressed in DELOAD and REALIZATION (comp focus only).
-    if (block.blockType !== 'REALIZATION' && block.blockType !== 'DELOAD') {
-      const overlayLift = hasSecondaryBench ? 'BENCH' : primaryLift;
-      const overlay = buildCrossDisciplineOverlay(
-        overlayLift, profile, exercises.length + 1, reward,
-      );
-      exercises.push(...overlay);
-    }
   }
 
   return exercises;
-}
-
-/**
- * Returns accessory overlays that elite programs include as table-stakes:
- *   - Face pulls on every bench day (shoulder health, Flex/Millz non-negotiable)
- *   - Weighted pull-up on squat / deadlift days when grip + upper back matter
- *     and the athlete trains any pulling discipline
- *   - Weighted dip on bench days when street-lift is in the discipline mix
- */
-function buildCrossDisciplineOverlay(
-  primaryLift: Lift,
-  profile: AthleteProfile,
-  startingOrder: number,
-  reward: RewardSystem,
-): GeneratedExercise[] {
-  const out: GeneratedExercise[] = [];
-  const disciplines = profile.disciplines ?? [];
-  const hasStreet = disciplines.includes('STREET_LIFT');
-  const hasCali   = disciplines.includes('CALISTHENICS') || disciplines.includes('HYBRID');
-  const hvBonus   = reward === 'HIGH_VOLUME' ? 1 : 0;
-  let order = startingOrder;
-
-  if (primaryLift === 'BENCH') {
-    out.push({
-      name:              'Face Pull',
-      exerciseType:      'ACCESSORY',
-      setStructure:      'STRAIGHT',
-      sets:              3 + hvBonus,
-      reps:              15,
-      rpeTarget:         7,
-      // Cable lift — no comp max reference. ~12% of bench gives a sane
-      // starting weight on most stacks; athlete fine-tunes by feel.
-      estimatedLoadKg:   Math.max(10, roundLoad((profile.maxBench ?? 80) * 0.12)),
-      order:             order++,
-      notes:             'Rear-delt + external rotation. Every bench day, non-negotiable.',
-      libraryExerciseId: 'face_pull',
-    });
-    if (hasStreet || hasCali) {
-      out.push({
-        name:              'Weighted Dip',
-        exerciseType:      'ACCESSORY',
-        setStructure:      'STRAIGHT',
-        sets:              3 + hvBonus,
-        reps:              6,
-        rpeTarget:         7,
-        estimatedLoadKg:   Math.max(5, roundLoad((profile.maxBench ?? 80) * 0.10)),
-        order:             order++,
-        notes:             'Street-lift carryover. Lean slightly forward. Stop each set with 2-3 reps in reserve.',
-        libraryExerciseId: 'tricep_dip',
-      });
-    }
-  } else if (primaryLift === 'SQUAT' || primaryLift === 'DEADLIFT') {
-    if (hasStreet || hasCali || disciplines.length === 0) {
-      out.push({
-        name:              'Weighted Pull-Up',
-        exerciseType:      'ACCESSORY',
-        setStructure:      'STRAIGHT',
-        sets:              3 + hvBonus,
-        reps:              5,
-        rpeTarget:         7,
-        estimatedLoadKg:   Math.max(5, roundLoad((profile.maxDeadlift ?? 120) * 0.10)),
-        order:             order++,
-        notes:             'Grip, lats, upper back — carries to every comp lift. Add weight via dip belt.',
-        libraryExerciseId: 'weighted_pull_up',
-      });
-    }
-  }
-
-  return out;
 }
 
 // ── Primary Exercise ───────────────────────────────────────────────────────────

@@ -149,6 +149,11 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
     // Exclude comp-level exercises (specificity 4-5) — they belong in the
     // competition or variation slots, not accessories.
     if (ex.specificity >= 4) return false;
+    // Discipline gate: only include exercises the athlete actually trains.
+    if (ex.disciplines && ex.disciplines.length > 0) {
+      const athleteDisciplines = profile.disciplines ?? ['POWERLIFTING'];
+      if (!ex.disciplines.some((d) => athleteDisciplines.includes(d))) return false;
+    }
     // Only include exercises that target this session's lift OR are general (null).
     const targetOk =
       ex.primaryLiftTarget === primaryLift ||

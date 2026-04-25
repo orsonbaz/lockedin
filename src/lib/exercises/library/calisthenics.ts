@@ -37,6 +37,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Explosive pull, fast transition. Dip belt + plate for added load. Full street-lift competition standard.',
     swapGroups: [SWAP_GROUPS.STREET_LIFT_PULL, SWAP_GROUPS.CALISTHENICS_SKILL],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -66,6 +67,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'One arm pulls, the other stays extended and assists. Best lat-asymmetry corrector in the library.',
     swapGroups: [SWAP_GROUPS.PULL_V_PULLUP, SWAP_GROUPS.CALISTHENICS_SKILL],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -96,6 +98,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Rings turn out at the top (RTO). Depth: shoulders below elbows. Direct bench lockout carryover.',
     swapGroups: [SWAP_GROUPS.STREET_LIFT_DIP, SWAP_GROUPS.PUSH_H_TRICEP],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -125,6 +128,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Lean slightly forward for more chest, stay vertical for more tricep. Add load via dip belt once 10 BW reps are easy.',
     swapGroups: [SWAP_GROUPS.STREET_LIFT_DIP, SWAP_GROUPS.PUSH_H_TRICEP, SWAP_GROUPS.PUSH_H_CHEST],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -155,6 +159,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Scapula depressed. Prescribed by progression level — tuck, single-leg, straddle, full. Brutal lat isometric.',
     swapGroups: [SWAP_GROUPS.CALISTHENICS_HOLD, SWAP_GROUPS.CORE_ANTI_FLEX],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -184,6 +189,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Legs extended, hips open. Straight arms, scaps depressed. Accumulate total seconds across sets.',
     swapGroups: [SWAP_GROUPS.CALISTHENICS_HOLD, SWAP_GROUPS.CORE_FLEX],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -213,6 +219,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Top of a push-up, protract scaps, shift shoulders forward of hands. Straight arms. Builds the planche foundation.',
     swapGroups: [SWAP_GROUPS.CALISTHENICS_HOLD],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -246,6 +253,7 @@ export const calisthenicsExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Wall-supported first, free-standing when strong. Press strict — no kip. Direct overhead press carryover.',
     swapGroups: [SWAP_GROUPS.PUSH_V_OVERHEAD, SWAP_GROUPS.CALISTHENICS_SKILL],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 ];
