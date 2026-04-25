@@ -24,6 +24,7 @@ import {
   responderMultiplier,
   overshooterRpeAdjust,
 } from './calc';
+import { selectAccessories } from './accessory-selector';
 
 // ── Public Interfaces ──────────────────────────────────────────────────────────
 
@@ -448,34 +449,24 @@ function buildSessionExercises(
   );
   exercises.push(...primaryExercises);
 
-  // Accessories (skipped in REALIZATION — comp focus)
+  // Accessories — library-driven selection. selectAccessories() reads exercise
+  // metadata (primaryLiftTarget, movementPattern, specificity, FatigueProfile,
+  // swapGroups) to pick the best candidates for this session's primary lift
+  // within the pattern diversity and spinal-load constraints. Adding a new
+  // exercise to the library automatically makes it a candidate here — no code
+  // changes needed.
   if (block.blockType !== 'REALIZATION') {
-    const nextOrder = exercises.length + 1;
-    const accessories = buildAccessories(
-      primaryLift, block.blockType, profile, volMult, rpeOffset, nextOrder,
-      reward, sessionNumber,
-    );
-    // Drop any accessory that duplicates a competition or variation exercise
-    // already in the session (e.g. Close Grip Bench selected as both variation
-    // and hardcoded accessory). Match by libraryExerciseId when present,
-    // fall back to name equality.
-    const existingIds = new Set(
-      exercises
-        .filter((e) => e.exerciseType !== 'ACCESSORY')
-        .map((e) => e.libraryExerciseId)
-        .filter(Boolean),
-    );
-    const existingNames = new Set(
-      exercises
-        .filter((e) => e.exerciseType !== 'ACCESSORY')
-        .map((e) => e.name),
-    );
-    const deduped = accessories.filter(
-      (a) =>
-        !(a.libraryExerciseId && existingIds.has(a.libraryExerciseId)) &&
-        !existingNames.has(a.name),
-    );
-    exercises.push(...deduped);
+    const accessories = selectAccessories({
+      primaryLift,
+      blockType: block.blockType,
+      profile,
+      existingExercises: exercises,
+      volMult,
+      rpeOffset,
+      sessionNumber,
+      reward,
+    });
+    exercises.push(...accessories);
   }
 
   // Cross-discipline accessory overlay — auto-adds face pulls on bench days
@@ -743,125 +734,7 @@ function buildPrimaryExercises(
   return result;
 }
 
-// ── Accessory Exercises ────────────────────────────────────────────────────────
 
-function buildAccessories(
-  lift: Lift,
-  blockType: BlockType,
-  profile: AthleteProfile,
-  volMult: number,
-  rpeOffset: number,
-  startOrder: number,
-  reward: RewardSystem = 'CONSISTENCY',
-  sessionNumber = 1,
-): GeneratedExercise[] {
-  const accRpe  = clampRpe(7.5 + rpeOffset);
-  const baseAccSets = Math.max(1, Math.floor(3 * volMult));
-  // HIGH_VOLUME athletes get +1 accessory set
-  const accSets = reward === 'HIGH_VOLUME' ? baseAccSets + 1 : baseAccSets;
-  const isDeload = blockType === 'DELOAD';
-
-  const sq = profile.maxSquat;
-  const bp = profile.maxBench;
-  const dl = profile.maxDeadlift;
-
-  // [name, reps, refMaxKg]
-  // refMaxKg = the relevant competition max (sq/bp/dl).
-  // ACCESSORY_REF_COEFFICIENT[name] is then multiplied to get the accessory
-  // effective 1RM, then prescribeLoad() computes the training load.
-  // Note: Barbell Rows always reference bp (bench) regardless of session day.
-  type AccDef = [string, number, number];
-
-  let defs: AccDef[];
-
-  switch (lift) {
-    // ── SQUAT DAY ─────────────────────────────────────────────────────────
-    // Upper back pull included on every session (Sheiko, Juggernaut standard)
-    case 'SQUAT':
-    case 'LOWER':
-      defs = isDeload
-        ? [
-            ['Romanian Deadlift', 12, dl],
-            ['Barbell Rows',       8, bp],
-          ]
-        : [
-            ['Romanian Deadlift', 10, dl],  // posterior chain
-            ['Barbell Rows',       8, bp],  // upper back (critical for squat bracing)
-            ['Leg Press',         12, sq],  // quad volume
-            ['Lat Pulldowns',     10, dl],  // lat engagement
-          ];
-      break;
-
-    // ── BENCH DAY ─────────────────────────────────────────────────────────
-    // Upper pressing + rows (antagonist work = shoulder health)
-    case 'BENCH':
-    case 'UPPER':
-      defs = isDeload
-        ? [
-            ['Overhead Press', 8, bp],
-            ['Barbell Rows',   8, bp],
-          ]
-        : [
-            ['Close Grip Bench Press', 10, bp],  // tricep/lockout
-            ['Barbell Rows',           10, bp],  // upper back (shoulder health)
-            ['Overhead Press',          8, bp],  // shoulder work
-            ['Tricep Pushdowns',       12, bp],  // isolation lockout
-          ];
-      break;
-
-    // ── DEADLIFT DAY ──────────────────────────────────────────────────────
-    // Lats are the primary DL stabiliser; RDL for hamstring/glute volume.
-    // Hip Thrust replaces any fourth hinge: targets glutes (primary lockout
-    // mover) with LOW spinal load — the opposite of stacking another floor
-    // pull on already-taxed posterior chain. Deficit DL belongs in the
-    // variation slot (selectVariation), not here.
-    case 'DEADLIFT':
-      defs = isDeload
-        ? [
-            ['Romanian Deadlift', 12, dl],
-            ['Lat Pulldowns',     10, dl],
-          ]
-        : [
-            ['Romanian Deadlift', 10, dl],  // hamstring/glute eccentric
-            ['Lat Pulldowns',     10, dl],  // lats (bar path control)
-            ['Barbell Rows',      10, bp],  // upper back — bp reference, not dl
-            ['Hip Thrust',        10, dl],  // glute lockout — low spinal load
-          ];
-      break;
-
-    default:
-      // FULL — general GPP
-      defs = [
-        ['Romanian Deadlift', 10, dl],
-        ['Overhead Press',     8, bp],
-        ['Lat Pulldowns',     10, dl],
-      ];
-  }
-
-  // VARIETY: rotate accessories — shift the order each session so the athlete
-  // sees different exercises first (and potentially different ones if the pool
-  // is larger than what fits in a session). Uses sessionNumber as the seed.
-  if (reward === 'VARIETY' && defs.length > 1) {
-    const shift = (sessionNumber - 1) % defs.length;
-    defs = [...defs.slice(shift), ...defs.slice(0, shift)];
-  }
-
-  return defs.map(([name, reps, refMaxKg], i) => {
-    const coeff = ACCESSORY_REF_COEFFICIENT[name] ?? 0.6;
-    const load  = roundLoad(prescribeLoad(refMaxKg * coeff, accRpe, reps));
-    return {
-      name,
-      exerciseType:      'ACCESSORY' as ExerciseType,
-      setStructure:      'STRAIGHT' as SetStructure,
-      sets:              accSets,
-      reps,
-      rpeTarget:         accRpe,
-      estimatedLoadKg:   load,
-      order:             startOrder + i,
-      libraryExerciseId: ACCESSORY_LIBRARY_IDS[name],
-    };
-  });
-}
 
 // ── Coach Note (Rule-Based) ────────────────────────────────────────────────────
 
@@ -1084,44 +957,6 @@ function getVariationLibraryId(lift: Lift): string | null {
   return v?.libraryId ?? null;
 }
 
-/** Maps accessory display names to stable library exercise IDs. */
-const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
-  'Romanian Deadlift':      'romanian_deadlift',
-  'Leg Press':              'leg_press',
-  'Walking Lunges':         'walking_lunge',
-  'Overhead Press':         'overhead_press',
-  'Tricep Pushdowns':       'tricep_pushdown',
-  'Close Grip Bench Press': 'close_grip_bench_press',
-  'Barbell Rows':           'barbell_row',
-  'Deficit Deadlift':       'deficit_deadlift',
-  'Lat Pulldowns':          'lat_pulldown',
-  'Hip Thrust':             'hip_thrust',
-};
-
-// VARIATION_MAX_COEFFICIENT has been superseded by the coefficient field on
-// the VariationChoice records returned by selectVariation().
-
-/**
- * Accessory exercise effective 1RM as a fraction of the relevant competition
- * lift's 1RM. Multiplied by the competition max before calling prescribeLoad()
- * so that: (a) loads land in the correct range, and (b) accessories respond to
- * readiness changes (since load flows through prescribeLoad with the adjusted
- * accRpe, not a flat percentage).
- *
- * Sources: Tuchscherer, Noriega, Stanek, Swolefessor programming references
- * for intermediate-to-advanced raw powerlifters.
- */
-const ACCESSORY_REF_COEFFICIENT: Record<string, number> = {
-  'Romanian Deadlift':      0.85,  // of DL — strong hinge, shorter ROM
-  'Deficit Deadlift':       0.88,  // of DL — harder off floor
-  'Barbell Rows':           0.95,  // of BP — most lifters row close to bench
-  'Leg Press':              1.25,  // of SQ — favourable leverage, no bracing
-  'Lat Pulldowns':          0.45,  // of DL — upper-body pull fraction of DL
-  'Close Grip Bench Press': 0.90,  // of BP — slight ROM assist
-  'Overhead Press':         0.65,  // of BP — strict press limited by delts
-  'Tricep Pushdowns':       0.48,  // of BP — cable isolation
-  'Hip Thrust':             0.70,  // of DL — glute-dominant, no floor pull
-};
 
 
 /**

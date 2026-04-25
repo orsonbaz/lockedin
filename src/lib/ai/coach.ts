@@ -20,6 +20,11 @@ import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 import { unpackReviewIssues } from '@/lib/engine/session-review';
+import {
+  summariseSessionRpeState,
+  formatSessionRpeStateForPrompt,
+  type SetFeedback,
+} from '@/lib/engine/intra-session';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -42,6 +47,7 @@ const SECTION_CAPS = {
   summary:    800,
   memories:   1500,
   session:    700,
+  liveSession: 500,
   history:    600,
   weakPoints: 400,
   nutrition:  200,
@@ -218,6 +224,53 @@ export async function buildSystemPrompt(
     }
   }
 
+  // ── Live set feedback (intra-session RPE deviation) ──────────────────────
+  // When the athlete is mid-session with logged sets, surface the RPE state
+  // so the LLM can suggest load adjustments without being asked explicitly.
+  let liveSessionInfo = '';
+  if (todaySession) {
+    const loggedSets = await db.sets
+      .where('sessionId')
+      .equals(todaySession.id)
+      .filter((sl) => sl.rpeLogged !== undefined)
+      .toArray();
+
+    if (loggedSets.length > 0) {
+      // Pair each logged set with the exercise prescription to build SetFeedback[]
+      const sessionExercises = await db.exercises
+        .where('sessionId')
+        .equals(todaySession.id)
+        .toArray();
+
+      // Index by id — explicit any to avoid Dexie generic inference loss in Map
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const exById = new Map<string, any>(sessionExercises.map((e: any) => [e.id, e]));
+
+      const feedbacks: SetFeedback[] = (loggedSets as any[])
+        .map((sl) => {
+          const ex = exById.get(sl.exerciseId);
+          if (!ex || sl.rpeLogged === undefined) return null;
+          return {
+            exerciseName:  ex.name        as string,
+            setNumber:     sl.setNumber   as number,
+            totalSets:     ex.sets        as number,
+            targetRpe:     ex.rpeTarget   as number,
+            targetReps:    ex.reps        as number,
+            targetLoadKg:  ex.estimatedLoadKg as number,
+            actualRpe:     sl.rpeLogged   as number,
+            actualLoadKg:  sl.loadKg      as number,
+            actualReps:    sl.reps        as number,
+          } satisfies SetFeedback;
+        })
+        .filter((f): f is SetFeedback => f !== null);
+
+      const rpeState = summariseSessionRpeState(feedbacks);
+      if (rpeState) {
+        liveSessionInfo = formatSessionRpeStateForPrompt(rpeState);
+      }
+    }
+  }
+
   // ── Last 5 completed sessions (richer data) ────────────────────────────────
   const recentSessions = await db.sessions
     .filter((s) => s.status === 'COMPLETED')
@@ -293,6 +346,7 @@ Available actions:
 - [ACTION:UPDATE_REPS|name=Competition Back Squat|sets=4|reps=3] — Change sets/reps for an exercise
 - [ACTION:SET_RPE_TARGET|name=Competition Back Squat|rpe=7.5] — Change RPE target for an exercise
 - [ACTION:MODIFY_SESSION|rpe_offset=-0.5|volume_mult=0.8|modification=Reduced volume] — Adjust entire session
+- [ACTION:ADJUST_SET_LOAD|exercise=Competition Deadlift|load=200|note=RPE ran high on set 1] — Update the prescribed load for remaining sets of one exercise mid-session (use when Live Session Feedback shows overshoot/undershoot)
 - [ACTION:SKIP_SESSION] — Skip today's session entirely
 - [ACTION:REMEMBER|kind=INJURY|content=Left shoulder impingement|tags=shoulder,injury|importance=4] — Save a long-term fact about the athlete (kinds: INJURY, PREFERENCE, LIFE_EVENT, PAST_ADVICE, GOAL, CONSTRAINT)
 - [ACTION:FORGET|id=<memoryId>] — Remove a previously stored memory
@@ -312,6 +366,7 @@ Rules:
 - When in doubt about whether to emit a tag: emit it. The athlete sees a confirm button before anything is applied — it's never destructive.
 - Use REMEMBER when the athlete shares a durable fact (injury, preference, constraint, goal). Keep content under 140 chars.
 - Use ABBREVIATE_TODAY when the athlete says they're short on time today. Use SET_WEEK_AVAILABILITY for multi-day constraints (travel, busy week).
+- Use ADJUST_SET_LOAD when "Live Session Feedback" shows a deviation ≥ 0.75 RPE, or when the athlete reports an RPE during a session. Always reference the exact exercise name and the corrected kg from the feedback.
 - For nutrition: reference "Nutrition Target Today" when present. LOG_NUTRITION when the athlete tells you what they ate; SET_NUTRITION_TARGETS for kcal/macro updates; SCHEDULE_REFEED for refeed days.
 - For form check / technique review / "felt off": REQUEST_FORM_CHECK. Don't guess form problems without seeing the lift.
 
@@ -412,8 +467,9 @@ Worked example (the format the parser actually requires):
     },
     { name: 'summary',  heading: 'Conversation Summary', content: summaryBody },
     { name: 'memories', heading: 'Long-Term Memory',     content: memoriesBody },
-    { name: 'session',  heading: "Today's Session",      content: sessionInfo },
-    { name: 'history',  heading: 'Training History',     content: sessionHistory },
+    { name: 'session',     heading: "Today's Session",       content: sessionInfo },
+    { name: 'liveSession', heading: 'Live Session Feedback', content: liveSessionInfo },
+    { name: 'history',     heading: 'Training History',      content: sessionHistory },
     { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
     { name: 'nutrition', heading: 'Nutrition Target Today', content: nutritionBody },
     { name: 'wearables', heading: 'Wearable Signals (last 7d)', content: wearablesBody },
