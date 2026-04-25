@@ -54,12 +54,6 @@ function hasExerciseNamed(session: GeneratedSession, ...names: string[]): boolea
   return session.exercises.some((e) => names.includes(e.name));
 }
 
-function hasCompLiftFor(session: GeneratedSession, lift: Lift): boolean {
-  return session.exercises.some(
-    (e) => e.exerciseType === 'COMPETITION' && e.name.toLowerCase().includes(lift.toLowerCase()),
-  );
-}
-
 function exposureFor(exposures: LiftExposure[], lift: Lift): LiftExposure | undefined {
   return exposures.find((e) => e.lift === lift);
 }
@@ -76,6 +70,11 @@ const WEEKLY_TARGET: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
  * Runs the deterministic review and optionally patches the session in place.
  * Pure with respect to DB state — callers must pass exposures + block so this
  * function stays testable.
+ *
+ * `skipDroughtCheck` — set on the second review pass after the caller has
+ * already re-generated the session with `forcePrimary`. Without this we'd
+ * re-detect the OTHER lifts as drought-due (they all read Infinity-days on
+ * a fresh athlete) and try to swap again.
  */
 export function reviewSessionPure(input: {
   session: GeneratedSession;
@@ -83,8 +82,9 @@ export function reviewSessionPure(input: {
   block: TrainingBlock;
   exposures: LiftExposure[];
   weekDayOfWeek: number;
+  skipDroughtCheck?: boolean;
 }): ReviewResult {
-  const { session, profile, exposures, block } = input;
+  const { session, profile, exposures, block, skipDroughtCheck } = input;
   const issues: ReviewIssue[] = [];
   let patched: GeneratedSession = session;
 
@@ -98,10 +98,18 @@ export function reviewSessionPure(input: {
     return { issues, session };
   }
 
-  // ── 2. Bench drought ────────────────────────────────────────────────────
-  // Bench has the highest weekly target (3.5). If it's been ≥ 5 days since
-  // the last completed bench AND today's primary isn't bench, swap primary
-  // to bench — this is what Flex/Millz consensus says matters most.
+  // ── 2. Bench / Squat / DL drought ───────────────────────────────────────
+  // BLOCK severity. Caller is expected to detect a *_DROUGHT issue,
+  // re-run generateSession with forcePrimary, then call this function
+  // again with skipDroughtCheck=true.
+  //
+  // Crucial guards:
+  //   - Drought only fires when daysSince is FINITE — a brand-new athlete
+  //     with no completed sessions has Infinity days for everything; we
+  //     can't say bench is overdue if there's no training history yet.
+  //   - We fire AT MOST ONE drought issue per review (the highest-priority).
+  //     Otherwise on fresh data all three would fire.
+  //   - Skipped entirely on the second pass via skipDroughtCheck.
   const benchExp = exposureFor(exposures, 'BENCH');
   const squatExp = exposureFor(exposures, 'SQUAT');
   const dlExp    = exposureFor(exposures, 'DEADLIFT');
@@ -111,44 +119,65 @@ export function reviewSessionPure(input: {
   const daysSinceDL    = dlExp?.daysSince    ?? Infinity;
 
   // Only rewrite primary for ACCUMULATION / INTENSIFICATION / PIVOT / MAINTENANCE.
-  // Realization / deload stays deterministic.
   const canRewrite = block.blockType === 'ACCUMULATION'
                   || block.blockType === 'INTENSIFICATION'
                   || block.blockType === 'PIVOT'
                   || block.blockType === 'MAINTENANCE';
 
-  if (daysSinceBench >= 5 && session.primaryLift !== 'BENCH' && canRewrite) {
-    issues.push({
-      code: 'BENCH_DROUGHT',
-      severity: 'BLOCK',
-      summary: `No bench in ${Math.round(daysSinceBench)} days — rewriting today to a bench session.`,
-      fix: 'Primary lift swapped to BENCH.',
-    });
-    patched = swapPrimaryLift(session, 'BENCH');
-  } else if (daysSinceSquat >= 7 && session.primaryLift !== 'SQUAT' && canRewrite) {
-    issues.push({
-      code: 'SQUAT_DROUGHT',
-      severity: 'BLOCK',
-      summary: `No squat in ${Math.round(daysSinceSquat)} days — rewriting today to a squat session.`,
-      fix: 'Primary lift swapped to SQUAT.',
-    });
-    patched = swapPrimaryLift(session, 'SQUAT');
-  } else if (daysSinceDL >= 7 && session.primaryLift !== 'DEADLIFT' && canRewrite) {
-    issues.push({
-      code: 'DEADLIFT_DROUGHT',
-      severity: 'BLOCK',
-      summary: `No deadlift in ${Math.round(daysSinceDL)} days — rewriting today to a deadlift session.`,
-      fix: 'Primary lift swapped to DEADLIFT.',
-    });
-    patched = swapPrimaryLift(session, 'DEADLIFT');
+  function isFiniteFinite(n: number): boolean {
+    return Number.isFinite(n);
+  }
+
+  if (!skipDroughtCheck && canRewrite) {
+    // Priority order: bench (highest weekly target) > squat > deadlift.
+    // Only one drought fires per pass.
+    if (
+      isFiniteFinite(daysSinceBench) && daysSinceBench >= 5
+      && session.primaryLift !== 'BENCH'
+    ) {
+      issues.push({
+        code: 'BENCH_DROUGHT',
+        severity: 'BLOCK',
+        summary: `No bench in ${Math.round(daysSinceBench)} days — rewriting today to a bench session.`,
+        fix: 'Primary lift swapped to BENCH.',
+      });
+    } else if (
+      isFiniteFinite(daysSinceSquat) && daysSinceSquat >= 7
+      && session.primaryLift !== 'SQUAT'
+    ) {
+      issues.push({
+        code: 'SQUAT_DROUGHT',
+        severity: 'BLOCK',
+        summary: `No squat in ${Math.round(daysSinceSquat)} days — rewriting today to a squat session.`,
+        fix: 'Primary lift swapped to SQUAT.',
+      });
+    } else if (
+      isFiniteFinite(daysSinceDL) && daysSinceDL >= 7
+      && session.primaryLift !== 'DEADLIFT'
+    ) {
+      issues.push({
+        code: 'DEADLIFT_DROUGHT',
+        severity: 'BLOCK',
+        summary: `No deadlift in ${Math.round(daysSinceDL)} days — rewriting today to a deadlift session.`,
+        fix: 'Primary lift swapped to DEADLIFT.',
+      });
+    }
   }
 
   // ── 3. Weekly bench target check ────────────────────────────────────────
-  // Bench target is 3.5/week. If we're on/after Thursday and bench count is
-  // still below 2, that's a WARN (not BLOCK — we don't have enough runway).
+  // Only fires when the athlete has completed at least one session this
+  // week — otherwise on a fresh-week Monday it would always WARN.
   const isLateWeek = input.weekDayOfWeek >= 4; // Thu, Fri, Sat
   const benchThisWeek = benchExp?.weekCount ?? 0;
-  if (isLateWeek && benchThisWeek < 2 && patched.primaryLift !== 'BENCH' && canRewrite) {
+  const squatThisWeek = squatExp?.weekCount ?? 0;
+  const dlThisWeek    = dlExp?.weekCount    ?? 0;
+  const completedThisWeek = benchThisWeek + squatThisWeek + dlThisWeek;
+  if (
+    completedThisWeek > 0
+    && isLateWeek && benchThisWeek < 2
+    && patched.primaryLift !== 'BENCH'
+    && canRewrite
+  ) {
     issues.push({
       code: 'BENCH_UNDER_TARGET',
       severity: 'WARN',
@@ -178,9 +207,6 @@ export function reviewSessionPure(input: {
   }
 
   // ── 5. Discipline mismatch ──────────────────────────────────────────────
-  // If athlete's primary discipline is STREET_LIFT and today has a comp squat
-  // / bench / DL as primary with no street-lift accessory, flag it (WARN only
-  // — user may have intentionally wanted a PL day).
   const primaryDisc = profile.primaryDiscipline ?? profile.disciplines?.[0];
   if (primaryDisc === 'STREET_LIFT') {
     const hasWeightedPull = hasExerciseNamed(patched, 'Weighted Pull-Up');
@@ -195,9 +221,6 @@ export function reviewSessionPure(input: {
   }
 
   // ── 6. Spinal-erector stacking ──────────────────────────────────────────
-  // Heavy squat + heavy deadlift in the same session outside of a planned
-  // SBD rehearsal risks a miserable week. We already prevent this in the
-  // adaptive selector but secondaryLifts can still produce it — warn only.
   const hasHeavySquat = patched.exercises.some(
     (e) => e.exerciseType === 'COMPETITION' && e.name.includes('Squat') && e.rpeTarget >= 8,
   );
@@ -232,24 +255,6 @@ function appendExercise(session: GeneratedSession, ex: GeneratedExercise): Gener
     ...session,
     exercises: [...session.exercises, ex],
     modifications: [...session.modifications, `Review added ${ex.name}.`],
-  };
-}
-
-/**
- * Swap the primary lift of a generated session. This is a non-trivial
- * mutation — regenerating from scratch is cleaner than patching in place.
- * We defer to `regenerateWithPrimary` which is wired into the async DB flow.
- * For the pure-review path we emit a minimal placeholder that the caller
- * must handle by re-running the generator.
- */
-function swapPrimaryLift(session: GeneratedSession, newPrimary: Lift): GeneratedSession {
-  return {
-    ...session,
-    primaryLift: newPrimary,
-    modifications: [
-      ...session.modifications,
-      `Review flagged primary-lift swap to ${newPrimary} — regenerate to apply.`,
-    ],
   };
 }
 

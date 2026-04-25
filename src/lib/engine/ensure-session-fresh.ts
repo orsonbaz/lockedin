@@ -219,8 +219,11 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   }
   // Re-run review on the (possibly-regenerated) session to collect any
   // non-swap issues (face pulls, warnings, etc.) and apply their fixes.
+  // skipDroughtCheck=true so we don't ping-pong between BENCH/SQUAT/DL
+  // when the athlete is fresh and all three read Infinity-days-since.
   const finalReview = reviewSessionPure({
     session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek,
+    skipDroughtCheck: true,
   });
   generated = finalReview.session;
   const reviewIssues = finalReview.issues;

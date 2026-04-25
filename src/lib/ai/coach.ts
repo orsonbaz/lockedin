@@ -47,8 +47,12 @@ const SECTION_CAPS = {
   nutrition:  200,
   schedule:   400,
   wearables:  400,
-  actions:    900,
-  guidelines: 500,
+  // Actions are the contract between the LLM and the action-confirm UI.
+  // They MUST fit completely; truncation here = user-visible bug ("coach
+  // can't change anything"). Sized generously above the current ~3.4k
+  // string so future additions don't silently regress.
+  actions:    4000,
+  guidelines: 800,
 } as const;
 
 type SectionName = keyof typeof SECTION_CAPS | 'knowledge';
@@ -301,15 +305,19 @@ Available actions:
 - [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
 
 Rules:
-- Always explain WHY before including the action tag.
-- Only include action tags when the athlete asks for a change or when you're making a specific recommendation.
-- Never include more than 2 action tags in a single response.
-- Do not include action tags when just answering questions or giving general advice.
-- Never remove competition lifts from a session.
+- IF THE ATHLETE ASKS YOU TO CHANGE / SWAP / ADD / REMOVE / ADJUST / SKIP / ABBREVIATE / LOG anything, you MUST emit the matching ACTION tag — without it, nothing happens. Always pair "Yes I'll do X" with the tag for X.
+- Always explain WHY in plain prose, then include the action tag at the end of that paragraph.
+- Format must be EXACT: [ACTION:TYPE|key=value|key=value]  — square brackets, ACTION colon, TYPE in CAPS, params separated by | (pipe). No spaces inside brackets. No code fences.
+- Up to 2 action tags per response. Never remove competition lifts.
+- When in doubt about whether to emit a tag: emit it. The athlete sees a confirm button before anything is applied — it's never destructive.
 - Use REMEMBER when the athlete shares a durable fact (injury, preference, constraint, goal). Keep content under 140 chars.
 - Use ABBREVIATE_TODAY when the athlete says they're short on time today. Use SET_WEEK_AVAILABILITY for multi-day constraints (travel, busy week).
-- For nutrition: reference the "Nutrition Target Today" block when it's present. Use LOG_NUTRITION when the athlete tells you what they ate, SET_NUTRITION_TARGETS when they ask to update kcal/macros, and SCHEDULE_REFEED when a refeed day is warranted.
-- When the athlete asks for a form check, technique review, or says a lift felt off, use REQUEST_FORM_CHECK to open the camera. Don't guess at form problems without seeing the lift.`;
+- For nutrition: reference "Nutrition Target Today" when present. LOG_NUTRITION when the athlete tells you what they ate; SET_NUTRITION_TARGETS for kcal/macro updates; SCHEDULE_REFEED for refeed days.
+- For form check / technique review / "felt off": REQUEST_FORM_CHECK. Don't guess form problems without seeing the lift.
+
+Worked example (the format the parser actually requires):
+> User: "Switch the RDL out for good mornings today and drop my squat sets to 3."
+> Assistant: "Good mornings hit the same hip-hinge pattern at lower spinal load — fair swap on a tired day. Cutting comp squat to 3 sets keeps the stimulus while honouring fatigue. [ACTION:SWAP_EXERCISE|from=Romanian Deadlift|to=Good Morning] [ACTION:UPDATE_REPS|name=Competition Back Squat|sets=3|reps=5]"`;
 
   // ── Phenotype-aware voice cues ────────────────────────────────────────────
   // Shift tone and programming defaults based on the athlete's bottleneck /

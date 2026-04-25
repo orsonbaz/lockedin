@@ -480,6 +480,7 @@ function CheckInInner() {
           const finalReview = reviewSessionPure({
             session: generated, profile, block,
             exposures: recentLiftExposures, weekDayOfWeek,
+            skipDroughtCheck: true,
           });
           generated = finalReview.session;
 
