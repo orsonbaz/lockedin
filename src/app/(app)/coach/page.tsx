@@ -109,22 +109,27 @@ function bytesToMb(bytes: number) {
 // ── Settings sheet ────────────────────────────────────────────────────────────
 
 interface SettingsSheetProps {
-  groqKey:         string;
-  onGroqKeyChange: (key: string) => void;
-  modelStatus:     ModelStatus;
-  loadProgress:    ProgressPayload | null;
-  onClearChat:     () => void;
+  groqKey:              string;
+  onGroqKeyChange:      (key: string) => void;
+  anthropicKey:         string;
+  onAnthropicKeyChange: (key: string) => void;
+  modelStatus:          ModelStatus;
+  loadProgress:         ProgressPayload | null;
+  onClearChat:          () => void;
 }
 
 function SettingsSheet({
   groqKey,
   onGroqKeyChange,
+  anthropicKey,
+  onAnthropicKeyChange,
   modelStatus,
   loadProgress,
   onClearChat,
 }: SettingsSheetProps) {
-  const [draft, setDraft]         = useState(groqKey);
-  const [showKey, setShowKey]     = useState(false);
+  const [draft,         setDraft]         = useState(groqKey);
+  const [anthropicDraft, setAnthropicDraft] = useState(anthropicKey);
+  const [showKey,       setShowKey]       = useState(false);
 
   function saveKey() {
     onGroqKeyChange(draft.trim());
@@ -150,10 +155,15 @@ function SettingsSheet({
       {/* Mode indicator */}
       <div className="mb-6 rounded-xl p-4" style={{ backgroundColor: C.surface }}>
         <p className="text-xs uppercase tracking-wider mb-1" style={{ color: C.muted }}>Active mode</p>
-        {groqKey ? (
+        {anthropicKey ? (
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Groq — Online</span>
+            <span className="font-semibold" style={{ color: C.green }}>Claude — Recommended</span>
+          </div>
+        ) : groqKey ? (
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.gold }} />
+            <span className="font-semibold" style={{ color: C.gold }}>Groq — Online</span>
           </div>
         ) : (
           <div className="flex items-center gap-2">
@@ -163,13 +173,53 @@ function SettingsSheet({
         )}
       </div>
 
+      {/* Anthropic key input — priority backend */}
+      <div className="mb-6">
+        <label htmlFor="coach-anthropic-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
+          Anthropic API Key <span style={{ color: C.green }}>(Recommended)</span>
+        </label>
+        <p className="text-xs mb-3" style={{ color: C.muted }}>
+          Uses Claude Haiku — best instruction-following and programming knowledge. Get a key at{' '}
+          <span style={{ color: C.gold }}>console.anthropic.com</span>.
+        </p>
+        <div className="flex gap-2 mb-2">
+          <input
+            id="coach-anthropic-key"
+            type={showKey ? 'text' : 'password'}
+            value={anthropicDraft}
+            onChange={(e) => setAnthropicDraft(e.target.value)}
+            placeholder="sk-ant-xxxxxxxxxxxxxxxx"
+            className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
+            style={{ backgroundColor: C.dim, borderColor: C.border, color: C.text }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => { onAnthropicKeyChange(anthropicDraft.trim()); toast('Claude key saved.', { duration: 2000 }); }}
+          className="w-full py-2 rounded-lg text-sm font-semibold"
+          style={{ backgroundColor: C.accent, color: C.text }}
+        >
+          Save Claude key
+        </button>
+        {anthropicKey && (
+          <button
+            type="button"
+            onClick={() => { setAnthropicDraft(''); onAnthropicKeyChange(''); }}
+            className="w-full mt-2 py-2 rounded-lg text-sm"
+            style={{ color: C.muted }}
+          >
+            Remove Claude key
+          </button>
+        )}
+      </div>
+
       {/* Groq key input */}
       <div className="mb-6">
         <label htmlFor="coach-groq-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
-          Groq API Key
+          Groq API Key <span style={{ color: C.muted }}>(fallback)</span>
         </label>
         <p className="text-xs mb-3" style={{ color: C.muted }}>
-          Free tier at <span style={{ color: C.gold }}>console.groq.com</span>. Unlocks better AI quality.
+          Free tier at <span style={{ color: C.gold }}>console.groq.com</span>. Used if no Claude key is set.
         </p>
         <div className="flex gap-2 mb-2">
           <input
@@ -298,6 +348,7 @@ export default function CoachPage() {
   // ── Data state ────────────────────────────────────────────────────────────
   const [messages,       setMessages]       = useState<DBChatMessage[]>([]);
   const [groqKey,        setGroqKey]        = useState<string>('');
+  const [anthropicKey,   setAnthropicKey]   = useState<string>('');
   const [modelStatus,    setModelStatus]    = useState<ModelStatus>('idle');
   const [loadProgress,   setLoadProgress]   = useState<ProgressPayload | null>(null);
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(DEFAULT_PROMPTS);
@@ -326,10 +377,11 @@ export default function CoachPage() {
         .toArray();
       setMessages(recent.reverse());
 
-      // Load Groq key from profile + build contextual prompts
+      // Load API keys from profile
       const profile = await db.profile.get('me');
       const key = profile?.groqApiKey ?? '';
       setGroqKey(key);
+      setAnthropicKey(profile?.anthropicApiKey ?? '');
 
       // Build context for suggested prompts
       const ctx: CoachContext = { overshooter: profile?.overshooter };
@@ -402,14 +454,26 @@ export default function CoachPage() {
         groqApiKey: key || undefined,
         updatedAt:  new Date().toISOString(),
       });
-      // Switch to on-device if key removed
-      if (!key && !isModelLoaded()) {
+      if (!key && !anthropicKey && !isModelLoaded()) {
         startModelLoad();
       }
     } catch (err) {
       console.error('[coach] save key failed:', err);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anthropicKey]);
+
+  // ── Save Anthropic key ────────────────────────────────────────────────────
+  const handleAnthropicKeyChange = useCallback(async (key: string) => {
+    setAnthropicKey(key);
+    try {
+      await db.profile.update('me', {
+        anthropicApiKey: key || undefined,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('[coach] save anthropic key failed:', err);
+    }
   }, []);
 
   // ── Clear conversation ────────────────────────────────────────────────────
@@ -455,14 +519,14 @@ export default function CoachPage() {
     setStreamingText('');
     setPendingActions([]);
 
-    const isGroq = Boolean(groqKey);
+    const isCloudMode = Boolean(anthropicKey) || Boolean(groqKey);
 
     // Build context: system prompt (with memory + summary baked in) + tiered
     // chat window (rolling summary already inside the system prompt, so raw
     // messages only include the portion after the last summarized range).
     const [systemPrompt, chatCtx] = await Promise.all([
-      buildSystemPrompt(userText, isGroq),
-      loadChatContext(isGroq ? 'groq' : 'local'),
+      buildSystemPrompt(userText, isCloudMode),
+      loadChatContext(isCloudMode ? 'groq' : 'local'),
     ]);
     const context: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -475,7 +539,7 @@ export default function CoachPage() {
     // Stream response (increased token limit for richer responses)
     let fullResponse = '';
     try {
-      const gen = sendMessage(context, groqKey || undefined, 1024);
+      const gen = sendMessage(context, groqKey || undefined, 1024, anthropicKey || undefined);
       for await (const token of gen) {
         if (abortRef.current) break;
         fullResponse += token;
@@ -639,6 +703,11 @@ export default function CoachPage() {
               await handleGroqKeyChange(key);
               if (key) setSettingsOpen(false);
             }}
+            anthropicKey={anthropicKey}
+            onAnthropicKeyChange={async (key) => {
+              await handleAnthropicKeyChange(key);
+              if (key) setSettingsOpen(false);
+            }}
             modelStatus={modelStatus}
             loadProgress={loadProgress}
             onClearChat={handleClearChat}
@@ -705,6 +774,8 @@ export default function CoachPage() {
           <SettingsSheet
             groqKey={groqKey}
             onGroqKeyChange={handleGroqKeyChange}
+            anthropicKey={anthropicKey}
+            onAnthropicKeyChange={handleAnthropicKeyChange}
             modelStatus={modelStatus}
             loadProgress={loadProgress}
             onClearChat={handleClearChat}
@@ -763,6 +834,8 @@ export default function CoachPage() {
           <SettingsSheet
             groqKey={groqKey}
             onGroqKeyChange={handleGroqKeyChange}
+            anthropicKey={anthropicKey}
+            onAnthropicKeyChange={handleAnthropicKeyChange}
             modelStatus={modelStatus}
             loadProgress={loadProgress}
             onClearChat={handleClearChat}
