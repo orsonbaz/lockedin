@@ -601,56 +601,70 @@ export default function SessionPage({
   }
 
   /**
-   * Check recent competition-lift sets and suggest a max update if the
-   * athlete's estimated 1RM has drifted >3% above their stored max.
+   * Check each competition lift performed today and suggest a max update if
+   * the estimated 1RM has drifted >3% above the stored max.
+   *
+   * Filters sets by libraryExerciseId so that deadlift sets never inflate
+   * the squat max suggestion (critical for SBD sessions).
    */
   async function detectAndSuggestMaxUpdate() {
     if (!session) return;
     const profile = await db.profile.get('me');
     if (!profile) return;
 
-    const liftField = session.primaryLift as 'SQUAT' | 'BENCH' | 'DEADLIFT';
-    if (!['SQUAT', 'BENCH', 'DEADLIFT'].includes(liftField)) return;
+    // libraryExerciseId → lift mapping (comp movements only)
+    const COMP_LIFT_MAP: Array<{
+      lift: 'SQUAT' | 'BENCH' | 'DEADLIFT';
+      libraryId: string;
+      maxKey: 'maxSquat' | 'maxBench' | 'maxDeadlift';
+    }> = [
+      { lift: 'SQUAT',    libraryId: 'competition_squat',        maxKey: 'maxSquat'    },
+      { lift: 'BENCH',    libraryId: 'competition_bench_press',   maxKey: 'maxBench'    },
+      { lift: 'DEADLIFT', libraryId: 'competition_deadlift',      maxKey: 'maxDeadlift' },
+    ];
 
-    const maxKey = `max${liftField.charAt(0) + liftField.slice(1).toLowerCase()}` as
-      'maxSquat' | 'maxBench' | 'maxDeadlift';
-    const currentMax = profile[maxKey];
-    if (!currentMax || currentMax <= 0) return;
+    // Determine which comp lifts were actually performed in THIS session.
+    const todayExercises = await db.exercises
+      .where('sessionId').equals(session.id)
+      .filter((e) => e.exerciseType === 'COMPETITION')
+      .toArray();
+    const todayLibIds = new Set(todayExercises.map((e) => e.libraryExerciseId).filter(Boolean));
 
-    // Gather recent sets for competition exercises across last 2 weeks
+    // Recent session IDs (last 2 weeks within this cycle) for set queries.
     const twoWeeksAgo = new Date();
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
     const cutoff = twoWeeksAgo.toISOString();
+    const recentSessionIds = (
+      await db.sessions.where('cycleId').equals(session.cycleId).toArray()
+    ).map((s) => s.id);
 
-    const recentCompExercises = await db.exercises
-      .where('sessionId')
-      .anyOf(
-        (await db.sessions
-          .where('cycleId')
-          .equals(session.cycleId)
-          .toArray()
-        ).map((s) => s.id),
-      )
-      .filter((e) => e.exerciseType === 'COMPETITION')
-      .toArray();
+    // Check each lift that was performed today, in S→B→D order.
+    for (const { lift, libraryId, maxKey } of COMP_LIFT_MAP) {
+      if (!todayLibIds.has(libraryId)) continue;
 
-    const recentSets: Array<{ loadKg: number; reps: number; rpeLogged?: number }> = [];
-    for (const ex of recentCompExercises) {
-      const sets = await db.sets
-        .where('exerciseId')
-        .equals(ex.id)
-        .filter((s) => s.loggedAt >= cutoff)
+      const currentMax = profile[maxKey];
+      if (!currentMax || currentMax <= 0) continue;
+
+      // Gather recent sets for THIS lift only — filtered by libraryExerciseId.
+      const liftExercises = await db.exercises
+        .where('sessionId').anyOf(recentSessionIds)
+        .filter((e) => e.exerciseType === 'COMPETITION' && e.libraryExerciseId === libraryId)
         .toArray();
-      recentSets.push(...sets.map((s) => ({
-        loadKg: s.loadKg,
-        reps: s.reps,
-        rpeLogged: s.rpeLogged,
-      })));
-    }
 
-    const suggestion = detectMaxUpdate(liftField, currentMax, recentSets);
-    if (suggestion) {
-      setMaxSuggestion(suggestion);
+      const recentSets: Array<{ loadKg: number; reps: number; rpeLogged?: number }> = [];
+      for (const ex of liftExercises) {
+        const sets = await db.sets
+          .where('exerciseId').equals(ex.id)
+          .filter((s) => s.loggedAt >= cutoff)
+          .toArray();
+        recentSets.push(...sets.map((s) => ({ loadKg: s.loadKg, reps: s.reps, rpeLogged: s.rpeLogged })));
+      }
+
+      const suggestion = detectMaxUpdate(lift, currentMax, recentSets);
+      if (suggestion) {
+        setMaxSuggestion(suggestion);
+        return; // show one at a time; user can dismiss to proceed
+      }
     }
   }
 

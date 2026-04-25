@@ -158,8 +158,7 @@ const MODALITY_OPTIONS: {
   minutes?: number;
   equipment?: string[];
 }[] = [
-  { key: 'FULL',         label: 'Full gym',      sub: 'Barbell + accessories as programmed.', emoji: '🏋️' },
-  { key: 'SBD',          label: 'SBD day',       sub: 'Cover squat + bench + deadlift in one session.', emoji: '🏆' },
+  { key: 'FULL',         label: 'Full gym',      sub: 'Squat + bench + deadlift + accessories as programmed.', emoji: '🏋️' },
   { key: 'QUICK',        label: '30-min squeeze',sub: 'Keep comp lifts, drop accessories.',  emoji: '⏱️', minutes: 30 },
   { key: 'CALISTHENICS', label: 'Calisthenics',  sub: 'Bars / rings — weighted pull-ups, dips, skills.', emoji: '🤸', equipment: ['pullup_bar', 'dip_station', 'rings'] },
   { key: 'BODYWEIGHT',   label: 'Bodyweight',    sub: 'No gear at all. Push/pull/squat with what you have.', emoji: '💪', equipment: ['bodyweight'] },
@@ -458,8 +457,7 @@ function CheckInInner() {
             weekWithinBlock,
             overshootHistory,
             recentLiftExposures,
-            sbdToday: modality === 'SBD',
-          });
+                      });
 
           // 4a. Post-generation review — swap primary lift on bench/squat/DL drought.
           const reviewPass1 = reviewSessionPure({
@@ -476,8 +474,7 @@ function CheckInInner() {
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
               forcePrimary: forced,
-              sbdToday: modality === 'SBD',
-            });
+                          });
           }
           const finalReview = reviewSessionPure({
             session: generated, profile, block,

@@ -193,8 +193,6 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   }
 
   const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
-  const readinessRow2 = await db.readiness.where('date').equals(dateStr).first().catch(() => undefined);
-  const sbdToday = readinessRow2?.sessionModality === 'SBD';
 
   let generated = generateSession({
     profile,
@@ -205,7 +203,6 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     weekWithinBlock,
     overshootHistory,
     recentLiftExposures,
-    sbdToday,
   });
 
   // Post-generation sanity review. If the review flags a BLOCK-severity
@@ -233,7 +230,6 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
       overshootHistory,
       recentLiftExposures,
       forcePrimary: forced,
-      sbdToday,
     });
   }
   // Re-run review on the (possibly-regenerated) session to collect any

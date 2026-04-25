@@ -53,9 +53,8 @@ export interface SessionInput {
    */
   recentLiftExposures?: LiftExposure[];
   /**
-   * Explicit athlete request to cover all three comp lifts today. When true
-   * the selector returns the most-due lift as primary (with ~35% volume reduction)
-   * and the other two as working-set secondary blocks, all ordered S→B→D.
+   * @deprecated No longer used — all competition-lift sessions now include
+   * all three lifts by default (Sheiko methodology). Kept for API compatibility.
    */
   sbdToday?: boolean;
   /**
@@ -132,12 +131,11 @@ export function generateSession(input: SessionInput): GeneratedSession {
         blockType:       block.blockType,
         weekInBlock:     input.weekWithinBlock ?? 1,
         totalBlockWeeks: block.weekEnd - block.weekStart + 1,
-        sbdToday:        input.sbdToday === true,
       })
-    : {
-        primary: selectPrimaryLift(sessionNumber, profile.weeklyFrequency),
-        secondary: [] as Lift[],
-      };
+    : (() => {
+        const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+        return { primary, secondary: sbdSecondaries(primary, block.blockType) };
+      })();
   const primaryLift = selection.primary;
   const secondaryLifts = selection.secondary;
 
@@ -213,6 +211,19 @@ export function generateSession(input: SessionInput): GeneratedSession {
   return { sessionType, primaryLift, secondaryLifts: secondaryLifts.length > 0 ? secondaryLifts : undefined, exercises, modifications, coachNote };
 }
 
+// ── SBD Secondary Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Returns the two competition lifts that are NOT the primary, in S→B→D order.
+ * Returns empty array for non-comp primaries (UPPER, LOWER, FULL) or DELOAD/REALIZATION
+ * where secondary volume is skipped or handled separately.
+ */
+function sbdSecondaries(primary: Lift, blockType: BlockType): Lift[] {
+  if (blockType === 'REALIZATION') return [];
+  if (primary !== 'SQUAT' && primary !== 'BENCH' && primary !== 'DEADLIFT') return [];
+  return (['SQUAT', 'BENCH', 'DEADLIFT'] as Lift[]).filter((l) => l !== primary);
+}
+
 // ── Primary Lift Rotation ──────────────────────────────────────────────────────
 
 /**
@@ -270,7 +281,6 @@ interface AdaptiveInput {
   blockType: BlockType;
   weekInBlock: number;
   totalBlockWeeks: number;
-  sbdToday: boolean;
 }
 
 interface AdaptiveOutput {
@@ -280,52 +290,30 @@ interface AdaptiveOutput {
 
 /**
  * Score each of SQUAT / BENCH / DEADLIFT and pick the most "due" lift as
- * primary. Secondary lifts are added when readiness + block permit and
- * exposure gaps warrant covering more than one comp lift today.
+ * primary. All three competition lifts are always trained in the same session
+ * (Sheiko model) — the primary simply receives slightly more volume.
+ * REALIZATION (meet week) is the only exception: single-lift focus preserves
+ * peaking specificity.
  *
- *   need = 0.35·dueness   // how many days since last exposure
- *        + 0.35·gap       // weekly target minus this-week count
- *        + 0.20·readFit   // readiness match (low readiness → bench; high → deadlift/squat)
- *        - 0.10·systemic  // damp heavy lifts when readiness is borderline
- *
- * Peaking / REALIZATION collapses to the fixed S/B/D rotation-driven pick so
- * specificity wins over adaptation in meet prep.
+ *   need = 0.30·dueness   // how many days since last exposure
+ *        + 0.30·gap       // weekly target minus this-week count
+ *        + 0.20·readFit   // readiness match
+ *        + 0.20·goalBoost // athlete goal / bottleneck bias
  */
 function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
-  // Keep peaking deterministic — meet week cares about order, not novelty.
-  if (input.blockType === 'REALIZATION') {
-    const byGap = scoreAdaptiveLifts(input);
-    return { primary: byGap[0].lift, secondary: [] };
-  }
-
   const scored = scoreAdaptiveLifts(input);
   const primary = scored[0].lift;
 
-  // Explicit SBD request: always two secondaries at reduced volume.
-  if (input.sbdToday) {
-    return {
-      primary,
-      secondary: scored.slice(1, 3).map((s) => s.lift),
-    };
+  // REALIZATION: single-lift focus only — meet prep specificity wins.
+  if (input.blockType === 'REALIZATION') {
+    return { primary, secondary: [] };
   }
 
-  // Auto-SBD: on a high-readiness day where two or three lifts are roughly
-  // equally due, cover them in one session rather than leaving fatigue on the
-  // table. Only consider this in ACCUMULATION or INTENSIFICATION.
-  const canStack = (input.blockType === 'ACCUMULATION' || input.blockType === 'INTENSIFICATION')
-    && input.readinessScore >= 80;
-  if (!canStack) return { primary, secondary: [] };
-
-  const secondary: Lift[] = [];
-  for (const s of scored.slice(1)) {
-    if (s.lift === 'UPPER') continue;
-    const gap = scored[0].score - s.score;
-    // Add a second comp block when it's within 20% of the top score.
-    if (gap <= scored[0].score * 0.20 && secondary.length < 2) {
-      secondary.push(s.lift);
-    }
-  }
-  return { primary, secondary };
+  // All other blocks: always include the other two comp lifts as secondaries.
+  return {
+    primary,
+    secondary: scored.slice(1, 3).map((s) => s.lift),
+  };
 }
 
 interface ScoredLift { lift: Lift; score: number; }
