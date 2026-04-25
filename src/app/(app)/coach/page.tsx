@@ -6,7 +6,7 @@
  * Full-screen conversational interface.
  * Supports two modes selected automatically from the athlete's profile:
  *   MODE A — On-device  (Phi-3.5-mini via Transformers.js Worker, offline-first)
- *   MODE B — Groq       (llama-3.3-70b-versatile, needs a free Groq API key)
+ *   MODE B — Gemini     (Gemini 2.0 Flash, free tier, needs a Google AI Studio key)
  *
  * Chat history is persisted to db.chat (IndexedDB).
  * Only the last 10 messages are sent as context to the AI backend.
@@ -111,10 +111,6 @@ function bytesToMb(bytes: number) {
 interface SettingsSheetProps {
   geminiKey:            string;
   onGeminiKeyChange:    (key: string) => void;
-  groqKey:              string;
-  onGroqKeyChange:      (key: string) => void;
-  anthropicKey:         string;
-  onAnthropicKeyChange: (key: string) => void;
   modelStatus:          ModelStatus;
   loadProgress:         ProgressPayload | null;
   onClearChat:          () => void;
@@ -123,23 +119,12 @@ interface SettingsSheetProps {
 function SettingsSheet({
   geminiKey,
   onGeminiKeyChange,
-  groqKey,
-  onGroqKeyChange,
-  anthropicKey,
-  onAnthropicKeyChange,
   modelStatus,
   loadProgress,
   onClearChat,
 }: SettingsSheetProps) {
   const [geminiDraft,   setGeminiDraft]   = useState(geminiKey);
-  const [draft,         setDraft]         = useState(groqKey);
-  const [anthropicDraft, setAnthropicDraft] = useState(anthropicKey);
   const [showKey,       setShowKey]       = useState(false);
-
-  function saveKey() {
-    onGroqKeyChange(draft.trim());
-    toast('API key saved.', { duration: 2000 });
-  }
 
   const pct = loadProgress?.progress ?? (
     loadProgress?.loaded && loadProgress?.total
@@ -163,17 +148,7 @@ function SettingsSheet({
         {geminiKey ? (
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Gemini 2.0 Flash — Online (Free)</span>
-          </div>
-        ) : groqKey ? (
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Groq — Online (Free)</span>
-          </div>
-        ) : anthropicKey ? (
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Claude API — Online</span>
+            <span className="font-semibold" style={{ color: C.green }}>Gemini 2.0 Flash — Online</span>
           </div>
         ) : (
           <div className="flex items-center gap-2">
@@ -221,96 +196,8 @@ function SettingsSheet({
         )}
       </div>
 
-      {/* Groq key input — free fallback */}
-      <div className="mb-6">
-        <label htmlFor="coach-groq-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
-          Groq API Key <span style={{ color: C.green }}>(Free — Recommended)</span>
-        </label>
-        <p className="text-xs mb-3" style={{ color: C.muted }}>
-          Free tier, no credit card needed. Get a key at{' '}
-          <span style={{ color: C.gold }}>console.groq.com</span> — takes 30 seconds.
-        </p>
-        <div className="flex gap-2 mb-2">
-          <input
-            id="coach-groq-key"
-            type={showKey ? 'text' : 'password'}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="gsk_xxxxxxxxxxxxxxxx"
-            className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ backgroundColor: C.dim, borderColor: C.border, color: C.text }}
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey((v) => !v)}
-            className="px-3 py-2 rounded-lg text-xs"
-            style={{ backgroundColor: C.dim, color: C.muted }}
-          >
-            {showKey ? 'Hide' : 'Show'}
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={saveKey}
-          className="w-full py-2 rounded-lg text-sm font-semibold"
-          style={{ backgroundColor: C.accent, color: C.text }}
-        >
-          Save key
-        </button>
-        {groqKey && (
-          <button
-            type="button"
-            onClick={() => { setDraft(''); onGroqKeyChange(''); }}
-            className="w-full mt-2 py-2 rounded-lg text-sm"
-            style={{ color: C.muted }}
-          >
-            Remove key (switch to on-device)
-          </button>
-        )}
-      </div>
-
-      {/* Anthropic key input — optional, pay-per-token */}
-      <div className="mb-6">
-        <label htmlFor="coach-anthropic-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
-          Anthropic API Key <span style={{ color: C.muted }}>(optional, pay-per-token)</span>
-        </label>
-        <p className="text-xs mb-3" style={{ color: C.muted }}>
-          Uses Claude Haiku for higher-quality responses. Requires separate API credits at{' '}
-          <span style={{ color: C.gold }}>console.anthropic.com</span> — not included in Claude Max.
-        </p>
-        <div className="flex gap-2 mb-2">
-          <input
-            id="coach-anthropic-key"
-            type={showKey ? 'text' : 'password'}
-            value={anthropicDraft}
-            onChange={(e) => setAnthropicDraft(e.target.value)}
-            placeholder="sk-ant-xxxxxxxxxxxxxxxx"
-            className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ backgroundColor: C.dim, borderColor: C.border, color: C.text }}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => { onAnthropicKeyChange(anthropicDraft.trim()); toast('Claude key saved.', { duration: 2000 }); }}
-          className="w-full py-2 rounded-lg text-sm font-semibold"
-          style={{ backgroundColor: C.surface, color: C.text }}
-        >
-          Save Claude key
-        </button>
-        {anthropicKey && (
-          <button
-            type="button"
-            onClick={() => { setAnthropicDraft(''); onAnthropicKeyChange(''); }}
-            className="w-full mt-2 py-2 rounded-lg text-sm"
-            style={{ color: C.muted }}
-          >
-            Remove Claude key
-          </button>
-        )}
-      </div>
-
       {/* On-device model status */}
-      {!geminiKey && !groqKey && !anthropicKey && (
+      {!geminiKey && (
         <div className="mb-6 rounded-xl p-4" style={{ backgroundColor: C.surface }}>
           <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.muted }}>
             On-device model — Phi-3.5-mini (~2.2 GB)
@@ -397,8 +284,6 @@ export default function CoachPage() {
   // ── Data state ────────────────────────────────────────────────────────────
   const [messages,       setMessages]       = useState<DBChatMessage[]>([]);
   const [geminiKey,      setGeminiKey]      = useState<string>('');
-  const [groqKey,        setGroqKey]        = useState<string>('');
-  const [anthropicKey,   setAnthropicKey]   = useState<string>('');
   const [modelStatus,    setModelStatus]    = useState<ModelStatus>('idle');
   const [loadProgress,   setLoadProgress]   = useState<ProgressPayload | null>(null);
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(DEFAULT_PROMPTS);
@@ -430,8 +315,6 @@ export default function CoachPage() {
       // Load API keys from profile
       const profile = await db.profile.get('me');
       setGeminiKey(profile?.geminiApiKey ?? '');
-      setGroqKey(profile?.groqApiKey ?? '');
-      setAnthropicKey(profile?.anthropicApiKey ?? '');
 
       // Build context for suggested prompts
       const ctx: CoachContext = { overshooter: profile?.overshooter };
@@ -496,23 +379,6 @@ export default function CoachPage() {
       });
   }
 
-  // ── Save Groq key ─────────────────────────────────────────────────────────
-  const handleGroqKeyChange = useCallback(async (key: string) => {
-    setGroqKey(key);
-    try {
-      await db.profile.update('me', {
-        groqApiKey: key || undefined,
-        updatedAt:  new Date().toISOString(),
-      });
-      if (!key && !anthropicKey && !isModelLoaded()) {
-        startModelLoad();
-      }
-    } catch (err) {
-      console.error('[coach] save key failed:', err);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anthropicKey]);
-
   // ── Save Gemini key ───────────────────────────────────────────────────────
   const handleGeminiKeyChange = useCallback(async (key: string) => {
     setGeminiKey(key);
@@ -521,22 +387,13 @@ export default function CoachPage() {
         geminiApiKey: key || undefined,
         updatedAt: new Date().toISOString(),
       });
+      if (!key && !isModelLoaded()) {
+        startModelLoad();
+      }
     } catch (err) {
       console.error('[coach] save gemini key failed:', err);
     }
-  }, []);
-
-  // ── Save Anthropic key ────────────────────────────────────────────────────
-  const handleAnthropicKeyChange = useCallback(async (key: string) => {
-    setAnthropicKey(key);
-    try {
-      await db.profile.update('me', {
-        anthropicApiKey: key || undefined,
-        updatedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error('[coach] save anthropic key failed:', err);
-    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Clear conversation ────────────────────────────────────────────────────
@@ -582,7 +439,7 @@ export default function CoachPage() {
     setStreamingText('');
     setPendingActions([]);
 
-    const isCloudMode = Boolean(geminiKey) || Boolean(groqKey) || Boolean(anthropicKey);
+    const isCloudMode = Boolean(geminiKey);
 
     // Build context: system prompt (with memory + summary baked in) + tiered
     // chat window (rolling summary already inside the system prompt, so raw
@@ -602,7 +459,7 @@ export default function CoachPage() {
     // Stream response (increased token limit for richer responses)
     let fullResponse = '';
     try {
-      const gen = sendMessage(context, groqKey || undefined, 1024, anthropicKey || undefined, geminiKey || undefined);
+      const gen = sendMessage(context, geminiKey || undefined, 1024);
       for await (const token of gen) {
         if (abortRef.current) break;
         fullResponse += token;
@@ -610,14 +467,9 @@ export default function CoachPage() {
       }
     } catch (err) {
       const msg  = err instanceof Error ? err.message : String(err);
-      const code = (err as { code?: string })?.code;
       console.error('[coach] generation error:', msg);
-      if (code === 'GROQ_STREAM_IDLE') {
-        fullResponse = fullResponse
-          ? fullResponse + '\n\n_(connection stalled — reply cut short, try again)_'
-          : 'The Groq stream stalled with nothing to say. Hit send again — free-tier connections drop sometimes.';
-      } else if (/api key|unauthoriz|401/i.test(msg)) {
-        fullResponse = 'Groq rejected the API key. Update it in Settings → AI Coach.';
+      if (/api key|unauthoriz|401/i.test(msg)) {
+        fullResponse = 'Gemini rejected the API key. Update it in Settings → AI Coach.';
       } else if (!fullResponse) {
         fullResponse = 'Something went wrong. Check your connection or API key.';
       }
@@ -649,8 +501,8 @@ export default function CoachPage() {
 
     // Rolling summarization runs in the background; it's an optimization, not
     // a correctness requirement. Swallow errors — the next turn will retry.
-    void summarizeIfNeeded(groqKey || undefined).catch(() => undefined);
-  }, [input, isGenerating, groqKey]);
+    void summarizeIfNeeded(undefined).catch(() => undefined);
+  }, [input, isGenerating, geminiKey]);
 
   // ── Execute a confirmed action ─────────────────────────────────────────────
   const handleExecuteAction = useCallback(async (action: CoachAction) => {
@@ -701,10 +553,10 @@ export default function CoachPage() {
   }
 
   // ── Determine active mode ─────────────────────────────────────────────────
-  const isGroqMode = Boolean(groqKey);
+  const isCloudMode = Boolean(geminiKey);
 
   // ── Setup choice screen (no key, model not started yet) ──────────────────
-  if (!isGroqMode && modelStatus === 'idle') {
+  if (!isCloudMode && modelStatus === 'idle') {
     return (
       <div
         className="min-h-screen flex flex-col items-center justify-center p-6"
@@ -726,7 +578,7 @@ export default function CoachPage() {
             Choose how you want to power the coach.
           </p>
 
-          {/* Option A — Groq (recommended) */}
+          {/* Option A — Gemini (recommended) */}
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
@@ -734,10 +586,10 @@ export default function CoachPage() {
             style={{ backgroundColor: C.bg, borderColor: C.accent }}
           >
             <p className="font-bold mb-0.5" style={{ color: C.accent }}>
-              ⚡ Groq — Recommended
+              ⚡ Gemini 2.0 Flash — Recommended
             </p>
             <p className="text-sm" style={{ color: C.muted }}>
-              Free API key at <span style={{ color: C.gold }}>console.groq.com</span>.
+              Free API key at <span style={{ color: C.gold }}>aistudio.google.com</span>.
               Fast, no download needed.
             </p>
           </button>
@@ -758,15 +610,11 @@ export default function CoachPage() {
           </button>
         </div>
 
-        {/* Settings sheet for entering Groq key */}
+        {/* Settings sheet for entering Gemini key */}
         <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
           <SettingsSheet
             geminiKey={geminiKey}
             onGeminiKeyChange={async (key) => { await handleGeminiKeyChange(key); if (key) setSettingsOpen(false); }}
-            groqKey={groqKey}
-            onGroqKeyChange={async (key) => { await handleGroqKeyChange(key); if (key) setSettingsOpen(false); }}
-            anthropicKey={anthropicKey}
-            onAnthropicKeyChange={async (key) => { await handleAnthropicKeyChange(key); if (key) setSettingsOpen(false); }}
             modelStatus={modelStatus}
             loadProgress={loadProgress}
             onClearChat={handleClearChat}
@@ -777,7 +625,7 @@ export default function CoachPage() {
   }
 
   // ── Model download progress screen ────────────────────────────────────────
-  if (!isGroqMode && modelStatus === 'loading') {
+  if (!isCloudMode && modelStatus === 'loading') {
     const pct = loadProgress?.progress ?? (
       loadProgress?.loaded && loadProgress?.total
         ? Math.round((loadProgress.loaded / loadProgress.total) * 100)
@@ -825,7 +673,7 @@ export default function CoachPage() {
             className="mt-6 text-xs underline"
             style={{ color: C.gold }}
           >
-            Add a free Groq key for instant access instead →
+            Add a free Gemini key for instant access instead →
           </button>
         </div>
 
@@ -833,10 +681,6 @@ export default function CoachPage() {
           <SettingsSheet
             geminiKey={geminiKey}
             onGeminiKeyChange={handleGeminiKeyChange}
-            groqKey={groqKey}
-            onGroqKeyChange={handleGroqKeyChange}
-            anthropicKey={anthropicKey}
-            onAnthropicKeyChange={handleAnthropicKeyChange}
             modelStatus={modelStatus}
             loadProgress={loadProgress}
             onClearChat={handleClearChat}
@@ -860,12 +704,12 @@ export default function CoachPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold">AI Coach</h1>
           {/* Mode badge */}
-          {isGroqMode ? (
+          {isCloudMode ? (
             <span
               className="text-xs font-semibold px-2 py-0.5 rounded-full"
               style={{ backgroundColor: `${C.green}20`, color: C.green }}
             >
-              Groq
+              Gemini 2.0 Flash
             </span>
           ) : (
             <span
@@ -895,10 +739,6 @@ export default function CoachPage() {
           <SettingsSheet
             geminiKey={geminiKey}
             onGeminiKeyChange={handleGeminiKeyChange}
-            groqKey={groqKey}
-            onGroqKeyChange={handleGroqKeyChange}
-            anthropicKey={anthropicKey}
-            onAnthropicKeyChange={handleAnthropicKeyChange}
             modelStatus={modelStatus}
             loadProgress={loadProgress}
             onClearChat={handleClearChat}

@@ -1,19 +1,12 @@
 /**
  * AI Coach — routing layer for Lockedin.
  *
- * Three modes:
- *   MODE A  On-device      Phi-3.5-mini via Transformers.js Web Worker (offline-first)
- *   MODE B  Anthropic      claude-haiku-4-5 (cost-efficient; preferred when key is set)
- *   MODE C  Groq online    llama-3.3-70b-versatile (fallback when Groq key set)
- *
- * Routing: if profile.anthropicApiKey is set, use Claude; else if profile.groqApiKey is set, use Groq; otherwise use the Worker.
+ * Two modes: Gemini (online, free tier) or on-device Phi-3.5-mini (offline).
  *
  * All exports are pure functions / async generators — no React hooks.
  * This module is imported only by client components ('use client').
  */
 
-import Groq                 from 'groq-sdk';
-import Anthropic            from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
@@ -41,7 +34,7 @@ export interface ProgressPayload {
 
 export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
 
-// Per-section character caps. Total ceiling ~12k chars (~3k tokens) for Groq,
+// Per-section character caps. Total ceiling ~12k chars for Gemini,
 // ~3k chars for Phi on-device. The `knowledge` cap is dynamic.
 const SECTION_CAPS = {
   role:       600,
@@ -118,8 +111,6 @@ export async function buildSystemPrompt(
   userMessage?: string,
   isCloudMode = false,
 ): Promise<string> {
-  // keep legacy parameter name working internally
-  const isGroqMode = isCloudMode;
   // ── Read profile ─────────────────────────────────────────────────────────
   const profile = await db.profile.get('me');
   const name        = profile?.name       ?? 'Athlete';
@@ -317,8 +308,8 @@ export async function buildSystemPrompt(
 
   // ── Knowledge base (topic-aware) ──────────────────────────────────────────
   let knowledge: string;
-  if (isGroqMode) {
-    // Groq has larger context — inject topic-relevant knowledge or full base
+  if (isCloudMode) {
+    // Gemini has larger context — inject topic-relevant knowledge or full base
     if (userMessage) {
       knowledge = getTopicKnowledge(userMessage);
     } else {
@@ -327,7 +318,7 @@ export async function buildSystemPrompt(
   } else {
     knowledge = getCompactKnowledge();
   }
-  const knowledgeCap = isGroqMode ? 6000 : 2000;
+  const knowledgeCap = isCloudMode ? 6000 : 2000;
 
   // ── Long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
   const [memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
@@ -536,73 +527,6 @@ async function* streamFromWorker(
 
 // ── Main public API ───────────────────────────────────────────────────────────
 
-/** Max ms between streamed tokens before we consider the stream stalled. */
-const GROQ_IDLE_TIMEOUT_MS  = 20_000;
-/** Max ms to wait for the first token after the request is sent. */
-const GROQ_FIRST_TOKEN_MS   = 30_000;
-/** How many times to retry the whole Groq call on a stall / network error. */
-const GROQ_MAX_RETRIES      = 1;
-
-/**
- * Wrap a Groq SDK streaming call so that any stall longer than
- * `idleMs` (or the first-token wait longer than `firstMs`) throws a named
- * error the caller can surface or fall back from.
- */
-async function* groqStreamWithWatchdog(
-  groqApiKey: string,
-  messages:   ChatMessage[],
-  maxTokens:  number,
-): AsyncGenerator<string> {
-  const client = new Groq({ apiKey: groqApiKey, dangerouslyAllowBrowser: true });
-
-  const controller = new AbortController();
-  const stream = await client.chat.completions.create(
-    {
-      model:      'llama-3.3-70b-versatile',
-      messages:   messages as Groq.Chat.ChatCompletionMessageParam[],
-      max_tokens: maxTokens,
-      stream:     true,
-    },
-    { signal: controller.signal },
-  );
-
-  const iterator = (stream as unknown as AsyncIterable<Groq.Chat.Completions.ChatCompletionChunk>)
-    [Symbol.asyncIterator]();
-
-  let gotFirstToken = false;
-
-  while (true) {
-    const timeoutMs = gotFirstToken ? GROQ_IDLE_TIMEOUT_MS : GROQ_FIRST_TOKEN_MS;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        controller.abort();
-        const err = new Error(
-          gotFirstToken
-            ? `Groq stream idle for ${timeoutMs / 1000}s — aborting.`
-            : `Groq stream produced no tokens in ${timeoutMs / 1000}s — aborting.`,
-        );
-        (err as Error & { code?: string }).code = 'GROQ_STREAM_IDLE';
-        reject(err);
-      }, timeoutMs);
-    });
-
-    let next: IteratorResult<Groq.Chat.Completions.ChatCompletionChunk>;
-    try {
-      next = await Promise.race([iterator.next(), timeoutPromise]);
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-    }
-
-    if (next.done) return;
-    const content = next.value.choices[0]?.delta?.content;
-    if (content) {
-      gotFirstToken = true;
-      yield content;
-    }
-  }
-}
-
 /**
  * Stream a response from Google Gemini 2.0 Flash.
  * Free tier; significantly smarter than on-device Phi.
@@ -642,115 +566,29 @@ async function* geminiStream(
 }
 
 /**
- * Stream a response from the Anthropic Claude API.
- * Splits the messages array: the first 'system' role message becomes the
- * system prompt; the rest are user/assistant turns.
- */
-async function* anthropicStream(
-  anthropicApiKey: string,
-  messages: ChatMessage[],
-  maxTokens: number,
-): AsyncGenerator<string> {
-  const anthropic = new Anthropic({ apiKey: anthropicApiKey, dangerouslyAllowBrowser: true });
-
-  // Extract system prompt (first message with role 'system')
-  const systemMsg = messages.find((m) => m.role === 'system');
-  const systemPrompt = systemMsg?.content ?? '';
-  const apiMessages = messages
-    .filter((m) => m.role !== 'system')
-    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-
-  const stream = anthropic.messages.stream({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: apiMessages,
-  });
-
-  for await (const chunk of stream) {
-    if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-      yield chunk.delta.text;
-    }
-  }
-}
-
-/**
  * Route a chat turn to the correct AI backend.
  * Yields string tokens as they stream from the model.
  *
- * Priority: Gemini → Groq → Claude API → on-device Worker.
- * When Groq is configured we auto-retry once on a stalled/idle stream and
- * fall back to the on-device worker if all Groq attempts fail.
+ * If geminiApiKey is set → Gemini 2.0 Flash; otherwise → on-device Worker.
  *
- * @param messages        Conversation history including system prompt as first message.
- * @param groqApiKey      Groq API key (fallback if no Gemini key).
- * @param maxTokens       Max tokens to generate (default 512).
- * @param anthropicApiKey Anthropic API key (fallback if no Gemini or Groq key).
- * @param geminiApiKey    Google Gemini API key (highest priority when set).
+ * @param messages     Conversation history including system prompt as first message.
+ * @param geminiApiKey Google Gemini API key (online, free tier).
+ * @param maxTokens    Max tokens to generate (default 512).
  */
 export async function* sendMessage(
-  messages:         ChatMessage[],
-  groqApiKey?:      string,
-  maxTokens         = 512,
-  anthropicApiKey?: string,
-  geminiApiKey?:    string,
+  messages:      ChatMessage[],
+  geminiApiKey?: string,
+  maxTokens      = 512,
 ): AsyncGenerator<string> {
-  const trimmedGeminiKey    = geminiApiKey?.trim();
-  const trimmedAnthropicKey = anthropicApiKey?.trim();
-  const trimmedGroqKey      = groqApiKey?.trim();
+  const trimmedGeminiKey = geminiApiKey?.trim();
 
   if (trimmedGeminiKey) {
-    // ── MODE A: Google Gemini 2.0 Flash (free tier, recommended) ─────
+    // ── Gemini 2.0 Flash (online, free tier) ─────────────────────────
     yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
     return;
   }
 
-  if (trimmedAnthropicKey) {
-    // ── MODE B: Anthropic Claude ──────────────────────────────────────
-    yield* anthropicStream(trimmedAnthropicKey, messages, maxTokens);
-    return;
-  }
-
-  if (trimmedGroqKey) {
-    // ── MODE C: Groq ─────────────────────────────────────────────────
-    // Retry the whole call up to GROQ_MAX_RETRIES times on a stall. We only
-    // retry when the stream produced zero tokens so we don't double-emit
-    // partial responses to the UI.
-    for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
-      let emitted = 0;
-      try {
-        for await (const token of groqStreamWithWatchdog(trimmedGroqKey, messages, maxTokens)) {
-          emitted++;
-          yield token;
-        }
-        return;
-      } catch (err) {
-        const code = (err as { code?: string })?.code;
-        const isStall = code === 'GROQ_STREAM_IDLE';
-        console.warn(
-          `[coach] Groq attempt ${attempt + 1} failed (emitted=${emitted}, stall=${isStall}):`,
-          err,
-        );
-        // If we already streamed tokens, don't retry — the user sees them.
-        if (emitted > 0) throw err;
-        // Only retry stalls / transient network errors; bail on auth etc.
-        if (!isStall && attempt >= GROQ_MAX_RETRIES) throw err;
-        if (attempt >= GROQ_MAX_RETRIES) {
-          // Final attempt exhausted — try on-device worker as a last resort.
-          if (hasWorker()) {
-            console.warn('[coach] falling back to on-device model after Groq stalls.');
-            yield* streamFromWorker(messages, maxTokens);
-            return;
-          }
-          throw err;
-        }
-        // Otherwise loop and retry.
-      }
-    }
-    return;
-  }
-
-  // ── MODE A: On-device Worker ────────────────────────────────────────
+  // ── On-device Worker (offline) ────────────────────────────────────
   yield* streamFromWorker(messages, maxTokens);
 }
 

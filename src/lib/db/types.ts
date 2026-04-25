@@ -104,9 +104,9 @@ export interface AthleteProfile {
   peakDayOfWeek: number;         // 0=Sun … 6=Sat
   unitSystem: 'KG' | 'LBS';
   // Settings
-  geminiApiKey?: string;         // optional Google Gemini key (highest priority, free tier)
-  groqApiKey?: string;           // optional Groq key (fallback)
-  anthropicApiKey?: string;      // optional Anthropic key for Claude (pay-per-token)
+  geminiApiKey?: string;         // optional Google Gemini key (free tier)
+  groqApiKey?: string;           // legacy — not used in UI
+  anthropicApiKey?: string;      // legacy — not used in UI
   onboardingComplete: boolean;
   createdAt: string;             // ISO date string
   updatedAt: string;
