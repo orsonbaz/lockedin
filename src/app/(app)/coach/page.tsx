@@ -158,12 +158,12 @@ function SettingsSheet({
         {anthropicKey ? (
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Claude — Recommended</span>
+            <span className="font-semibold" style={{ color: C.green }}>Claude API — Online</span>
           </div>
         ) : groqKey ? (
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.gold }} />
-            <span className="font-semibold" style={{ color: C.gold }}>Groq — Online</span>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
+            <span className="font-semibold" style={{ color: C.green }}>Groq — Online (Free)</span>
           </div>
         ) : (
           <div className="flex items-center gap-2">
@@ -173,53 +173,14 @@ function SettingsSheet({
         )}
       </div>
 
-      {/* Anthropic key input — priority backend */}
-      <div className="mb-6">
-        <label htmlFor="coach-anthropic-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
-          Anthropic API Key <span style={{ color: C.green }}>(Recommended)</span>
-        </label>
-        <p className="text-xs mb-3" style={{ color: C.muted }}>
-          Uses Claude Haiku — best instruction-following and programming knowledge. Get a key at{' '}
-          <span style={{ color: C.gold }}>console.anthropic.com</span>.
-        </p>
-        <div className="flex gap-2 mb-2">
-          <input
-            id="coach-anthropic-key"
-            type={showKey ? 'text' : 'password'}
-            value={anthropicDraft}
-            onChange={(e) => setAnthropicDraft(e.target.value)}
-            placeholder="sk-ant-xxxxxxxxxxxxxxxx"
-            className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
-            style={{ backgroundColor: C.dim, borderColor: C.border, color: C.text }}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => { onAnthropicKeyChange(anthropicDraft.trim()); toast('Claude key saved.', { duration: 2000 }); }}
-          className="w-full py-2 rounded-lg text-sm font-semibold"
-          style={{ backgroundColor: C.accent, color: C.text }}
-        >
-          Save Claude key
-        </button>
-        {anthropicKey && (
-          <button
-            type="button"
-            onClick={() => { setAnthropicDraft(''); onAnthropicKeyChange(''); }}
-            className="w-full mt-2 py-2 rounded-lg text-sm"
-            style={{ color: C.muted }}
-          >
-            Remove Claude key
-          </button>
-        )}
-      </div>
-
-      {/* Groq key input */}
+      {/* Groq key input — recommended free option */}
       <div className="mb-6">
         <label htmlFor="coach-groq-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
-          Groq API Key <span style={{ color: C.muted }}>(fallback)</span>
+          Groq API Key <span style={{ color: C.green }}>(Free — Recommended)</span>
         </label>
         <p className="text-xs mb-3" style={{ color: C.muted }}>
-          Free tier at <span style={{ color: C.gold }}>console.groq.com</span>. Used if no Claude key is set.
+          Free tier, no credit card needed. Get a key at{' '}
+          <span style={{ color: C.gold }}>console.groq.com</span> — takes 30 seconds.
         </p>
         <div className="flex gap-2 mb-2">
           <input
@@ -260,8 +221,48 @@ function SettingsSheet({
         )}
       </div>
 
+      {/* Anthropic key input — optional, pay-per-token */}
+      <div className="mb-6">
+        <label htmlFor="coach-anthropic-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
+          Anthropic API Key <span style={{ color: C.muted }}>(optional, pay-per-token)</span>
+        </label>
+        <p className="text-xs mb-3" style={{ color: C.muted }}>
+          Uses Claude Haiku for higher-quality responses. Requires separate API credits at{' '}
+          <span style={{ color: C.gold }}>console.anthropic.com</span> — not included in Claude Max.
+        </p>
+        <div className="flex gap-2 mb-2">
+          <input
+            id="coach-anthropic-key"
+            type={showKey ? 'text' : 'password'}
+            value={anthropicDraft}
+            onChange={(e) => setAnthropicDraft(e.target.value)}
+            placeholder="sk-ant-xxxxxxxxxxxxxxxx"
+            className="flex-1 rounded-lg border px-3 py-2 text-sm outline-none"
+            style={{ backgroundColor: C.dim, borderColor: C.border, color: C.text }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => { onAnthropicKeyChange(anthropicDraft.trim()); toast('Claude key saved.', { duration: 2000 }); }}
+          className="w-full py-2 rounded-lg text-sm font-semibold"
+          style={{ backgroundColor: C.surface, color: C.text }}
+        >
+          Save Claude key
+        </button>
+        {anthropicKey && (
+          <button
+            type="button"
+            onClick={() => { setAnthropicDraft(''); onAnthropicKeyChange(''); }}
+            className="w-full mt-2 py-2 rounded-lg text-sm"
+            style={{ color: C.muted }}
+          >
+            Remove Claude key
+          </button>
+        )}
+      </div>
+
       {/* On-device model status */}
-      {!groqKey && (
+      {!groqKey && !anthropicKey && (
         <div className="mb-6 rounded-xl p-4" style={{ backgroundColor: C.surface }}>
           <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.muted }}>
             On-device model — Phi-3.5-mini (~2.2 GB)
