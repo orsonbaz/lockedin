@@ -448,12 +448,17 @@ export default function CoachPage() {
       buildSystemPrompt(userText, isCloudMode),
       loadChatContext(isCloudMode ? 'groq' : 'local'),
     ]);
+    // Always place the current user message last so the model sees it,
+    // even when the fire-and-forget db.chat.add races ahead of loadChatContext.
     const context: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...chatCtx.messages.map((m) => ({
-        role:    m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+      ...chatCtx.messages
+        .filter((m) => m.id !== userMsg.id)   // deduplicate if DB write won the race
+        .map((m) => ({
+          role:    m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      { role: 'user', content: userText },     // guaranteed last
     ];
 
     // Stream response (increased token limit for richer responses)
