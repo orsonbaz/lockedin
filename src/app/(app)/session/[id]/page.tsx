@@ -13,6 +13,7 @@
  */
 
 import { use, useState, useEffect, useCallback, useRef } from 'react';
+import { useLiveQuery }                                  from 'dexie-react-hooks';
 import { useRouter }                                      from 'next/navigation';
 import { toast }                                          from 'sonner';
 import { db, today, newId, advanceCycleWeek }              from '@/lib/db/database';
@@ -247,6 +248,15 @@ export default function SessionPage({
   const [editLoad,         setEditLoad]         = useState(0);
   const [editReps,         setEditReps]         = useState(0);
   const [editRpe,          setEditRpe]          = useState(0);
+
+  // ── Live exercises query — stays in sync when coach actions write to DB ──
+  const liveExercises = useLiveQuery(
+    () => db.exercises.where('sessionId').equals(sessionId).sortBy('order'),
+    [sessionId],
+  );
+  useEffect(() => {
+    if (liveExercises !== undefined) setExercises(liveExercises);
+  }, [liveExercises]);
 
   // ── Load data ──────────────────────────────────────────────────────────
   useEffect(() => {

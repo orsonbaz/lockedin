@@ -169,9 +169,12 @@ export function generateSession(input: SessionInput): GeneratedSession {
   // ── 4. Build exercises ─────────────────────────────────────────────────────
   const weekInBlock  = input.weekWithinBlock ?? 1;
   const isDupRepeat  = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
+  // SBD-style day already fills the session with 3 comp blocks — skip
+  // accessories so the session doesn't balloon past ~60 min.
+  const skipAccessories = secondaryLifts.length > 0;
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock, isDupRepeat,
-    sessionNumber,
+    sessionNumber, skipAccessories,
   );
 
   // Secondary comp blocks: low-volume top singles per additional lift. Ordering
@@ -437,6 +440,7 @@ function buildSessionExercises(
   weekWithinBlock = 1,
   isDupRepeat = false,
   sessionNumber = 1,
+  skipAccessories = false,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
@@ -449,36 +453,38 @@ function buildSessionExercises(
   );
   exercises.push(...primaryExercises);
 
-  // Accessories — library-driven selection. selectAccessories() reads exercise
-  // metadata (primaryLiftTarget, movementPattern, specificity, FatigueProfile,
-  // swapGroups) to pick the best candidates for this session's primary lift
-  // within the pattern diversity and spinal-load constraints. Adding a new
-  // exercise to the library automatically makes it a candidate here — no code
-  // changes needed.
-  if (block.blockType !== 'REALIZATION') {
-    const accessories = selectAccessories({
-      primaryLift,
-      blockType: block.blockType,
-      profile,
-      existingExercises: exercises,
-      volMult,
-      rpeOffset,
-      sessionNumber,
-      reward,
-    });
-    exercises.push(...accessories);
-  }
+  if (!skipAccessories) {
+    // Accessories — library-driven selection. selectAccessories() reads exercise
+    // metadata (primaryLiftTarget, movementPattern, specificity, FatigueProfile,
+    // swapGroups) to pick the best candidates for this session's primary lift
+    // within the pattern diversity and spinal-load constraints. Adding a new
+    // exercise to the library automatically makes it a candidate here — no code
+    // changes needed.
+    if (block.blockType !== 'REALIZATION') {
+      const accessories = selectAccessories({
+        primaryLift,
+        blockType: block.blockType,
+        profile,
+        existingExercises: exercises,
+        volMult,
+        rpeOffset,
+        sessionNumber,
+        reward,
+      });
+      exercises.push(...accessories);
+    }
 
-  // Cross-discipline accessory overlay — auto-adds face pulls on bench days
-  // (elite-coach non-negotiable for shoulder health), and when the athlete's
-  // disciplines include street-lift / calisthenics, adds a compatible light
-  // street-lift accessory so hybrid training stays hybrid without the
-  // athlete babysitting it. Suppressed in DELOAD and REALIZATION (comp focus).
-  if (block.blockType !== 'REALIZATION' && block.blockType !== 'DELOAD') {
-    const overlay = buildCrossDisciplineOverlay(
-      primaryLift, profile, exercises.length + 1, reward,
-    );
-    exercises.push(...overlay);
+    // Cross-discipline accessory overlay — auto-adds face pulls on bench days
+    // (elite-coach non-negotiable for shoulder health), and when the athlete's
+    // disciplines include street-lift / calisthenics, adds a compatible light
+    // street-lift accessory so hybrid training stays hybrid without the
+    // athlete babysitting it. Suppressed in DELOAD and REALIZATION (comp focus).
+    if (block.blockType !== 'REALIZATION' && block.blockType !== 'DELOAD') {
+      const overlay = buildCrossDisciplineOverlay(
+        primaryLift, profile, exercises.length + 1, reward,
+      );
+      exercises.push(...overlay);
+    }
   }
 
   return exercises;
