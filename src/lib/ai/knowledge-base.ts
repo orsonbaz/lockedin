@@ -955,12 +955,303 @@ philosophies when making recommendations — the athlete should feel the lineage
 - Quality bar speed > quantity tonnage. If speed is off on the opener-equivalent single, the day is a
   technical session, not a PR attempt.
 
+### Boris Sheiko
+- The foundation of Sheiko methodology: all three competition lifts trained in almost every session.
+  A typical Sheiko week (intermediate program #29) includes SBD work 3-4 days per week. Single-lift
+  sessions are the exception, not the rule.
+- Volume through frequency, not per-session excess. Individual sessions are moderate (60-80% intensities,
+  3-6 sets of 2-4 reps), but accumulated over 4 workouts per week the total volume is enormous.
+- Intensities are prescribed as percentages: rare work above 85%. Most sessions top out at 80%.
+  The body adapts to handling near-maximal loads through exposure, not grinding.
+- Technique first, weight second. If technique degrades, the weight is too heavy for that day. Lower it
+  and do the reps right. Every rep of every set is a technique practice.
+- Zero ego in training. The percentages might feel easy. That's the point — you train that weight 200
+  times until it becomes reflexive, then you add weight.
+- Periodization is wave-loaded by the mesocycle: volume peaks early, then both volume and intensity
+  shift upward, peaking at competition.
+- SBD session design (Sheiko model): Squat 5-6 sets → Bench 6-8 sets → Deadlift 4-5 sets, all at
+  submaximal loads, all in one session. The athlete becomes accustomed to "training through fatigue"
+  which directly simulates meet conditions.
+
+### Bryce Lewis / The Strength Athlete (TSA)
+- Evidence-based high-frequency approach: 3-5 sessions per week, each lift appearing 2-3+ times.
+- "Minimum effective dose" per session — enough stimulus to drive adaptation, not so much that
+  recovery is compromised. This is different from Sheiko's total-volume approach: TSA controls
+  per-session volume tightly.
+- High specificity: competition stance, competition grip, competition tempo as much as possible.
+  Variations are kept close to the comp movement.
+- Individualization is the operating principle. Starting points are templates; the final program is
+  shaped by how the athlete responds over 4-6 weeks of data collection.
+- TSA block model: hypertrophy → strength → peaking, but with overlapping qualities. Even in
+  hypertrophy phases, heavy singles are practiced for skill maintenance.
+- Prescription includes daily readiness checks. Autoregulation via RPE with a 2-rep range guideline:
+  if the RPE is 2 points off target, flag it and adjust.
+
+### Greg Nuckols / Stronger By Science
+- Frequency research consensus: for intermediate and advanced lifters, higher frequency (3-4x/week
+  per lift) consistently outperforms lower frequency at matched volume. The mechanism is skill
+  acquisition + protein synthesis frequency.
+- The "average to savage" insight: you don't need to be a genetic outlier to get very strong. Most
+  lifters are undertrained, not over-recovered. Progressively adding load and frequency, within MRV,
+  is the primary driver of long-term strength gains.
+- Flexible periodization: linear progression, DUP, and block periodization all work — the best one
+  is the one that fits the athlete's schedule and keeps them training consistently.
+- Volume is the primary driver of hypertrophy; intensity is the primary driver of strength expression.
+  You need both, but they should be periodized, not maximized simultaneously.
+- For powerlifters specifically: squat 3x/week minimum in accumulation, bench 3-4x/week, deadlift
+  2-3x/week. Frequency drives groove refinement more than any variation does.
+- Recovery research: sleep is the #1 recovery tool. No supplement, modality, or training tweak
+  compensates for chronic sleep debt.
+
+### Ben Pollack
+- Powerbuilding (powerlifting + bodybuilding) philosophy: muscle mass is the long game. Every pound
+  of muscle you build in accumulation phases translates to lifting capacity later. Don't neglect
+  hypertrophy work in favor of pure strength work year-round.
+- Classic raw powerlifting roots: heavy singles and doubles in every training cycle. Not just
+  in peaking — the body needs regular exposure to near-maximal loads to maintain the skill of
+  max-effort lifting.
+- Volume precedes intensity. Build the work capacity first. An athlete who can handle 20+ sets per
+  week of high-quality squat work can handle peaking loads better than one who trained with 8-10.
+- Equipment-agnostic technique: practice competition-legal technique in every session regardless of
+  whether the athlete competes raw or equipped. Equipped powerlifting is additive, not a replacement.
+- Bodybuilding accessories matter. Direct tricep work (4-6 sets × 8-12), lat work, and rear delt work
+  consistently outperform neglecting them. The strongest benchers also do the most tricep volume.
+
+### Chris Duffin / Kabuki Strength
+- Breathing and bracing mastery is the non-negotiable foundation. Creating maximum intra-abdominal
+  pressure (IAP) protects the spine and amplifies force transfer. Every lift improves when bracing
+  is optimized — "create 360° pressure, not just forward."
+- Spinal biomechanics expertise: the goal of each exercise is to load the target muscle while
+  minimizing compressive shear on the spine. This is why specialty bars (SSB, buffalo bar) and
+  intentional setup adjustments matter — they allow more total volume with less spinal risk.
+- Hip anatomy is deterministic. Squat stance, depth, and degree of toe flare are NOT style choices —
+  they are dictated by the athlete's femoral neck angle and acetabular depth. Forcing a stance that
+  fights the anatomy leads to impingement, not strength.
+- Safety bar squat (SSB) should be a staple, not a novelty. It loads the upper back and anterior
+  core more than a straight bar and allows squatting through injury. For athletes with shoulder or
+  wrist issues, SSB is the primary squat variation.
+- The "hatfield squat" (SSB + hands on a rack) allows truly maximal leg work when upper body
+  fatigue or pain would otherwise limit the squat. Good for volume accumulation.
+- Core stability is the multiplier, not an afterthought. A weak anterior core leaks force. Pallof
+  press, ab wheel, and heavy loaded carries should be programmed with the same intent as comp lifts.
+
 ### Cross-cutting consensus
 - Autoregulate via RPE and bar speed, not ego.
 - Specificity dominates novelty: you get strong at what you practice.
 - Comp lifts are skills, not just strength tests — rehearse every rep like meet day.
 - Adherence > optimization. A B+ program run for 12 weeks beats an A+ program abandoned after 3.
 - Fatigue is a variable to manage, not prove. Track it. Respect it. Dissipate it before meet day.
+- SBD sessions are the Sheiko norm and the competition simulation standard. Single-lift sessions
+  serve a purpose (higher volume on one lift), but athletes should train through SBD fatigue
+  regularly — it is the exact demand of competition.
+`;
+
+// ── Breathing & Bracing ───────────────────────────────────────────────────────
+
+export const BREATHING_BRACING_KNOWLEDGE = `
+## Breathing & Bracing (IAP Creation)
+
+The most undercoached skill in powerlifting. Every pound of intra-abdominal pressure (IAP)
+protects the spine and transfers force more efficiently through the kinetic chain. Lifters who
+master bracing add kilograms to every lift without adding training load.
+
+### What IAP Actually Is
+Intra-abdominal pressure is a pressurized "canister" formed by:
+- Diaphragm on top (pushing down when you breathe in)
+- Pelvic floor on the bottom (co-contracting upward)
+- Obliques and transverse abdominis around the sides (pushing OUT, not in)
+- Multifidus / spinal erectors at the back
+
+When all four walls of the canister contract simultaneously against a belly breath, IAP spikes.
+This pressure provides a rigid, load-bearing cylinder around the spine — the same function as
+a lifting belt, but from within. A belt simply gives the obliques something hard to push against,
+amplifying IAP by 20-40%. You still have to create the IAP — the belt is a wall, not the pump.
+
+### The Valsalva Maneuver
+The Valsalva is the deliberate technique of closing the glottis (bracing the throat shut) while
+contracting the respiratory muscles. It maximizes IAP transiently.
+
+Correct execution:
+1. Take a BELLY breath (diaphragmatic) — ribs expand slightly, belly expands significantly.
+   If your chest rises first, you are chest-breathing. That gets minimal IAP.
+2. Brace your core — contract obliques outward as if absorbing a punch. Do NOT suck the belly in.
+   "Bracing" ≠ "drawing in." Drawing the navel toward the spine REDUCES IAP.
+3. Close the glottis — the sound is a gentle hum or grunt; not open-mouth breathing.
+4. Hold the brace for the duration of the lift or rep.
+5. Release after lockout. Never release at the bottom of a squat or on the way up.
+
+Timing per lift:
+- SQUAT: Valsalva at the top of each rep (or after each walkout). Do NOT re-brace at the bottom.
+  Taking a breath mid-rep collapses IAP at the worst moment.
+- BENCH: Valsalva at the top before unracking. Hold through the entire rep (down + pause + press).
+  Short sets (1-3 reps) can use one brace per rep. Longer sets: brace at top, hold entire set.
+- DEADLIFT: Valsalva before breaking the bar from the floor. A deliberate breath after the setup.
+  "Wedge" setup first (hips set, lats locked, bar against shins), THEN the final belly breath + brace.
+  Do NOT rush the breath. A missed breath at the setup kills a heavy deadlift.
+
+### 360° Pressure (Chris Duffin / Kabuki Strength)
+Standard coaching says "brace your abs." That is incomplete. 360° pressure means:
+- Front wall (rectus abdominis + transverse): contract outward, not inward.
+- Side walls (obliques): push laterally — "push your sides against your elbows" as a tactile cue.
+- Back wall (multifidus, erectors): actively "push your lower back into your belt" — not passive.
+- Floor (pelvic floor): slight upward co-contraction stabilizes the base.
+
+The test: when you brace correctly, you should be equally firm when pressed from the front, sides,
+or back. Most untrained lifters are only firm in front. Their "brace" is a crunch, not a cylinder.
+
+### Belt Use
+- A belt is not a crutch. It is an IAP amplifier. Use it when you want maximum IAP (heavy sets,
+  top sets, anything RPE 8+). Do not default to beltless out of pride.
+- Learn to brace beltless first. If you cannot brace without a belt, the belt is hiding a deficit.
+- Belt tightness: tight enough that you can take a deep belly breath against it. If you cannot
+  expand into the belt, it's too tight (reduces IAP to near zero).
+- Belt position: typically 1 finger below the navel on the front, slightly higher at the back.
+  Experiment — some lifters prefer it higher. The test: maximum comfort under load, zero pinching.
+- IPF legal belt: max 10 cm wide, max 13 cm back. Single-prong, double-prong, or lever — personal
+  preference. Lever belts go on and off faster (useful at meets between attempts).
+
+### Common Bracing Errors
+- "Sucking in" the belly: actively wrong. Reduces IAP. Often taught in gym-bro culture.
+- Breathing at the wrong time: taking a breath mid-squat (at the bottom) collapses all IAP.
+- Shallow chest breath: minimal diaphragm excursion → minimal IAP. Never chest-breathe for heavy lifts.
+- Holding the brace too long in multi-rep sets: safe for 1-3 reps; for 5+ reps, release and re-brace
+  at the top of each rep. Prolonged Valsalva raises blood pressure significantly.
+- Belt too tight: ironically reduces IAP. You need room to expand INTO the belt.
+
+### Bracing Under Fatigue
+Sets of 5+ are where bracing fails first. Fatigue causes the athlete to:
+1. Cut the breath short (less IAP on later reps)
+2. Release the brace during the eccentric (feels like "letting go" in the hole)
+3. Default to lumbar hyperextension as a substitute for actual IAP
+
+Film the last rep of every hard set. If technique breaks at rep 4 of a 5-rep set, the set should
+have been capped at 4 reps. Never sacrifice bracing for the sake of hitting a programmed rep count.
+`;
+
+// ── Advanced Technique ────────────────────────────────────────────────────────
+
+export const ADVANCED_TECHNIQUE_KNOWLEDGE = `
+## Advanced Technique & Programming Methods
+
+### Top-Set + Back-Off System
+The modern standard for comp lift programming. Replaces "same weight, same reps" with a
+more powerful two-phase structure that simultaneously tests the day's peak capacity and
+accumulates volume at a safe, productive load.
+
+**Structure:**
+1. TOP SET: Work up to a single target RPE (e.g., one set of 3 @ RPE 8). This is the barometer.
+   - "Top set" is one set only — not the heaviest of a series, but the intentional peak of today.
+   - The RPE tells you what the backoff load should be. No guessing.
+2. BACK-OFF SETS: Multiple sets at a fixed percentage below the top set (3-8% typically).
+   - Tuchscherer fatigue percents: each RPE point = ~2-4% of 1RM. So RPE 8 top set → ~4-6% below.
+   - Example: 200 kg × 3 @ RPE 8 → backoffs at 188 kg × 3, 4 sets.
+   - The percentage stays fixed across the backoffs. If rep 3 starts grinding at set 3, that's data.
+
+**Why it works:**
+- The top set provides the neural stimulus (high-load exposure, technique under near-max stress).
+- The back-offs accumulate volume at a load you can recover from, without the fatigue of doing
+  everything near-max. Total tonnage is often higher than wave-loading approaches.
+- Autoregulation is built in: a bad day means the top set ends up lighter, and so do the backoffs.
+  A great day means a heavier top set and heavier backoffs. The program adjusts automatically.
+
+**Common top-set RPE targets by block:**
+- ACCUMULATION: RPE 7-8. Multiple back-off sets (4-6). Rep ranges 3-6.
+- INTENSIFICATION: RPE 8-9. Fewer back-off sets (3-4). Rep ranges 2-4.
+- REALIZATION: RPE 9-9.5. 1-2 back-off sets. Rep ranges 1-2.
+
+**The single-rep top set:**
+When in intensification or early realization, the top "set" is often a heavy single. This builds
+max-effort single specificity without the fatigue of a full heavy triple. Then back-offs are triples
+or doubles at -5 to -8%.
+
+### High-Bar vs Low-Bar Squat
+
+**Biomechanical differences:**
+- Low-bar: Bar sits 1-3" below the spine of scapula, across the rear delts. Lower bar = longer
+  moment arm from hips, shorter moment arm from knees. Hip dominant. Allows heavier absolute load
+  for most lifters due to better leverages and reduced depth requirement.
+- High-bar: Bar sits at the top of the traps. More upright torso. Knee dominant. Longer moment
+  arm from knee → more quad work. Requires more ankle dorsiflexion. More similar to a front squat.
+
+**When to use each:**
+- COMPETITION (powerlifting): Low-bar for most raw lifters. More weight on the bar, lower hip demands
+  for depth in most anatomies. Equipped lifters almost universally use low-bar.
+- HYPERTROPHY accumulation: High-bar for quad development. More ROM, more eccentric quad stretch,
+  better muscle growth signal. Then transition to low-bar as the block approaches peaking.
+- NEURAL bottleneck / technique refinement: High-bar temporarily if the lifter's low-bar mechanics
+  are breaking down. The more upright posture can reset forward-lean habits.
+- INJURY accommodation: High-bar is easier on some lower back presentations (less forward lean =
+  less spinal erector demand). But harder on the knees and ankles.
+
+**Programming guidance:**
+- Do NOT switch between high-bar and low-bar within 4 weeks of a meet. The motor pattern is
+  different enough to temporarily reduce low-bar performance.
+- High-bar during accumulation → low-bar during intensification → comp squat only in realization.
+  This is the Sheiko model and the most common elite approach.
+- If using high-bar as a variation: treat it as a separate exercise (coefficient ~0.90 of low-bar max).
+
+**Transition between stances:**
+- A lifter moving from high-bar to low-bar typically loses 3-5% of their squat initially as the
+  new motor pattern settles. Gains come within 4-6 weeks of consistent low-bar practice.
+- Going from low-bar to high-bar: expect 5-8% reduction initially. The mobility demand is higher.
+
+### Sumo Deadlift Specifics
+
+**Setup differences from conventional:**
+- Stance: Feet 1.5-2x shoulder width. Toes pointed out 45-60° (varies by hip anatomy — wider flare
+  for externally rotated hips, less for more forward-facing anatomy).
+- Grip: Inside the legs, shoulder-width or slightly narrower. Hook grip is especially valuable for
+  sumo because the grip is narrower and hook provides more security.
+- Hip position: Hips CLOSE to the bar. "Chase the bar" with the hips — don't set up far back.
+- "Spread the floor" is the primary cue. Push the floor apart laterally (like a leg press in both
+  directions). This engages the adductors, glutes, and creates the outward knee tracking.
+- Lat engagement: identical to conventional. "Protect your armpits." Keeps the bar path tight.
+
+**Mechanical advantage of sumo:**
+- Reduced bar travel distance (major advantage for tall athletes with long torsos).
+- Adductors and glutes are the primary movers (vs. posterior chain dominance in conventional).
+- Less spinal erector fatigue — sumo is easier on the lower back for most athletes.
+- Disadvantage: requires significant hip mobility and adductor strength. Hip impingement is the
+  primary limiting factor for athletes with poor hip structure for sumo.
+
+**Common sumo weaknesses and fixes:**
+- Hips shooting up / back ("stripper deadlift" pattern): adductor weakness or hips set too high.
+  Fix: adductor machine 3×15 + pause deadlift 2" off floor 3×3 @ RPE 7. Film setup — hips too high
+  means the knees are barely involved at the start.
+- Knees caving in (butt wink equivalent for sumo): weak adductors + poor hip external rotation.
+  Fix: Copenhagen adductor 3×8/side, banded sumo stance work at light load.
+- Sticking point at the knee: glute strength. Block pull 4" 3×3 @ RPE 8 (training the lockout
+  where sumo most commonly misses). Heavy hip thrust to reinforce peak glute contraction.
+- Grip failing on sumo before the pull fails: hook grip or mixed grip. Sumo's narrower grip makes
+  overhand grip grip fail faster than conventional. Learn hook grip early.
+- Slow off the floor despite adductors firing: leg drive is insufficient. Think "leg press the floor"
+  with maximal force at the start. Film — if the hips don't drop 1-2" at setup, the initial leg
+  drive is weak.
+
+**Sumo vs. conventional selection:**
+Not every lifter is built for sumo. Indicators you should try sumo:
+  - Long torso, shorter legs (sumo shortens bar path more for you).
+  - Strong adductors from prior athletic background.
+  - Hip anatomy that allows the wide stance without impingement (test: can you squat wide,
+    toes 45°, without groin impingement pain? Sumo may work).
+Indicators you should stay conventional or test both:
+  - Long legs, shorter torso (conventional's bar path isn't as different).
+  - Adductor weakness (sumo will expose it immediately).
+  - Hip impingement in wide stances (anatomy won't accommodate sumo).
+Most elite lifters try both. Run 6-8 weeks of each, max out, and compare.
+
+### Paused Reps — When and Why
+
+Paused competition movements are the most cost-effective variation for most powerlifters:
+- Pause Squat: 1-3 second pause in the hole. Eliminates bounce, forces positional strength, exposes
+  depth issues immediately. Use at 82-88% of competition squat max.
+- Pause Bench: 1-3 second pause on chest. Competition-legal lift preparation. Eliminates leg drive
+  momentum artifacts. Develops lockout through full ROM. Use at 85-90% comp bench max.
+- Pause Deadlift (2" off floor): Eliminates slack-pulling technique (the "bounce-off-floor" cheat).
+  Forces leg drive and position before load shifts to the back. Use at 85-90% comp deadlift max.
+
+Pause frequency: 1 session per week per lift during accumulation and intensification. Drop pauses
+from the variation slot 2-3 weeks out from a meet — switch to competition-tempo sets.
 `;
 
 // ── Assembler ─────────────────────────────────────────────────────────────────
@@ -978,6 +1269,8 @@ export function getFullKnowledge(): string {
     RPE_KNOWLEDGE,
     VBT_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
+    BREATHING_BRACING_KNOWLEDGE,
+    ADVANCED_TECHNIQUE_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
     SESSION_DESIGN_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
@@ -998,6 +1291,8 @@ export function getFullKnowledge(): string {
 export function getCompactKnowledge(): string {
   return [
     COACH_PRINCIPLES_KNOWLEDGE,
+    BREATHING_BRACING_KNOWLEDGE,
+    ADVANCED_TECHNIQUE_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
     SESSION_DESIGN_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
@@ -1060,8 +1355,24 @@ const KW_COACH         = [
   'joe stanek', 'stanek',
   'marcellus', 'millz', 'wallace',
   'noriega', 'sean noriega',
+  'sheiko', 'boris sheiko',
+  'bryce lewis', 'tsa ', 'strength athlete',
+  'greg nuckols', 'stronger by science', 'nuckols',
+  'ben pollack', 'pollack',
+  'chris duffin', 'duffin', 'kabuki',
   'autoregul', 'specificity', 'adherence',
   'philosoph', 'princip', 'approach',
+] as const;
+const KW_BREATHING     = [
+  'breath', 'brac', 'iap', 'intra-abdominal', 'valsalva', 'belt',
+  '360', 'pressure', 'diaphragm', 'oblique', 'pelvic floor',
+  'draw in', 'core stability', 'brace your', 'belly breath',
+] as const;
+const KW_ADVANCED_TECH = [
+  'top set', 'top-set', 'backoff', 'back-off', 'back off',
+  'fatigue percent', 'high-bar', 'high bar', 'low-bar', 'low bar',
+  'sumo', 'conventional', 'stance', 'pause', 'paused rep',
+  'hook grip', 'mixed grip', 'spread the floor',
 ] as const;
 const KW_VBT           = [
   'bar speed', 'bar-speed', 'velocity', 'm/s', 'vbt', 'tempo',
@@ -1085,21 +1396,23 @@ export function getTopicKnowledge(topic: string): string {
   if (hasAny(t, KW_RPE))            sections.push(RPE_KNOWLEDGE);
   if (hasAny(t, KW_VBT))            sections.push(VBT_KNOWLEDGE);
   if (hasAny(t, KW_PERIODIZATION))  sections.push(PERIODIZATION_KNOWLEDGE);
+  if (hasAny(t, KW_BREATHING))      sections.push(BREATHING_BRACING_KNOWLEDGE);
+  if (hasAny(t, KW_ADVANCED_TECH))  sections.push(ADVANCED_TECHNIQUE_KNOWLEDGE);
   if (hasAny(t, KW_EXERCISE))       sections.push(EXERCISE_KNOWLEDGE);
   if (hasAny(t, KW_SESSION_DESIGN)) sections.push(SESSION_DESIGN_KNOWLEDGE);
   if (hasAny(t, KW_CALISTHENICS))   sections.push(CALISTHENICS_KNOWLEDGE);
-  if (hasAny(t, KW_STREET_LIFT))   sections.push(STREET_LIFT_KNOWLEDGE);
-  if (hasAny(t, KW_HYBRID))        sections.push(HYBRID_PROGRAMMING_KNOWLEDGE);
-  if (hasAny(t, KW_NUTRITION))     sections.push(NUTRITION_KNOWLEDGE);
-  if (hasAny(t, KW_RECOVERY))      sections.push(RECOVERY_KNOWLEDGE);
-  if (hasAny(t, KW_MEET))          sections.push(MEET_PREP_KNOWLEDGE);
-  if (hasAny(t, KW_INJURY))        sections.push(INJURY_KNOWLEDGE);
-  if (hasAny(t, KW_PROGRAMMING))   sections.push(PROGRAMMING_KNOWLEDGE);
-  if (hasAny(t, KW_COACH))         sections.push(COACH_PRINCIPLES_KNOWLEDGE);
+  if (hasAny(t, KW_STREET_LIFT))    sections.push(STREET_LIFT_KNOWLEDGE);
+  if (hasAny(t, KW_HYBRID))         sections.push(HYBRID_PROGRAMMING_KNOWLEDGE);
+  if (hasAny(t, KW_NUTRITION))      sections.push(NUTRITION_KNOWLEDGE);
+  if (hasAny(t, KW_RECOVERY))       sections.push(RECOVERY_KNOWLEDGE);
+  if (hasAny(t, KW_MEET))           sections.push(MEET_PREP_KNOWLEDGE);
+  if (hasAny(t, KW_INJURY))         sections.push(INJURY_KNOWLEDGE);
+  if (hasAny(t, KW_PROGRAMMING))    sections.push(PROGRAMMING_KNOWLEDGE);
+  if (hasAny(t, KW_COACH))          sections.push(COACH_PRINCIPLES_KNOWLEDGE);
 
   // If nothing matched, return the most universally useful sections
   if (sections.length === 0) {
-    sections.push(COACH_PRINCIPLES_KNOWLEDGE, EXERCISE_KNOWLEDGE, SESSION_DESIGN_KNOWLEDGE, CALISTHENICS_KNOWLEDGE, NUTRITION_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
+    sections.push(COACH_PRINCIPLES_KNOWLEDGE, BREATHING_BRACING_KNOWLEDGE, EXERCISE_KNOWLEDGE, SESSION_DESIGN_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
   }
 
   return sections.join('\n');

@@ -54,8 +54,8 @@ export interface SessionInput {
   recentLiftExposures?: LiftExposure[];
   /**
    * Explicit athlete request to cover all three comp lifts today. When true
-   * the selector returns SQUAT primary with BENCH + DEADLIFT as secondary
-   * top-singles at reduced volume.
+   * the selector returns the most-due lift as primary (with ~35% volume reduction)
+   * and the other two as working-set secondary blocks, all ordered S→B→D.
    */
   sbdToday?: boolean;
   /**
@@ -178,32 +178,32 @@ export function generateSession(input: SessionInput): GeneratedSession {
     sessionNumber, sbdDay,
   );
 
-  // Secondary comp blocks: low-volume top singles per additional lift. Ordering
-  // stays primary → secondaries → accessories (accessories already trailed the
-  // primary block when buildSessionExercises ran).
+  // Full SBD day: rebuild all exercises in competition order (S→B→D) so the
+  // session matches how the lifts appear on the platform. Primary gets the
+  // reduced-volume block from buildPrimaryExercises; secondaries each get 3
+  // working sets via buildSecondaryCompExercises.
   if (secondaryLifts.length > 0) {
-    // Accessory slots start after whatever buildSessionExercises produced;
-    // we insert secondary comps just after the primary comp(s) and push
-    // accessories down. Simpler: rebuild the order numbers at the end.
     const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
-    const secondaryExercises: GeneratedExercise[] = [];
+
+    const liftMap = new Map<Lift, GeneratedExercise[]>();
+    liftMap.set(primaryLift, [...exercises]);
     for (const lift of secondaryLifts) {
-      secondaryExercises.push(
-        ...buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlock, totalBlockWeeks),
+      liftMap.set(
+        lift,
+        buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlock, totalBlockWeeks),
       );
     }
 
-    // Find the index right after the last COMPETITION exercise so secondary
-    // comps appear adjacent to the primary.
-    let insertAt = 0;
-    for (let i = 0; i < exercises.length; i++) {
-      if (exercises[i].exerciseType === 'COMPETITION') insertAt = i + 1;
+    // Enforce S→B→D competition order regardless of which lift was primary.
+    exercises.length = 0;
+    for (const lift of ['SQUAT', 'BENCH', 'DEADLIFT'] as Lift[]) {
+      const exs = liftMap.get(lift);
+      if (exs) exercises.push(...exs);
     }
-    exercises.splice(insertAt, 0, ...secondaryExercises);
     exercises.forEach((e, i) => { e.order = i + 1; });
 
     modifications.push(
-      `SBD-style day: added top singles for ${secondaryLifts.join(' + ')}.`,
+      `Full SBD session in competition order (S→B→D): ${primaryLift} primary at reduced volume, ${secondaryLifts.join(' + ')} at 3 working sets each.`,
     );
   }
 
@@ -416,10 +416,16 @@ function computeGoalBoost(
 // ── Secondary Comp Block Builder ──────────────────────────────────────────────
 
 /**
- * Minimal top-single comp block for a non-primary lift on an SBD / stacked
- * day. Stays at RPE 7 with 1 top single + 1 backoff so total session stress
- * stays manageable. Respects block context but does not taper (primary block
- * already handles taper logic).
+ * Working-set comp block for a non-primary lift on a full SBD day.
+ * Generates straight sets at submaximal intensity — enough to constitute
+ * real training stimulus, not a token single. Rep scheme matches the block
+ * context so all three lifts feel coherent within the same session.
+ *
+ *   ACCUMULATION:    3 × 3 @ RPE 7   (moderate load, volume emphasis)
+ *   INTENSIFICATION: 3 × 2 @ RPE 7.5 (heavier, lower reps — strength phase)
+ *   MAINTENANCE:     3 × 3 @ RPE 7
+ *   DELOAD:          skipped          (protect taper)
+ *   REALIZATION:     skipped on meet week (protect taper)
  */
 function buildSecondaryCompExercises(
   profile: AthleteProfile,
@@ -429,38 +435,27 @@ function buildSecondaryCompExercises(
   weekInBlock: number,
   totalBlockWeeks: number,
 ): GeneratedExercise[] {
-  // DELOAD + REALIZATION meet week: don't add secondary comp — protect taper.
   if (blockType === 'DELOAD') return [];
   if (blockType === 'REALIZATION' && weekInBlock >= totalBlockWeeks) return [];
 
-  const maxKg  = getLiftMax(lift, profile);
-  const topRpe = clampRpe(7 + rpeOffset);
-  const topLoad = roundLoad(prescribeLoad(maxKg, topRpe, 1));
-  const bkLoad  = roundLoad(topLoad * 0.9);
+  const maxKg = getLiftMax(lift, profile);
+  const isIntensification = blockType === 'INTENSIFICATION';
+  const targetRpe  = clampRpe((isIntensification ? 7.5 : 7) + rpeOffset);
+  const targetReps = isIntensification ? 2 : 3;
+  const targetSets = 3;
+  const workLoad   = roundLoad(prescribeLoad(maxKg, targetRpe, targetReps));
 
   return [
     {
-      name:              `${getCompMovementName(lift)} — secondary`,
+      name:              getCompMovementName(lift),
       exerciseType:      'COMPETITION',
       setStructure:      'STRAIGHT',
-      sets:              1,
-      reps:              1,
-      rpeTarget:         topRpe,
-      estimatedLoadKg:   topLoad,
-      order:             0, // re-numbered by caller
-      notes:             `Secondary top single @RPE ${topRpe}. Skip if fatigue flares — primary lift is the priority.`,
-      libraryExerciseId: getCompMovementLibraryId(lift),
-    },
-    {
-      name:              `${getCompMovementName(lift)} — backoff`,
-      exerciseType:      'VARIATION',
-      setStructure:      'STRAIGHT',
-      sets:              1,
-      reps:              3,
-      rpeTarget:         clampRpe(topRpe - 1),
-      estimatedLoadKg:   bkLoad,
+      sets:              targetSets,
+      reps:              targetReps,
+      rpeTarget:         targetRpe,
+      estimatedLoadKg:   workLoad,
       order:             0,
-      notes:             `One backoff triple — feel for position + bar speed.`,
+      notes:             `Secondary block @RPE ${targetRpe} — submaximal, controlled effort. Focus on technique.`,
       libraryExerciseId: getCompMovementLibraryId(lift),
     },
   ];
@@ -704,10 +699,15 @@ function buildPrimaryExercises(
   }
 
   // ── ACCUMULATION / INTENSIFICATION / PIVOT / MAINTENANCE ──────────────────
-  const baseReps  = getRepsForBlock(blockType, profile.bottleneck);
-  const respMult  = responderMultiplier(profile.responder);
-  const rawSets   = blockToSets(blockType) * respMult * volMult;
-  const baseSets  = Math.max(1, Math.floor(rawSets));
+  const baseReps    = getRepsForBlock(blockType, profile.bottleneck);
+  const respMult    = responderMultiplier(profile.responder);
+  const rawSets     = blockToSets(blockType) * respMult * volMult;
+  const baseRawSets = Math.max(1, Math.floor(rawSets));
+  // On SBD days the primary takes ~35% fewer sets so the session stays
+  // manageable when secondaries each contribute 3 working sets.
+  const baseSets = sbdDay
+    ? Math.max(2, Math.round(baseRawSets * 0.65))
+    : baseRawSets;
 
   // Week-within-block undulation (Juggernaut / Noriega style). Keeps total
   // work roughly flat while shifting the stimulus from set-heavy → rep-heavy
