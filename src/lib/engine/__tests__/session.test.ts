@@ -1002,18 +1002,20 @@ describe('generateSession — rewardSystem', () => {
       expect(hvAccSets).toBeGreaterThan(stdAccSets);
     });
 
-    it('HIGH_VOLUME adds one more accessory exercise than CONSISTENCY', () => {
-      // The library-driven selector implements HIGH_VOLUME by adding +1 to
-      // the target accessory count (BASE_ACCESSORY_COUNT[block] + 1) rather
-      // than +1 set per existing exercise. Same per-exercise set count,
-      // one extra accessory slot.
+    it('HIGH_VOLUME adds +1 set per accessory (same slot count)', () => {
+      // HIGH_VOLUME bumps each accessory's set count by 1. Slot count is
+      // left for the AI session advisor to shape via principle — so the
+      // accessory roster matches CONSISTENCY exactly, with 1 extra set each.
       const standard = generateSession({ profile: baseProfile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
       const highVol  = generateSession({ profile: hvProfile,   block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
 
       const stdAcc = standard.exercises.filter(e => e.exerciseType === 'ACCESSORY');
       const hvAcc  = highVol.exercises.filter(e => e.exerciseType === 'ACCESSORY');
 
-      expect(hvAcc.length).toBe(stdAcc.length + 1);
+      expect(hvAcc.length).toBe(stdAcc.length);
+      for (let i = 0; i < hvAcc.length; i++) {
+        expect(hvAcc[i].sets).toBe(stdAcc[i].sets + 1);
+      }
     });
   });
 
@@ -1064,7 +1066,7 @@ describe('generateSession — rewardSystem', () => {
 
     it('VARIETY and CONSISTENCY produce the same accessory pool', () => {
       // Both reward systems run through the same selection path — only
-      // HIGH_VOLUME differs (extra slot count). VARIETY === CONSISTENCY here.
+      // HIGH_VOLUME differs (+1 set per accessory). VARIETY === CONSISTENCY here.
       const sCons = generateSession({ profile: baseProfile, block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
       const sVar  = generateSession({ profile: varProfile,  block, weekDayOfWeek: mondayDOW, readinessScore: goodReadiness, sessionNumber: 1 });
 

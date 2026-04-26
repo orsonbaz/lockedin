@@ -35,19 +35,24 @@ export interface AccessorySelectorInput {
   countOverride?:     number;
 }
 
-// ── Movement pattern caps ─────────────────────────────────────────────────────
+// ── Movement pattern budgets (soft) ──────────────────────────────────────────
 //
-// After the comp lift and its variation are placed, accessories may only add
-// this many more exercises from the same movement pattern as the primary lift.
-// Non-primary patterns get a more generous cap.
+// Suggested ceiling on how many exercises a single movement pattern should
+// occupy in one session. Encoded as a *scoring penalty*, not a hard cap, so
+// the AI session advisor can override when it has a good reason. The penalty
+// scales with how far over budget a candidate would push the session.
 //
 // Example — DEADLIFT day (primary pattern = HINGE):
-//   Already placed: Competition Deadlift (HINGE) + Pause Deadlift (HINGE) = 2
-//   PRIMARY_PATTERN_EXTRA = 1  → one HINGE accessory (RDL) allowed
-//   OTHER_PATTERN_EXTRA   = 2  → two VERTICAL_PULL, two HORIZONTAL_PULL, etc.
+//   Comp Deadlift + Pause Deadlift already place 2 HINGE exercises (the
+//   primary-pattern budget). Adding an RDL costs one overflow's penalty —
+//   noticeable, but not forbidden when justified.
+//
+//   OTHER_PATTERN_BUDGET   = 2  → two pull exercises are free; a third pays.
 
-const PRIMARY_PATTERN_EXTRA = 1;
-const OTHER_PATTERN_EXTRA   = 2;
+const PRIMARY_PATTERN_BUDGET   = 2;
+const OTHER_PATTERN_BUDGET     = 2;
+const PRIMARY_OVERFLOW_PENALTY = 1.5;
+const OTHER_OVERFLOW_PENALTY   = 0.75;
 
 // ── Target accessory count per block ─────────────────────────────────────────
 
@@ -139,7 +144,7 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
   if (blockType === 'REALIZATION') return [];
 
   const base        = BASE_ACCESSORY_COUNT[blockType] ?? 3;
-  const targetCount = Math.max(1, (reward === 'HIGH_VOLUME' ? base + 1 : base) + countOverride);
+  const targetCount = Math.max(1, base + countOverride);
   const primaryPat  = LIFT_TO_PATTERN[primaryLift] ?? null;
 
   // ── 1. Count patterns already in the session ───────────────────────────────
@@ -177,17 +182,22 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
   interface Scored { ex: LibraryExercise; score: number; }
 
   const scored: Scored[] = candidates.map((ex) => {
-    // Hard exclude: pattern cap exceeded
+    // Movement-pattern overflow: soft penalty per exercise that would push
+    // this pattern past its session budget. Lets the engine still pick a 3rd
+    // hinge when no better alternative exists, instead of hard-excluding.
     const curCount = patternCounts.get(ex.movementPattern) ?? 0;
-    const cap = ex.movementPattern === primaryPat ? PRIMARY_PATTERN_EXTRA : OTHER_PATTERN_EXTRA;
-    if (curCount >= cap) return { ex, score: -Infinity };
+    const isPrimaryPattern = ex.movementPattern === primaryPat;
+    const budget = isPrimaryPattern ? PRIMARY_PATTERN_BUDGET : OTHER_PATTERN_BUDGET;
+    const overflow = Math.max(0, (curCount + 1) - budget);
+    const overlapPenalty =
+      overflow * (isPrimaryPattern ? PRIMARY_OVERFLOW_PENALTY : OTHER_OVERFLOW_PENALTY);
 
     // SFR: specificity / systemic cost — higher is more efficient
     const sfr = ex.specificity / Math.max(1, ex.fatigue.systemicFatigue);
 
     // Spinal load penalty: on HINGE days the posterior chain is already taxed.
     // HIGH-spinal-load accessories compete for the same recovery window as the
-    // comp lift and variation. Strongly favour LOW/MEDIUM alternatives.
+    // comp lift and variation. Soft nudge toward LOW/MEDIUM alternatives.
     const spinalPenalty =
       primaryPat === 'HINGE' && ex.fatigue.spinalLoad === 'HIGH' ? 2.5 : 0;
 
@@ -195,7 +205,7 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
     // over general accessories with the same SFR.
     const targetBonus = ex.primaryLiftTarget === primaryLift ? 0.4 : 0;
 
-    return { ex, score: sfr + targetBonus - spinalPenalty };
+    return { ex, score: sfr + targetBonus - spinalPenalty - overlapPenalty };
   });
 
   scored.sort((a, b) => b.score - a.score);
@@ -205,23 +215,15 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
   const usedGroups = new Set<string>();
   const addedPats  = new Map<MovementPattern, number>(patternCounts);
 
-  for (const { ex, score } of scored) {
+  for (const { ex } of scored) {
     if (selected.length >= targetCount) break;
-    if (score === -Infinity) continue;
-
-    // Pattern cap (re-check against the accessories we've already selected)
-    const curCount = addedPats.get(ex.movementPattern) ?? 0;
-    const cap = ex.movementPattern === primaryPat ? PRIMARY_PATTERN_EXTRA : OTHER_PATTERN_EXTRA;
-    if (curCount >= cap) continue;
 
     const group = ex.swapGroups[0] ?? null;
 
     if (group) {
       if (usedGroups.has(group)) continue;
       // Within this swap group, use sessionNumber to rotate which member wins.
-      const groupMembers = scored.filter(
-        (s) => s.ex.swapGroups[0] === group && s.score > -Infinity,
-      );
+      const groupMembers = scored.filter((s) => s.ex.swapGroups[0] === group);
       const rotated = groupMembers[(sessionNumber - 1) % Math.max(1, groupMembers.length)];
       selected.push(rotated.ex);
       usedGroups.add(group);
@@ -234,7 +236,10 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
 
   // ── 6. Convert to GeneratedExercise ───────────────────────────────────────
   const accRpe  = Math.max(5, Math.min(10, 7.5 + rpeOffset));
-  const accSets = Math.max(1, Math.floor(3 * volMult));
+  // HIGH_VOLUME bumps each accessory by +1 set (was previously +1 slot — slot
+  // count is now left for the AI session advisor to shape via principle).
+  const baseAccSets = Math.max(1, Math.floor(3 * volMult));
+  const accSets     = baseAccSets + (reward === 'HIGH_VOLUME' ? 1 : 0);
 
   return selected.map((ex, i) => {
     const [coeff, anchor] = LOAD_REF[ex.id] ?? [0.60, 'primary' as const];
