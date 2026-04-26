@@ -123,11 +123,9 @@ export interface ChatContext {
 /**
  * Load the effective chat context. Anything covered by the latest summary is
  * excluded from the raw window (the summary stands in for it in the prompt).
- *
- * @param mode 'groq' gets a wider raw window; 'local' keeps it tight for Phi.
  */
-export async function loadChatContext(mode: 'groq' | 'local' = 'groq'): Promise<ChatContext> {
-  const rawLimit = mode === 'groq' ? 20 : 6;
+export async function loadChatContext(): Promise<ChatContext> {
+  const rawLimit = 20;
   const summary = await getLatestSummary();
 
   // Pull messages strictly after the last summarized range.

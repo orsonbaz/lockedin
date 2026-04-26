@@ -496,7 +496,7 @@ export default function SettingsPage() {
               label="Google Gemini API Key"
               sub={geminiKey.trim()
                 ? 'Online mode active — Gemini 2.5 Flash'
-                : 'Free key at aistudio.google.com · Leave blank for on-device AI'}
+                : 'Required — get a free key at aistudio.google.com'}
             />
           </Row>
           <Row>
@@ -532,7 +532,7 @@ export default function SettingsPage() {
                 className="text-xs"
                 style={{ color: C.accent }}
               >
-                Remove key (switch to on-device)
+                Clear key (the coach won&apos;t work without one)
               </button>
             </Row>
           )}

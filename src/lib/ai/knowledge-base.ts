@@ -1258,10 +1258,7 @@ from the variation slot 2-3 weeks out from a meet — switch to competition-temp
 
 /**
  * Returns the full knowledge base as a single string.
- * This is injected into the system prompt when using Groq (online mode)
- * where we have more context window.
- *
- * For on-device mode, use getCompactKnowledge() instead.
+ * Injected into the system prompt when no specific topic match is found.
  */
 export function getFullKnowledge(): string {
   return [
@@ -1280,24 +1277,6 @@ export function getFullKnowledge(): string {
     RECOVERY_KNOWLEDGE,
     MEET_PREP_KNOWLEDGE,
     INJURY_KNOWLEDGE,
-    PROGRAMMING_KNOWLEDGE,
-  ].join('\n');
-}
-
-/**
- * Returns a compact knowledge base for on-device mode (smaller context window).
- * Focuses on the most actionable knowledge and cross-discipline coverage.
- */
-export function getCompactKnowledge(): string {
-  return [
-    COACH_PRINCIPLES_KNOWLEDGE,
-    BREATHING_BRACING_KNOWLEDGE,
-    ADVANCED_TECHNIQUE_KNOWLEDGE,
-    EXERCISE_KNOWLEDGE,
-    SESSION_DESIGN_KNOWLEDGE,
-    CALISTHENICS_KNOWLEDGE,
-    HYBRID_PROGRAMMING_KNOWLEDGE,
-    NUTRITION_KNOWLEDGE,
     PROGRAMMING_KNOWLEDGE,
   ].join('\n');
 }

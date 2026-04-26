@@ -1,7 +1,8 @@
 /**
  * AI Coach — routing layer for Lockedin.
  *
- * Two modes: Gemini (online, free tier) or on-device Phi-3.5-mini (offline).
+ * Single backend: Google Gemini 2.5 Flash, streamed via the server-side
+ * /api/chat route.
  *
  * All exports are pure functions / async generators — no React hooks.
  * This module is imported only by client components ('use client').
@@ -9,7 +10,7 @@
 
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
-import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
+import { getFullKnowledge, getTopicKnowledge } from './knowledge-base';
 import { buildMemorySection, buildSummarySection } from './memory';
 import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
@@ -22,19 +23,10 @@ import {
 } from '@/lib/engine/intra-session';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export interface ProgressPayload {
-  status?:   string;
-  name?:     string;
-  file?:     string;
-  progress?: number;   // 0-100
-  loaded?:   number;   // bytes
-  total?:    number;   // bytes
-}
-
 export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
 
-// Per-section character caps. Total ceiling ~12k chars for Gemini,
-// ~3k chars for Phi on-device. The `knowledge` cap is dynamic.
+// Per-section character caps. Total ceiling ~12k chars for Gemini.
+// The `knowledge` cap is dynamic.
 const SECTION_CAPS = {
   role:       600,
   profile:    500,
@@ -76,27 +68,6 @@ function renderSection(section: PromptSection, cap: number): string {
   return section.heading ? `## ${section.heading}\n${body}` : body;
 }
 
-// ── Worker singleton ──────────────────────────────────────────────────────────
-// Kept at module level so the model stays loaded across navigation.
-let _worker:      Worker | null = null;
-let _modelLoaded  = false;
-
-function getWorker(): Worker {
-  if (typeof window === 'undefined') {
-    throw new Error('[coach] Workers are only available in the browser.');
-  }
-  if (!_worker) {
-    // Turbopack / webpack both handle `new URL('./worker.ts', import.meta.url)`
-    _worker = new Worker(new URL('./worker.ts', import.meta.url));
-  }
-  return _worker;
-}
-
-/** True only if the on-device model has already been downloaded and loaded. */
-function hasWorker(): boolean {
-  return typeof window !== 'undefined' && _modelLoaded;
-}
-
 // ── System-prompt builder ─────────────────────────────────────────────────────
 
 /**
@@ -104,12 +75,9 @@ function hasWorker(): boolean {
  *
  * @param userMessage   Optional — the user's latest message. Used to select
  *                      relevant knowledge-base sections (topic-aware injection).
- * @param isCloudMode   If true, includes the full knowledge base (larger context
- *                      window). Otherwise uses the compact version.
  */
 export async function buildSystemPrompt(
   userMessage?: string,
-  isCloudMode = false,
 ): Promise<string> {
   // ── Read profile ─────────────────────────────────────────────────────────
   const profile = await db.profile.get('me');
@@ -324,18 +292,8 @@ export async function buildSystemPrompt(
   }
 
   // ── Knowledge base (topic-aware) ──────────────────────────────────────────
-  let knowledge: string;
-  if (isCloudMode) {
-    // Gemini has larger context — inject topic-relevant knowledge or full base
-    if (userMessage) {
-      knowledge = getTopicKnowledge(userMessage);
-    } else {
-      knowledge = getFullKnowledge();
-    }
-  } else {
-    knowledge = getCompactKnowledge();
-  }
-  const knowledgeCap = isCloudMode ? 6000 : 2000;
+  const knowledge = userMessage ? getTopicKnowledge(userMessage) : getFullKnowledge();
+  const knowledgeCap = 6000;
 
   // ── Long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
   const [memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
@@ -515,57 +473,8 @@ Worked example (the format the parser actually requires):
     .join('\n\n');
 }
 
-// ── Token streaming — async generator queue ───────────────────────────────────
-
-async function* streamFromWorker(
-  messages:  ChatMessage[],
-  maxTokens: number,
-): AsyncGenerator<string> {
-  const worker = getWorker();
-
-  const queue:   Array<string | null> = [];
-  let   resolver: (() => void) | null  = null;
-
-  function enqueue(item: string | null) {
-    queue.push(item);
-    const r = resolver;
-    if (r) { resolver = null; r(); }
-  }
-
-  const handler = (event: MessageEvent<{ type: string; payload?: unknown }>) => {
-    const { type, payload } = event.data;
-    if      (type === 'TOKEN')             enqueue(payload as string);
-    else if (type === 'GENERATE_COMPLETE') enqueue(null);
-    else if (type === 'ERROR')             enqueue(null);
-  };
-
-  worker.addEventListener('message', handler);
-  worker.postMessage({ type: 'GENERATE', payload: { messages, maxTokens } });
-
-  try {
-    loop: while (true) {
-      // Drain what's already in the queue
-      while (queue.length > 0) {
-        const item = queue.shift()!;
-        if (item === null) break loop;
-        yield item;
-      }
-      // Wait for the next enqueue
-      await new Promise<void>((resolve) => { resolver = resolve; });
-    }
-  } finally {
-    worker.removeEventListener('message', handler);
-  }
-}
-
 // ── Main public API ───────────────────────────────────────────────────────────
 
-/**
- * Stream a response from Google Gemini 2.5 Flash.
- * Free tier; significantly smarter than on-device Phi.
- * The system prompt is passed as a system instruction; user/assistant turns
- * are mapped to Gemini's 'user'/'model' role names.
- */
 /**
  * Streams Gemini via the server-side /api/chat route.
  * Runs server-to-server (no browser CORS restrictions).
@@ -604,13 +513,11 @@ async function* geminiStream(
 }
 
 /**
- * Route a chat turn to the correct AI backend.
+ * Stream a chat turn from Gemini 2.5 Flash.
  * Yields string tokens as they stream from the model.
  *
- * If geminiApiKey is set → Gemini 2.5 Flash; otherwise → on-device Worker.
- *
  * @param messages     Conversation history including system prompt as first message.
- * @param geminiApiKey Google Gemini API key (online, free tier).
+ * @param geminiApiKey Google Gemini API key (required — free tier).
  * @param maxTokens    Max tokens to generate (default 2048).
  */
 export async function* sendMessage(
@@ -620,60 +527,9 @@ export async function* sendMessage(
 ): AsyncGenerator<string> {
   const trimmedGeminiKey = geminiApiKey?.trim();
 
-  if (trimmedGeminiKey) {
-    // ── Gemini 2.5 Flash (online, free tier) ─────────────────────────
-    yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
-    return;
+  if (!trimmedGeminiKey) {
+    throw new Error('Gemini API key is required. Add one in Settings → AI Coach.');
   }
 
-  // ── On-device Worker (offline) ────────────────────────────────────
-  yield* streamFromWorker(messages, maxTokens);
-}
-
-/**
- * Download and initialise the on-device model in the Worker.
- * Safe to call multiple times — resolves immediately if already loaded.
- *
- * @param onProgress  Callback for download progress updates.
- */
-export function loadOnDeviceModel(
-  onProgress: (p: ProgressPayload) => void,
-): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    if (_modelLoaded) {
-      resolve();
-      return;
-    }
-
-    const worker = getWorker();
-
-    const handler = (event: MessageEvent<{ type: string; payload?: unknown }>) => {
-      const { type, payload } = event.data;
-      if (type === 'LOAD_PROGRESS') {
-        onProgress(payload as ProgressPayload);
-      } else if (type === 'LOAD_COMPLETE') {
-        worker.removeEventListener('message', handler);
-        _modelLoaded = true;
-        resolve();
-      } else if (type === 'ERROR') {
-        worker.removeEventListener('message', handler);
-        reject(new Error(payload as string));
-      }
-    };
-
-    worker.addEventListener('message', handler);
-    worker.postMessage({ type: 'LOAD' });
-  });
-}
-
-/**
- * Send a STOP signal to the Worker so it drops in-flight token generation.
- */
-export function stopGeneration(): void {
-  _worker?.postMessage({ type: 'STOP' });
-}
-
-/** Whether the on-device model has been successfully loaded this session. */
-export function isModelLoaded(): boolean {
-  return _modelLoaded;
+  yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
 }

@@ -3,10 +3,9 @@
 /**
  * AI Coach Chat — /app/coach
  *
- * Full-screen conversational interface.
- * Supports two modes selected automatically from the athlete's profile:
- *   MODE A — On-device  (Phi-3.5-mini via Transformers.js Worker, offline-first)
- *   MODE B — Gemini     (Gemini 2.5 Flash, free tier, needs a Google AI Studio key)
+ * Full-screen conversational interface backed by Google Gemini 2.5 Flash.
+ * The (app) layout's ApiKeyGate ensures a Gemini API key exists before any
+ * route in this group renders, so this page can assume `geminiKey` is set.
  *
  * Chat history is persisted to db.chat (IndexedDB).
  * Only the last 10 messages are sent as context to the AI backend.
@@ -27,17 +26,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Progress }                                         from '@/components/ui/progress';
 import { db, newId }                                        from '@/lib/db/database';
 import type { ChatMessage as DBChatMessage }                from '@/lib/db/types';
 import {
   buildSystemPrompt,
   sendMessage,
-  loadOnDeviceModel,
-  stopGeneration,
-  isModelLoaded,
   type ChatMessage,
-  type ProgressPayload,
 } from '@/lib/ai/coach';
 import { parseActions, executeAction, type CoachAction, type ActionResult } from '@/lib/ai/coach-actions';
 import { loadChatContext, summarizeIfNeeded }            from '@/lib/ai/memory';
@@ -94,16 +88,9 @@ function getContextualPrompts(ctx: CoachContext): string[] {
   return prompts.slice(0, 4);
 }
 
-// ── Model status type ─────────────────────────────────────────────────────────
-type ModelStatus = 'idle' | 'loading' | 'ready' | 'error';
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isoNow() {
   return new Date().toISOString();
-}
-
-function bytesToMb(bytes: number) {
-  return (bytes / 1_048_576).toFixed(0);
 }
 
 // ── Settings sheet ────────────────────────────────────────────────────────────
@@ -111,26 +98,16 @@ function bytesToMb(bytes: number) {
 interface SettingsSheetProps {
   geminiKey:            string;
   onGeminiKeyChange:    (key: string) => void;
-  modelStatus:          ModelStatus;
-  loadProgress:         ProgressPayload | null;
   onClearChat:          () => void;
 }
 
 function SettingsSheet({
   geminiKey,
   onGeminiKeyChange,
-  modelStatus,
-  loadProgress,
   onClearChat,
 }: SettingsSheetProps) {
   const [geminiDraft,   setGeminiDraft]   = useState(geminiKey);
   const [showKey,       setShowKey]       = useState(false);
-
-  const pct = loadProgress?.progress ?? (
-    loadProgress?.loaded && loadProgress?.total
-      ? Math.round((loadProgress.loaded / loadProgress.total) * 100)
-      : 0
-  );
 
   return (
     <SheetContent
@@ -145,23 +122,16 @@ function SettingsSheet({
       {/* Mode indicator */}
       <div className="mb-6 rounded-xl p-4" style={{ backgroundColor: C.surface }}>
         <p className="text-xs uppercase tracking-wider mb-1" style={{ color: C.muted }}>Active mode</p>
-        {geminiKey ? (
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
-            <span className="font-semibold" style={{ color: C.green }}>Gemini 2.5 Flash — Online</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.muted }} />
-            <span className="font-semibold" style={{ color: C.muted }}>On-device — Offline</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.green }} />
+          <span className="font-semibold" style={{ color: C.green }}>Gemini 2.5 Flash — Online</span>
+        </div>
       </div>
 
-      {/* Gemini key — recommended free option */}
+      {/* Gemini key */}
       <div className="mb-6">
         <label htmlFor="coach-gemini-key" className="text-xs font-semibold uppercase tracking-wider block mb-2" style={{ color: C.muted }}>
-          Google Gemini API Key <span style={{ color: C.green }}>(Free — Recommended)</span>
+          Google Gemini API Key
         </label>
         <p className="text-xs mb-3" style={{ color: C.muted }}>
           Uses Gemini 2.5 Flash — free tier, no credit card. Get a key at{' '}
@@ -188,46 +158,7 @@ function SettingsSheet({
           style={{ backgroundColor: C.accent, color: C.text }}>
           Save Gemini key
         </button>
-        {geminiKey && (
-          <button type="button" onClick={() => { setGeminiDraft(''); onGeminiKeyChange(''); }}
-            className="w-full mt-2 py-2 rounded-lg text-sm" style={{ color: C.muted }}>
-            Remove key
-          </button>
-        )}
       </div>
-
-      {/* On-device model status */}
-      {!geminiKey && (
-        <div className="mb-6 rounded-xl p-4" style={{ backgroundColor: C.surface }}>
-          <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.muted }}>
-            On-device model — Phi-3.5-mini (~2.2 GB)
-          </p>
-          {modelStatus === 'ready' && (
-            <p className="text-sm" style={{ color: C.green }}>✓ Downloaded &amp; ready</p>
-          )}
-          {modelStatus === 'loading' && (
-            <>
-              <p className="text-sm mb-2" style={{ color: C.gold }}>Downloading…</p>
-              {loadProgress && (
-                <>
-                  <Progress value={pct} className="h-2 mb-1" />
-                  <p className="text-xs" style={{ color: C.muted }}>
-                    {loadProgress.loaded ? `${bytesToMb(loadProgress.loaded)} MB` : ''}
-                    {loadProgress.total  ? ` / ${bytesToMb(loadProgress.total)} MB` : ''}
-                    {pct > 0            ? ` (${pct}%)` : ''}
-                  </p>
-                </>
-              )}
-            </>
-          )}
-          {modelStatus === 'idle' && (
-            <p className="text-sm" style={{ color: C.muted }}>Not yet loaded.</p>
-          )}
-          {modelStatus === 'error' && (
-            <p className="text-sm" style={{ color: C.accent }}>Error loading model. Check connection &amp; retry.</p>
-          )}
-        </div>
-      )}
 
       {/* Clear conversation */}
       <button
@@ -284,8 +215,6 @@ export default function CoachPage() {
   // ── Data state ────────────────────────────────────────────────────────────
   const [messages,       setMessages]       = useState<DBChatMessage[]>([]);
   const [geminiKey,      setGeminiKey]      = useState<string>('');
-  const [modelStatus,    setModelStatus]    = useState<ModelStatus>('idle');
-  const [loadProgress,   setLoadProgress]   = useState<ProgressPayload | null>(null);
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(DEFAULT_PROMPTS);
 
   // ── Input state ───────────────────────────────────────────────────────────
@@ -347,12 +276,6 @@ export default function CoachPage() {
         // Non-critical — fall back to defaults
       }
       setSuggestedPrompts(getContextualPrompts(ctx));
-
-      // If model is already cached, mark as ready.
-      // Otherwise wait for explicit user action — don't auto-download 2.2 GB.
-      if (isModelLoaded()) {
-        setModelStatus('ready');
-      }
     }
     void init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -363,22 +286,6 @@ export default function CoachPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText]);
 
-  // ── Model loader ──────────────────────────────────────────────────────────
-  function startModelLoad() {
-    setModelStatus('loading');
-    loadOnDeviceModel((p) => {
-      setLoadProgress(p);
-    })
-      .then(() => {
-        setModelStatus('ready');
-        setLoadProgress(null);
-      })
-      .catch((err) => {
-        console.error('[coach] model load error:', err);
-        setModelStatus('error');
-      });
-  }
-
   // ── Save Gemini key ───────────────────────────────────────────────────────
   const handleGeminiKeyChange = useCallback(async (key: string) => {
     setGeminiKey(key);
@@ -387,13 +294,9 @@ export default function CoachPage() {
         geminiApiKey: key || undefined,
         updatedAt: new Date().toISOString(),
       });
-      if (!key && !isModelLoaded()) {
-        startModelLoad();
-      }
     } catch (err) {
       console.error('[coach] save gemini key failed:', err);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Clear conversation ────────────────────────────────────────────────────
@@ -439,14 +342,12 @@ export default function CoachPage() {
     setStreamingText('');
     setPendingActions([]);
 
-    const isCloudMode = Boolean(geminiKey);
-
     // Build context: system prompt (with memory + summary baked in) + tiered
     // chat window (rolling summary already inside the system prompt, so raw
     // messages only include the portion after the last summarized range).
     const [systemPrompt, chatCtx] = await Promise.all([
-      buildSystemPrompt(userText, isCloudMode),
-      loadChatContext(isCloudMode ? 'groq' : 'local'),
+      buildSystemPrompt(userText),
+      loadChatContext(),
     ]);
     // Always place the current user message last so the model sees it,
     // even when the fire-and-forget db.chat.add races ahead of loadChatContext.
@@ -464,7 +365,7 @@ export default function CoachPage() {
     // Stream response (increased token limit for richer responses)
     let fullResponse = '';
     try {
-      const gen = sendMessage(context, geminiKey || undefined, 4096);
+      const gen = sendMessage(context, geminiKey, 4096);
       for await (const token of gen) {
         if (abortRef.current) break;
         fullResponse += token;
@@ -515,7 +416,7 @@ export default function CoachPage() {
   // ── Execute a confirmed action ─────────────────────────────────────────────
   const handleExecuteAction = useCallback(async (action: CoachAction) => {
     setExecutingAction(action.type);
-    const result = await executeAction(action);
+    const result: ActionResult = await executeAction(action);
 
     // Add a system message confirming the action
     const statusMsg: DBChatMessage = {
@@ -547,9 +448,10 @@ export default function CoachPage() {
   }, []);
 
   // ── Stop generation ───────────────────────────────────────────────────────
+  // Aborts the in-flight Gemini stream read loop. The fetch itself will finish
+  // on its own; we just stop consuming tokens and discard the rest.
   const handleStop = useCallback(() => {
     abortRef.current = true;
-    stopGeneration();
   }, []);
 
   // ── Keyboard send (Cmd/Ctrl+Enter) ────────────────────────────────────────
@@ -558,144 +460,6 @@ export default function CoachPage() {
       e.preventDefault();
       void handleSend();
     }
-  }
-
-  // ── Determine active mode ─────────────────────────────────────────────────
-  const isCloudMode = Boolean(geminiKey);
-
-  // ── Setup choice screen (no key, model not started yet) ──────────────────
-  if (!isCloudMode && modelStatus === 'idle') {
-    return (
-      <div
-        className="min-h-screen flex flex-col items-center justify-center p-6"
-        style={{ backgroundColor: C.bg, color: C.text }}
-      >
-        <div
-          className="w-full max-w-sm rounded-2xl p-8"
-          style={{ backgroundColor: C.surface }}
-        >
-          <div
-            className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-6"
-            style={{ backgroundColor: `${C.accent}20`, border: `2px solid ${C.accent}` }}
-          >
-            🧠
-          </div>
-
-          <h2 className="text-xl font-bold mb-1 text-center">Set up your AI Coach</h2>
-          <p className="text-sm text-center mb-6" style={{ color: C.muted }}>
-            Choose how you want to power the coach.
-          </p>
-
-          {/* Option A — Gemini (recommended) */}
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            className="w-full rounded-xl p-4 mb-3 text-left border-2 transition-all active:opacity-70"
-            style={{ backgroundColor: C.bg, borderColor: C.accent }}
-          >
-            <p className="font-bold mb-0.5" style={{ color: C.accent }}>
-              ⚡ Gemini 2.5 Flash — Recommended
-            </p>
-            <p className="text-sm" style={{ color: C.muted }}>
-              Free API key at <span style={{ color: C.gold }}>aistudio.google.com</span>.
-              Fast, no download needed.
-            </p>
-          </button>
-
-          {/* Option B — On-device */}
-          <button
-            type="button"
-            onClick={() => startModelLoad()}
-            className="w-full rounded-xl p-4 text-left border transition-all active:opacity-70"
-            style={{ backgroundColor: C.bg, borderColor: C.border }}
-          >
-            <p className="font-bold mb-0.5" style={{ color: C.text }}>
-              📱 On-device — Offline
-            </p>
-            <p className="text-sm" style={{ color: C.muted }}>
-              Downloads Phi-3.5-mini once (~2.2 GB). Works offline, no key needed.
-            </p>
-          </button>
-        </div>
-
-        {/* Settings sheet for entering Gemini key */}
-        <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <SettingsSheet
-            geminiKey={geminiKey}
-            onGeminiKeyChange={async (key) => { await handleGeminiKeyChange(key); if (key) setSettingsOpen(false); }}
-            modelStatus={modelStatus}
-            loadProgress={loadProgress}
-            onClearChat={handleClearChat}
-          />
-        </Sheet>
-      </div>
-    );
-  }
-
-  // ── Model download progress screen ────────────────────────────────────────
-  if (!isCloudMode && modelStatus === 'loading') {
-    const pct = loadProgress?.progress ?? (
-      loadProgress?.loaded && loadProgress?.total
-        ? Math.round((loadProgress.loaded / loadProgress.total) * 100)
-        : 0
-    );
-    const loadedMb = loadProgress?.loaded ? bytesToMb(loadProgress.loaded) : '0';
-    const totalMb  = loadProgress?.total  ? bytesToMb(loadProgress.total)  : '~2250';
-
-    return (
-      <div
-        className="min-h-screen flex flex-col items-center justify-center p-6"
-        style={{ backgroundColor: C.bg, color: C.text }}
-      >
-        <div
-          className="w-full max-w-sm rounded-2xl p-8 text-center"
-          style={{ backgroundColor: C.surface }}
-        >
-          <div
-            className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-6 animate-pulse"
-            style={{ backgroundColor: `${C.accent}20`, border: `2px solid ${C.accent}` }}
-          >
-            🧠
-          </div>
-
-          <h2 className="text-xl font-bold mb-2">Downloading AI Model</h2>
-          <p className="text-sm mb-6" style={{ color: C.muted }}>
-            This happens once (~2.2 GB). After this, everything runs offline.
-          </p>
-
-          <div className="mb-3">
-            <Progress value={pct} className="h-3" />
-          </div>
-          <p className="text-sm mb-6" style={{ color: C.muted }}>
-            {loadedMb} MB / {totalMb} MB
-            {pct > 0 ? ` — ${pct}%` : ''}
-          </p>
-
-          <p className="text-xs" style={{ color: C.muted }}>
-            Keep the app open. This may take a few minutes on mobile data.
-          </p>
-
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            className="mt-6 text-xs underline"
-            style={{ color: C.gold }}
-          >
-            Add a free Gemini key for instant access instead →
-          </button>
-        </div>
-
-        <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <SettingsSheet
-            geminiKey={geminiKey}
-            onGeminiKeyChange={handleGeminiKeyChange}
-            modelStatus={modelStatus}
-            loadProgress={loadProgress}
-            onClearChat={handleClearChat}
-          />
-        </Sheet>
-      </div>
-    );
   }
 
   // ── Main chat interface ───────────────────────────────────────────────────
@@ -712,21 +476,12 @@ export default function CoachPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold">AI Coach</h1>
           {/* Mode badge */}
-          {isCloudMode ? (
-            <span
-              className="text-xs font-semibold px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: `${C.green}20`, color: C.green }}
-            >
-              Gemini 2.5 Flash
-            </span>
-          ) : (
-            <span
-              className="text-xs font-semibold px-2 py-0.5 rounded-full"
-              style={{ backgroundColor: `${C.muted}20`, color: C.muted }}
-            >
-              On-device
-            </span>
-          )}
+          <span
+            className="text-xs font-semibold px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: `${C.green}20`, color: C.green }}
+          >
+            Gemini 2.5 Flash
+          </span>
         </div>
 
         {/* Settings trigger — base-ui Dialog.Trigger renders as a button; style it directly */}
@@ -747,8 +502,6 @@ export default function CoachPage() {
           <SettingsSheet
             geminiKey={geminiKey}
             onGeminiKeyChange={handleGeminiKeyChange}
-            modelStatus={modelStatus}
-            loadProgress={loadProgress}
             onClearChat={handleClearChat}
           />
         </Sheet>
@@ -900,7 +653,7 @@ export default function CoachPage() {
             >
               <svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5" style={{ color: '#fff' }}>
                 <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-              </svg>
+            </svg>
             </button>
           )}
         </div>

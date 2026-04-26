@@ -41,9 +41,8 @@ export interface AnalyzeOptions {
 
 // ── Lift-specific coaching cues ────────────────────────────────────────────
 //
-// Kept here rather than in knowledge-base.ts to keep the on-device prompt
-// context small. Vision calls are Groq-only, so they can carry a slightly
-// richer prompt.
+// Kept here rather than in knowledge-base.ts because these cues are only
+// relevant for vision-based form analysis, not the general chat prompt.
 const LIFT_CUES: Record<Lift, string> = {
   SQUAT:
     'Look for: depth (hip crease below knee), knee tracking (not caving), upright torso, neutral spine, ' +
