@@ -15,7 +15,7 @@ import { useState, useEffect } from 'react';
 import { useRouter }                    from 'next/navigation';
 import { Skeleton }                     from '@/components/ui/skeleton';
 import { toast }                        from 'sonner';
-import { Settings, ChevronRight, CalendarClock, Clock, Flame } from 'lucide-react';
+import { Settings, ChevronRight, CalendarClock, Clock, Flame, Camera, Trophy } from 'lucide-react';
 import { db, today }                    from '@/lib/db/database';
 import { readinessLabel }               from '@/lib/engine/readiness';
 import { RingProgress }                 from '@/components/lockedin/RingProgress';
@@ -25,10 +25,15 @@ import { loadTodayBudget, describeDay, type DayBudget } from '@/lib/engine/sched
 import { executeAction } from '@/lib/ai/coach-actions';
 import { resolveTodayTarget, macroTotalsFor } from '@/lib/engine/nutrition-db';
 import { ensureSessionFresh, ensureTodaySession } from '@/lib/engine/ensure-session-fresh';
+import { buildProgramProgress } from '@/lib/engine/program-progress';
+import { buildGoalProgress } from '@/lib/engine/goal-progress';
+import { ProgramTimeline } from '@/components/lockedin/ProgramTimeline';
+import { InsightsCard } from '@/components/lockedin/InsightsCard';
+import { GoalProgressCard } from '@/components/lockedin/GoalProgressCard';
 import type { DailyTarget } from '@/lib/engine/nutrition';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
-  SessionExercise, TrainingBlock, TrainingCycle, Meet,
+  SessionExercise, TrainingBlock, TrainingCycle, Meet, BodyweightEntry,
 } from '@/lib/db/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -52,12 +57,14 @@ interface HomeData {
   exercises:      SessionExercise[];
   block:          TrainingBlock | null;
   cycle:          TrainingCycle | null;
+  cycleBlocks:    TrainingBlock[];
   upcomingMeet:   Meet | null;
   recentSessions: Array<{ session: TrainingSession; volume: number; avgRpe?: number }>;
   loggedSetCount: number;
   todayBudget:    DayBudget | null;
   nutritionTarget: DailyTarget | null;
   nutritionTotals: { kcal: number; proteinG: number; count: number };
+  latestBodyweight: BodyweightEntry | null;
 }
 
 export default function HomePage() {
@@ -66,9 +73,11 @@ export default function HomePage() {
   const [loadError, setLoadError] = useState(false);
   const [data,    setData]    = useState<HomeData>({
     profile: null, readiness: null, session: null, exercises: [],
-    block: null, cycle: null, upcomingMeet: null, recentSessions: [], loggedSetCount: 0,
+    block: null, cycle: null, cycleBlocks: [], upcomingMeet: null,
+    recentSessions: [], loggedSetCount: 0,
     todayBudget: null, nutritionTarget: null,
     nutritionTotals: { kcal: 0, proteinG: 0, count: 0 },
+    latestBodyweight: null,
   });
   const [abbreviating, setAbbreviating] = useState(false);
   const [spawning, setSpawning] = useState(false);
@@ -79,7 +88,7 @@ export default function HomePage() {
 
       // Check-in is no longer a gate — the athlete can view Home without it.
       // The readiness card links to /checkin if nothing has been logged yet.
-      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw] = await Promise.all([
+      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw, latestBodyweight] = await Promise.all([
         db.profile.get('me'),
         db.readiness.where('date').equals(todayStr).first(),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
@@ -87,6 +96,7 @@ export default function HomePage() {
         loadTodayBudget(),
         resolveTodayTarget(todayStr),
         macroTotalsFor(todayStr),
+        db.bodyweight.orderBy('date').reverse().first(),
       ]);
 
       // Regenerate today's exercises from the live engine so stale content
@@ -107,14 +117,15 @@ export default function HomePage() {
         : 0;
 
       let block: TrainingBlock | null = null;
+      let cycleBlocks: TrainingBlock[] = [];
       if (activeCycle) {
-        block = (await db.blocks
+        cycleBlocks = await db.blocks
           .where('cycleId').equals(activeCycle.id)
-          .filter((b) =>
-            b.weekStart <= activeCycle.currentWeek &&
-            b.weekEnd   >= activeCycle.currentWeek,
-          )
-          .first()) ?? null;
+          .toArray();
+        block = cycleBlocks.find(
+          (b) => b.weekStart <= activeCycle.currentWeek &&
+                 b.weekEnd   >= activeCycle.currentWeek,
+        ) ?? null;
       }
 
       const completedAll = await db.sessions
@@ -141,6 +152,7 @@ export default function HomePage() {
         readiness: readiness ?? null,
         session, exercises, block,
         cycle: activeCycle ?? null,
+        cycleBlocks,
         upcomingMeet: upcomingMeet ?? null,
         recentSessions,
         loggedSetCount,
@@ -151,6 +163,7 @@ export default function HomePage() {
           proteinG: nutritionTotalsRaw.proteinG,
           count: nutritionTotalsRaw.count,
         },
+        latestBodyweight: latestBodyweight ?? null,
       });
       setLoading(false);
     }
@@ -225,7 +238,13 @@ export default function HomePage() {
     );
   }
 
-  const { profile, readiness, session, exercises, block, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals } = data;
+  const { profile, readiness, session, exercises, block, cycle, cycleBlocks, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals, latestBodyweight } = data;
+  const programProgress = cycle && cycleBlocks.length > 0
+    ? buildProgramProgress(cycle, cycleBlocks, upcomingMeet)
+    : null;
+  const goalProgress = profile
+    ? buildGoalProgress({ profile, latestBodyweight })
+    : null;
   const scheduleCap = todayBudget?.minutes;
   const isUnavailable = scheduleCap === null;
   const isTimeBoxed = typeof scheduleCap === 'number';
@@ -301,16 +320,8 @@ export default function HomePage() {
             <h1 className="text-2xl font-bold leading-tight" style={{ color: C.text }}>
               {greeting()}{profile?.name ? `, ${profile.name.split(' ')[0]}` : ''}.
             </h1>
-            <p className="text-sm mt-0.5 flex items-center gap-2" style={{ color: C.muted }}>
+            <p className="text-sm mt-0.5" style={{ color: C.muted }}>
               {formatDateFull()}
-              {block && (
-                <span
-                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: `${C.gold}20`, color: C.gold }}
-                >
-                  {block.blockType.charAt(0) + block.blockType.slice(1).toLowerCase()}
-                </span>
-              )}
             </p>
           </div>
           <button
@@ -383,6 +394,30 @@ export default function HomePage() {
             )}
           </div>
         </div>
+
+        {/* ── 2a. PROGRAM TIMELINE ──────────────────────────────────────── */}
+        {programProgress && (
+          <button
+            type="button"
+            onClick={() => router.push('/progress')}
+            className="w-full rounded-2xl p-4 mb-4 active:scale-[0.99] transition-transform"
+            style={{
+              backgroundColor: C.surface,
+              border: `1px solid ${C.border}`,
+              textAlign: 'left',
+            }}
+            aria-label="View training progress"
+          >
+            <ProgramTimeline progress={programProgress} variant="compact" />
+          </button>
+        )}
+
+        {/* ── 2a-ii. GOAL PROGRESS ──────────────────────────────────────── */}
+        {goalProgress && (
+          <div className="mb-4">
+            <GoalProgressCard progress={goalProgress} variant="compact" />
+          </div>
+        )}
 
         {/* ── 2b. SCHEDULE OVERRIDE BANNER ──────────────────────────────── */}
         {hasOverride && (
@@ -546,6 +581,9 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* ── 3a. INSIGHTS (weak-points findings) ───────────────────────── */}
+        <InsightsCard />
+
         {/* ── 3b. NUTRITION TARGET ──────────────────────────────────────── */}
         {nutritionTarget ? (
           <button
@@ -645,6 +683,47 @@ export default function HomePage() {
             <ChevronRight size={18} color={C.muted} />
           </button>
         )}
+
+        {/* ── 4b. TOOLS TRAY (discovery for off-nav features) ───────────── */}
+        <div className="mb-4">
+          <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: C.muted }}>
+            Tools
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => router.push('/form-check')}
+              className="rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all active:scale-95"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+              aria-label="Record a form check"
+            >
+              <Camera size={18} color={C.accent} />
+              <span className="text-xs font-semibold" style={{ color: C.text }}>Form check</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/schedule')}
+              className="rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all active:scale-95"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+              aria-label="View weekly schedule"
+            >
+              <CalendarClock size={18} color={C.blue} />
+              <span className="text-xs font-semibold" style={{ color: C.text }}>Schedule</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/meet')}
+              className="rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all active:scale-95"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+              aria-label={upcomingMeet ? 'View meet prep' : 'Add a meet'}
+            >
+              <Trophy size={18} color={C.gold} />
+              <span className="text-xs font-semibold" style={{ color: C.text }}>
+                {upcomingMeet ? 'Meet prep' : 'Add meet'}
+              </span>
+            </button>
+          </div>
+        </div>
 
         {/* ── 5. RECENT TRAINING ─────────────────────────────────────────── */}
         {recentSessions.length > 0 && (

@@ -29,6 +29,11 @@ import { EXERCISE_BY_ID }                                 from '@/lib/exercises/
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
 import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
 import { unpackReviewIssues }                             from '@/lib/engine/session-review';
+import { detectSessionPRs }                               from '@/lib/engine/session-prs';
+import type { SessionPR }                                 from '@/lib/engine/session-prs';
+import { timerTick, timerDone }                           from '@/lib/ui/timer-cues';
+import { PlateBreakdownLine }                             from '@/components/lockedin/PlateBreakdownLine';
+import type { SetOutcome }                                from '@/lib/db/types';
 
 // ── Design tokens (extends shared theme with session-specific colours) ───────
 const C = { ..._C, amber: '#D97706', green: _C.greenDeep } as const;
@@ -39,6 +44,39 @@ const RING_CIRC = 2 * Math.PI * RING_R; // ≈ 502.65
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type PageState = 'overview' | 'logging' | 'complete';
+
+/**
+ * Look up the athlete's most recently logged set for the same exercise
+ * (matched by libraryExerciseId first, then by name as a fallback) from any
+ * session other than the current one. Returns null if nothing found.
+ */
+async function findLastLoggedSet(
+  current: SessionExercise,
+  currentSessionId: string,
+): Promise<SetLog | null> {
+  // Find candidate exercise rows in other sessions that match.
+  const all = current.libraryExerciseId
+    ? await db.exercises.filter((e) =>
+        e.libraryExerciseId === current.libraryExerciseId &&
+        e.sessionId !== currentSessionId,
+      ).toArray()
+    : await db.exercises.filter((e) =>
+        e.name === current.name &&
+        e.sessionId !== currentSessionId,
+      ).toArray();
+  if (all.length === 0) return null;
+
+  const sets = await db.sets
+    .where('exerciseId').anyOf(all.map((e) => e.id))
+    .toArray();
+  if (sets.length === 0) return null;
+
+  // Most recent by loggedAt timestamp; ignore failed/missed sets so we don't
+  // re-seed with a bail.
+  return sets
+    .filter((s) => s.outcome !== 'MISS')
+    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))[0] ?? null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-component: Rest Timer Overlay
@@ -131,11 +169,15 @@ function SetLogRow({ setLog, rpeTarget, onTap }: SetLogRowProps) {
   const overshoot = (setLog.rpeLogged ?? 0) - rpeTarget;
   const isCritical = setLog.rpeLogged !== undefined && overshoot > 2;
   const isWarning  = setLog.rpeLogged !== undefined && overshoot > 1 && !isCritical;
+  const isMiss = setLog.outcome === 'MISS';
+  const isPartial = setLog.outcome === 'PARTIAL';
 
   let bg     = 'transparent';
   let border = 'transparent';
-  if (isCritical) { bg = 'rgba(153,27,27,0.2)';  border = C.accent; }
-  if (isWarning)  { bg = 'rgba(217,119,6,0.15)'; border = C.amber;  }
+  if (isMiss)         { bg = 'rgba(233,69,96,0.18)'; border = C.accent; }
+  else if (isPartial) { bg = 'rgba(217,119,6,0.18)'; border = C.amber;  }
+  else if (isCritical){ bg = 'rgba(153,27,27,0.2)';  border = C.accent; }
+  else if (isWarning) { bg = 'rgba(217,119,6,0.15)'; border = C.amber;  }
 
   return (
     <button
@@ -150,8 +192,11 @@ function SetLogRow({ setLog, rpeTarget, onTap }: SetLogRowProps) {
       <span className="flex-1 text-center font-semibold" style={{ color: C.text }}>
         {setLog.loadKg} kg
       </span>
-      <span className="flex-1 text-center" style={{ color: C.text }}>
-        {setLog.reps} reps
+      <span
+        className="flex-1 text-center"
+        style={{ color: isMiss ? C.accent : isPartial ? C.amber : C.text }}
+      >
+        {isMiss ? 'bail ✗' : `${setLog.reps} reps${isPartial ? ' (partial)' : ''}`}
       </span>
       <span
         className="w-20 text-right font-semibold"
@@ -240,10 +285,16 @@ export default function SessionPage({
   const [restTimerSecs,    setRestTimerSecs]    = useState<number | null>(null);
   const [restTimerMax,     setRestTimerMax]     = useState(180);
 
+  // ── Set outcome (failed/partial flag for the next Log Set tap) ─────────
+  const [draftOutcome, setDraftOutcome] = useState<SetOutcome>('COMPLETE');
+  const draftOutcomeRef = useRef<SetOutcome>('COMPLETE');
+  draftOutcomeRef.current = draftOutcome;
+
   // ── Complete state ─────────────────────────────────────────────────────
   const [sessionNote,      setSessionNote]      = useState('');
   const [saving,           setSaving]           = useState(false);
   const [maxSuggestion,    setMaxSuggestion]    = useState<MaxUpdateSuggestion | null>(null);
+  const [sessionPRs,       setSessionPRs]       = useState<SessionPR[]>([]);
   const [editingSetId,     setEditingSetId]     = useState<string | null>(null);
   const [editLoad,         setEditLoad]         = useState(0);
   const [editReps,         setEditReps]         = useState(0);
@@ -305,9 +356,16 @@ export default function SessionPage({
   }, [sessionId]);
 
   // ── Rest timer countdown ───────────────────────────────────────────────
+  // Fires audio + haptic cues at T-3/2/1 (subtle ticks) and T-0 (done tone)
+  // so athletes don't have to stare at the screen during rest.
   useEffect(() => {
     if (restTimerSecs === null) return;
-    if (restTimerSecs <= 0)    { setRestTimerSecs(null); return; }
+    if (restTimerSecs <= 0) {
+      timerDone();
+      setRestTimerSecs(null);
+      return;
+    }
+    if (restTimerSecs <= 3) timerTick();
     const t = setTimeout(
       () => setRestTimerSecs((s) => (s !== null && s > 0 ? s - 1 : null)),
       1000,
@@ -316,6 +374,11 @@ export default function SessionPage({
   }, [restTimerSecs]);
 
   // ── Pre-fill draft when active exercise changes ────────────────────────
+  // Order of preference for the load seed:
+  //   1. Engine-prescribed estimatedLoadKg (synchronous default).
+  //   2. Async overlay: athlete's most recent logged set for the same
+  //      exercise (matched by libraryExerciseId, then name) from a previous
+  //      session — saves them retyping the same number every week.
   useEffect(() => {
     if (exercises.length === 0) return;
     const ex = exercises[activeExIdx];
@@ -323,9 +386,21 @@ export default function SessionPage({
     setDraftLoad(ex.estimatedLoadKg);
     setDraftReps(ex.reps);
     setDraftRpe(ex.rpeTarget);
+    setDraftOutcome('COMPLETE');
     // Dismiss rest timer when moving to a new exercise
     setRestTimerSecs(null);
-  }, [activeExIdx, exercises]);
+
+    let cancelled = false;
+    void (async () => {
+      const prior = await findLastLoggedSet(ex, sessionId);
+      if (cancelled || !prior) return;
+      setDraftLoad(prior.loadKg);
+      setDraftReps(prior.reps);
+      // Don't override RPE target — we want athletes to compare effort, not
+      // anchor on last week's perceived effort.
+    })();
+    return () => { cancelled = true; };
+  }, [activeExIdx, exercises, sessionId]);
 
   // ── Derived ────────────────────────────────────────────────────────────
   const activeExercise    = exercises[activeExIdx] ?? null;
@@ -343,6 +418,7 @@ export default function SessionPage({
     const load = draftLoadRef.current;
     const reps = draftRepsRef.current;
     const rpe  = draftRpeRef.current;
+    const outcome = draftOutcomeRef.current;
     const setNumber = setLogs.filter((sl) => sl.exerciseId === activeExercise.id).length + 1;
 
     // Validate user-supplied values before writing
@@ -356,15 +432,22 @@ export default function SessionPage({
       return;
     }
 
+    // A MISS implicitly means 0 reps completed; a PARTIAL keeps the entered
+    // rep count (must be < target — we trust the athlete's count).
+    const finalReps = outcome === 'MISS' ? 0 : reps;
+    // Rate failed/partial sets at RPE 10 — they were max effort by definition.
+    const finalRpe = outcome === 'COMPLETE' ? rpe : 10;
+
     const newLog: SetLog = {
       id:         newId(),
       exerciseId: activeExercise.id,
       sessionId,
       setNumber,
-      reps,
+      reps:       finalReps,
       loadKg:     load,
-      rpeLogged:  rpe,
+      rpeLogged:  finalRpe,
       loggedAt:   new Date().toISOString(),
+      ...(outcome !== 'COMPLETE' ? { outcome } : {}),
     };
 
     // Fire-and-forget — never await during logging
@@ -372,34 +455,52 @@ export default function SessionPage({
 
     // Synchronous UI update
     setSetLogs((prev) => [...prev, newLog]);
+    // Reset the outcome flag — failure is per-set, not sticky.
+    setDraftOutcome('COMPLETE');
 
     // ── Intra-session autoregulation ───────────────────────────────────
-    // Compare logged RPE to target and suggest load adjustment for next set.
-    const rpeTarget = activeExercise.rpeTarget;
-    const rpeDiff = rpe - rpeTarget; // positive = overshooting, negative = undershooting
-
-    if (Math.abs(rpeDiff) >= 1) {
-      // Significant deviation — adjust load by 2.5 kg per 0.5 RPE difference
-      const adjustment = -Math.round(rpeDiff / 0.5) * 2.5;
-      const newLoad = Math.max(20, Math.round((load + adjustment) / 2.5) * 2.5);
-
+    // Failed/partial sets get a hard load cut regardless of RPE.
+    if (outcome === 'MISS' || outcome === 'PARTIAL') {
+      const cutPct = outcome === 'MISS' ? 0.10 : 0.05;
+      const newLoad = Math.max(20, Math.round((load * (1 - cutPct)) / 2.5) * 2.5);
       if (newLoad !== load) {
         setDraftLoad(newLoad);
+        toast(
+          outcome === 'MISS'
+            ? `Bail logged. Dropping to ${newLoad} kg — keep the bar moving.`
+            : `Partial logged. Easing to ${newLoad} kg.`,
+          { duration: 3500 },
+        );
+      }
+    } else {
+      // Compare logged RPE to target and suggest load adjustment for next set.
+      const rpeTarget = activeExercise.rpeTarget;
+      const rpeDiff = rpe - rpeTarget; // positive = overshooting, negative = undershooting
 
-        if (rpeDiff >= 1.5) {
-          toast(`RPE ${rpe} vs target ${rpeTarget} — dropping to ${newLoad} kg. Don't grind.`, { duration: 3500 });
-        } else if (rpeDiff >= 1) {
-          toast(`Felt heavy — next set at ${newLoad} kg`, { duration: 2500 });
-        } else if (rpeDiff <= -1.5) {
-          toast(`Too easy — bumping to ${newLoad} kg`, { duration: 2500 });
-        } else {
-          toast(`Light for you — next set at ${newLoad} kg`, { duration: 2500 });
+      if (Math.abs(rpeDiff) >= 1) {
+        // Significant deviation — adjust load by 2.5 kg per 0.5 RPE difference
+        const adjustment = -Math.round(rpeDiff / 0.5) * 2.5;
+        const newLoad = Math.max(20, Math.round((load + adjustment) / 2.5) * 2.5);
+
+        if (newLoad !== load) {
+          setDraftLoad(newLoad);
+
+          if (rpeDiff >= 1.5) {
+            toast(`RPE ${rpe} vs target ${rpeTarget} — dropping to ${newLoad} kg. Don't grind.`, { duration: 3500 });
+          } else if (rpeDiff >= 1) {
+            toast(`Felt heavy — next set at ${newLoad} kg`, { duration: 2500 });
+          } else if (rpeDiff <= -1.5) {
+            toast(`Too easy — bumping to ${newLoad} kg`, { duration: 2500 });
+          } else {
+            toast(`Light for you — next set at ${newLoad} kg`, { duration: 2500 });
+          }
         }
       }
     }
 
-    // Start rest timer (duration scaled by actual RPE, not target)
-    const dur = rpe < 8 ? 180 : rpe < 9 ? 240 : 300;
+    // Start rest timer. Failed sets imply you went to max effort — give the
+    // long-rest treatment.
+    const dur = outcome !== 'COMPLETE' ? 300 : finalRpe < 8 ? 180 : finalRpe < 9 ? 240 : 300;
     setRestTimerMax(dur);
     setRestTimerSecs(dur);
   }, [activeExercise, sessionId, setLogs]);
@@ -463,6 +564,20 @@ export default function SessionPage({
   useEffect(() => {
     if (pageState === 'complete') {
       void detectAndSuggestMaxUpdate();
+      void detectSessionPRs(sessionId).then((prs) => {
+        if (prs.length === 0) return;
+        setSessionPRs(prs);
+        const top = prs[0];
+        const verb = top.priorBestE1rm > 0 ? `+${top.deltaKg}kg` : 'first time';
+        toast.success(
+          prs.length === 1
+            ? `🎉 ${top.exerciseName} PR — ${top.todayE1rm}kg e1RM (${verb})`
+            : `🎉 ${prs.length} PRs today — top: ${top.exerciseName} ${top.todayE1rm}kg`,
+          { duration: 5500 },
+        );
+      }).catch((err) => {
+        console.warn('[Session] detectSessionPRs failed:', err);
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageState]);
@@ -1200,6 +1315,9 @@ export default function SessionPage({
             </button>
           </div>
 
+          {/* ROW 1b: Plates per side hint — saves mental math at the bar */}
+          <PlateBreakdownLine loadKg={draftLoad} />
+
           {/* ROW 2: Reps stepper */}
           <div className="flex items-center gap-3">
             <span className="w-14 text-sm text-right" style={{ color: C.muted }}>
@@ -1283,14 +1401,47 @@ export default function SessionPage({
             );
           })()}
 
+          {/* Outcome toggle: athlete flags a partial or bail before logging. */}
+          <div className="flex items-center gap-2">
+            {([
+              ['COMPLETE', 'Done',    C.text],
+              ['PARTIAL',  'Partial', C.gold],
+              ['MISS',     'Bail',    C.accent],
+            ] as const).map(([key, label, colour]) => {
+              const on = draftOutcome === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setDraftOutcome(key)}
+                  className="flex-1 h-9 rounded-lg text-xs font-bold transition-all active:scale-[0.97]"
+                  style={{
+                    backgroundColor: on ? `${colour}20` : 'transparent',
+                    color: on ? colour : C.muted,
+                    border: `1px solid ${on ? colour : C.dim}`,
+                  }}
+                  aria-pressed={on}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Log Set button */}
           <button
             type="button"
             onClick={logSet}
             className="w-full h-14 rounded-2xl text-lg font-bold tracking-wide active:scale-[0.97] transition-transform"
-            style={{ backgroundColor: C.accent, color: C.text }}
+            style={{
+              backgroundColor:
+                draftOutcome === 'MISS' ? C.accent
+                : draftOutcome === 'PARTIAL' ? C.gold
+                : C.accent,
+              color: C.text,
+            }}
           >
-            Log Set
+            {draftOutcome === 'MISS' ? 'Log Bail' : draftOutcome === 'PARTIAL' ? 'Log Partial' : 'Log Set'}
           </button>
 
           {/* Exercise navigation */}
@@ -1457,15 +1608,69 @@ export default function SessionPage({
         <div className="pt-12 pb-6 text-center">
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
-            style={{ backgroundColor: `${C.green}22`, border: `2px solid ${C.green}` }}
+            style={{
+              backgroundColor: sessionPRs.length > 0 ? `${C.gold}22` : `${C.green}22`,
+              border: `2px solid ${sessionPRs.length > 0 ? C.gold : C.green}`,
+            }}
           >
-            ✓
+            {sessionPRs.length > 0 ? '🏆' : '✓'}
           </div>
-          <h1 className="text-2xl font-bold">Session Complete</h1>
+          <h1 className="text-2xl font-bold">
+            {sessionPRs.length > 0 ? 'New Personal Record' : 'Session Complete'}
+          </h1>
           <p className="text-sm mt-1" style={{ color: C.muted }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
+
+        {/* PR celebration card — only when we detected ≥1 PR */}
+        {sessionPRs.length > 0 && (
+          <div
+            className="rounded-2xl p-5 mb-4"
+            style={{
+              backgroundColor: `${C.gold}14`,
+              border: `1px solid ${C.gold}`,
+            }}
+          >
+            <p
+              className="text-xs font-bold uppercase tracking-widest mb-3"
+              style={{ color: C.gold }}
+            >
+              {sessionPRs.length === 1
+                ? 'Personal Record'
+                : `${sessionPRs.length} Personal Records`}
+            </p>
+            <ul className="space-y-2.5">
+              {sessionPRs.slice(0, 4).map((pr) => (
+                <li key={pr.exerciseName} className="flex items-baseline gap-3">
+                  <span
+                    className="text-base font-bold flex-1 min-w-0 truncate"
+                    style={{ color: C.text }}
+                  >
+                    {pr.exerciseName}
+                  </span>
+                  <span
+                    className="text-base font-bold tabular-nums"
+                    style={{ color: C.gold }}
+                  >
+                    {pr.todayE1rm}kg
+                  </span>
+                  <span
+                    className="text-xs tabular-nums shrink-0"
+                    style={{ color: C.muted }}
+                  >
+                    {pr.priorBestE1rm > 0
+                      ? `+${pr.deltaKg}kg vs ${pr.priorBestE1rm}kg`
+                      : 'first time'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs mt-3" style={{ color: C.muted }}>
+              Estimated 1RM from {sessionPRs[0].evidenceSet.reps} × {sessionPRs[0].evidenceSet.loadKg}kg.
+            </p>
+          </div>
+        )}
 
         {/* Stats grid */}
         <div
