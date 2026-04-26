@@ -26,12 +26,14 @@ import { executeAction } from '@/lib/ai/coach-actions';
 import { resolveTodayTarget, macroTotalsFor } from '@/lib/engine/nutrition-db';
 import { ensureSessionFresh, ensureTodaySession } from '@/lib/engine/ensure-session-fresh';
 import { buildProgramProgress } from '@/lib/engine/program-progress';
+import { buildGoalProgress } from '@/lib/engine/goal-progress';
 import { ProgramTimeline } from '@/components/lockedin/ProgramTimeline';
 import { InsightsCard } from '@/components/lockedin/InsightsCard';
+import { GoalProgressCard } from '@/components/lockedin/GoalProgressCard';
 import type { DailyTarget } from '@/lib/engine/nutrition';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
-  SessionExercise, TrainingBlock, TrainingCycle, Meet,
+  SessionExercise, TrainingBlock, TrainingCycle, Meet, BodyweightEntry,
 } from '@/lib/db/types';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -62,6 +64,7 @@ interface HomeData {
   todayBudget:    DayBudget | null;
   nutritionTarget: DailyTarget | null;
   nutritionTotals: { kcal: number; proteinG: number; count: number };
+  latestBodyweight: BodyweightEntry | null;
 }
 
 export default function HomePage() {
@@ -74,6 +77,7 @@ export default function HomePage() {
     recentSessions: [], loggedSetCount: 0,
     todayBudget: null, nutritionTarget: null,
     nutritionTotals: { kcal: 0, proteinG: 0, count: 0 },
+    latestBodyweight: null,
   });
   const [abbreviating, setAbbreviating] = useState(false);
   const [spawning, setSpawning] = useState(false);
@@ -84,7 +88,7 @@ export default function HomePage() {
 
       // Check-in is no longer a gate — the athlete can view Home without it.
       // The readiness card links to /checkin if nothing has been logged yet.
-      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw] = await Promise.all([
+      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw, latestBodyweight] = await Promise.all([
         db.profile.get('me'),
         db.readiness.where('date').equals(todayStr).first(),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
@@ -92,6 +96,7 @@ export default function HomePage() {
         loadTodayBudget(),
         resolveTodayTarget(todayStr),
         macroTotalsFor(todayStr),
+        db.bodyweight.orderBy('date').reverse().first(),
       ]);
 
       // Regenerate today's exercises from the live engine so stale content
@@ -158,6 +163,7 @@ export default function HomePage() {
           proteinG: nutritionTotalsRaw.proteinG,
           count: nutritionTotalsRaw.count,
         },
+        latestBodyweight: latestBodyweight ?? null,
       });
       setLoading(false);
     }
@@ -232,9 +238,12 @@ export default function HomePage() {
     );
   }
 
-  const { profile, readiness, session, exercises, block, cycle, cycleBlocks, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals } = data;
+  const { profile, readiness, session, exercises, block, cycle, cycleBlocks, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals, latestBodyweight } = data;
   const programProgress = cycle && cycleBlocks.length > 0
     ? buildProgramProgress(cycle, cycleBlocks, upcomingMeet)
+    : null;
+  const goalProgress = profile
+    ? buildGoalProgress({ profile, latestBodyweight })
     : null;
   const scheduleCap = todayBudget?.minutes;
   const isUnavailable = scheduleCap === null;
@@ -401,6 +410,13 @@ export default function HomePage() {
           >
             <ProgramTimeline progress={programProgress} variant="compact" />
           </button>
+        )}
+
+        {/* ── 2a-ii. GOAL PROGRESS ──────────────────────────────────────── */}
+        {goalProgress && (
+          <div className="mb-4">
+            <GoalProgressCard progress={goalProgress} variant="compact" />
+          </div>
         )}
 
         {/* ── 2b. SCHEDULE OVERRIDE BANNER ──────────────────────────────── */}

@@ -28,6 +28,8 @@ import { EXERCISE_BY_ID }                                 from '@/lib/exercises/
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
 import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
 import { unpackReviewIssues }                             from '@/lib/engine/session-review';
+import { detectSessionPRs }                               from '@/lib/engine/session-prs';
+import type { SessionPR }                                 from '@/lib/engine/session-prs';
 import { timerTick, timerDone }                           from '@/lib/ui/timer-cues';
 import { PlateBreakdownLine }                             from '@/components/lockedin/PlateBreakdownLine';
 import type { SetOutcome }                                from '@/lib/db/types';
@@ -291,6 +293,7 @@ export default function SessionPage({
   const [sessionNote,      setSessionNote]      = useState('');
   const [saving,           setSaving]           = useState(false);
   const [maxSuggestion,    setMaxSuggestion]    = useState<MaxUpdateSuggestion | null>(null);
+  const [sessionPRs,       setSessionPRs]       = useState<SessionPR[]>([]);
   const [editingSetId,     setEditingSetId]     = useState<string | null>(null);
   const [editLoad,         setEditLoad]         = useState(0);
   const [editReps,         setEditReps]         = useState(0);
@@ -551,6 +554,20 @@ export default function SessionPage({
   useEffect(() => {
     if (pageState === 'complete') {
       void detectAndSuggestMaxUpdate();
+      void detectSessionPRs(sessionId).then((prs) => {
+        if (prs.length === 0) return;
+        setSessionPRs(prs);
+        const top = prs[0];
+        const verb = top.priorBestE1rm > 0 ? `+${top.deltaKg}kg` : 'first time';
+        toast.success(
+          prs.length === 1
+            ? `🎉 ${top.exerciseName} PR — ${top.todayE1rm}kg e1RM (${verb})`
+            : `🎉 ${prs.length} PRs today — top: ${top.exerciseName} ${top.todayE1rm}kg`,
+          { duration: 5500 },
+        );
+      }).catch((err) => {
+        console.warn('[Session] detectSessionPRs failed:', err);
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageState]);
@@ -1567,15 +1584,69 @@ export default function SessionPage({
         <div className="pt-12 pb-6 text-center">
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
-            style={{ backgroundColor: `${C.green}22`, border: `2px solid ${C.green}` }}
+            style={{
+              backgroundColor: sessionPRs.length > 0 ? `${C.gold}22` : `${C.green}22`,
+              border: `2px solid ${sessionPRs.length > 0 ? C.gold : C.green}`,
+            }}
           >
-            ✓
+            {sessionPRs.length > 0 ? '🏆' : '✓'}
           </div>
-          <h1 className="text-2xl font-bold">Session Complete</h1>
+          <h1 className="text-2xl font-bold">
+            {sessionPRs.length > 0 ? 'New Personal Record' : 'Session Complete'}
+          </h1>
           <p className="text-sm mt-1" style={{ color: C.muted }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
+
+        {/* PR celebration card — only when we detected ≥1 PR */}
+        {sessionPRs.length > 0 && (
+          <div
+            className="rounded-2xl p-5 mb-4"
+            style={{
+              backgroundColor: `${C.gold}14`,
+              border: `1px solid ${C.gold}`,
+            }}
+          >
+            <p
+              className="text-xs font-bold uppercase tracking-widest mb-3"
+              style={{ color: C.gold }}
+            >
+              {sessionPRs.length === 1
+                ? 'Personal Record'
+                : `${sessionPRs.length} Personal Records`}
+            </p>
+            <ul className="space-y-2.5">
+              {sessionPRs.slice(0, 4).map((pr) => (
+                <li key={pr.exerciseName} className="flex items-baseline gap-3">
+                  <span
+                    className="text-base font-bold flex-1 min-w-0 truncate"
+                    style={{ color: C.text }}
+                  >
+                    {pr.exerciseName}
+                  </span>
+                  <span
+                    className="text-base font-bold tabular-nums"
+                    style={{ color: C.gold }}
+                  >
+                    {pr.todayE1rm}kg
+                  </span>
+                  <span
+                    className="text-xs tabular-nums shrink-0"
+                    style={{ color: C.muted }}
+                  >
+                    {pr.priorBestE1rm > 0
+                      ? `+${pr.deltaKg}kg vs ${pr.priorBestE1rm}kg`
+                      : 'first time'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs mt-3" style={{ color: C.muted }}>
+              Estimated 1RM from {sessionPRs[0].evidenceSet.reps} × {sessionPRs[0].evidenceSet.loadKg}kg.
+            </p>
+          </div>
+        )}
 
         {/* Stats grid */}
         <div

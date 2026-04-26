@@ -19,7 +19,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { db }             from '@/lib/db/database';
 import { estimateMax, calcDots, calcWilks, calcIpfPoints } from '@/lib/engine/calc';
 import { buildProgramProgress, type ProgramProgress } from '@/lib/engine/program-progress';
+import { buildGoalProgress, type GoalProgress } from '@/lib/engine/goal-progress';
 import { ProgramTimeline } from '@/components/lockedin/ProgramTimeline';
+import { GoalProgressCard } from '@/components/lockedin/GoalProgressCard';
 import { C }              from '@/lib/theme';
 import { nWeeksAgo, shortDate, weekStart } from '@/lib/date-utils';
 import type { BlockType, AthleteProfile, BodyweightEntry } from '@/lib/db/types';
@@ -151,6 +153,7 @@ interface ProgressData {
   compScores: CompScores | null;
   history:    SessionHistoryItem[];
   program:    ProgramProgress | null;
+  goal:       GoalProgress | null;
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
@@ -165,7 +168,7 @@ export default function ProgressPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [chartData, setChartData] = useState<ProgressData>({
     volumeData: [], e1rmData: [], rpeData: [], bwData: [], compScores: null, history: [],
-    program: null,
+    program: null, goal: null,
   });
 
   const loadData = useCallback(async (weeks: number) => {
@@ -204,6 +207,13 @@ export default function ProgressPage() {
       weightKg: Math.round(e.weightKg * 10) / 10,
     }));
 
+    const latestBodyweight = bwEntries.length > 0
+      ? bwEntries[bwEntries.length - 1]
+      : null;
+    const goal = profile
+      ? buildGoalProgress({ profile, latestBodyweight })
+      : null;
+
     // ── Competition Scores ────────────────────────────────────────────
     let compScores: CompScores | null = null;
     if (profile) {
@@ -225,7 +235,7 @@ export default function ProgressPage() {
 
     const sessionIds = allSessions.map((s) => s.id);
     if (sessionIds.length === 0) {
-      return { volumeData: [], e1rmData: [], rpeData: [], bwData, compScores, history: [], program };
+      return { volumeData: [], e1rmData: [], rpeData: [], bwData, compScores, history: [], program, goal };
     }
 
     // Get all exercises & sets for these sessions
@@ -370,7 +380,7 @@ export default function ProgressPage() {
       }),
     );
 
-    return { volumeData, e1rmData, rpeData, bwData, compScores, history, program };
+    return { volumeData, e1rmData, rpeData, bwData, compScores, history, program, goal };
   }, []);
 
   // Initial load
@@ -447,7 +457,7 @@ export default function ProgressPage() {
     );
   }
 
-  const { volumeData, e1rmData, rpeData, bwData, compScores, history, program } = chartData;
+  const { volumeData, e1rmData, rpeData, bwData, compScores, history, program, goal } = chartData;
   const hasVolume = volumeData.some((d) => d.volume > 0);
   const hasE1rm   = e1rmData.some((d) => d.squat || d.bench || d.deadlift);
   const hasRpe    = rpeData.length > 0;
@@ -477,6 +487,13 @@ export default function ProgressPage() {
             style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
           >
             <ProgramTimeline progress={program} variant="full" />
+          </div>
+        )}
+
+        {/* ── GOAL PROGRESS ──────────────────────────────────────────────── */}
+        {goal && (
+          <div className="mb-5">
+            <GoalProgressCard progress={goal} variant="full" />
           </div>
         )}
 
