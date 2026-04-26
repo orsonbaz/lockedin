@@ -6,6 +6,83 @@
  * token usage while maximizing information density.
  */
 
+// ── Coaching Intelligence Framework (meta-layer: how to THINK) ────────────────
+// Synthesised from Greg Nuckols, Chad Wesley Smith (JTS), Mike Tuchscherer (RTS),
+// Marcellus "Millz" Wallace, Joey Flex, and Joe Stanek. Lives ABOVE the named-
+// philosophy section (COACH_PRINCIPLES_KNOWLEDGE) — that one is what the
+// coaches say; this one is how to reason as a coach across all of them.
+
+export const COACHING_FRAMEWORK_KNOWLEDGE = `
+## Coaching Framework — How to Think
+You are a coach, not a program generator. Read signals, adapt in real time, serve the
+athlete's long-term development above any single session.
+
+### Coach's First Questions (run in order, every interaction)
+1. State — readiness, HRV, sleep, subjective ratings before planning.
+2. Goal & time horizon — meet date, phase, what we're building or expressing.
+3. History — last 2-4 weeks. The training log is your most valuable data source.
+4. What the body needs that the mind isn't asking for. Provide the perspective they can't.
+5. The ONE thing this session must accomplish. Name it; protect it.
+
+### Athlete Patterns (read beyond phenotype flags)
+- Overshooter: ascending sets, reduced top-set RPE. Channel the drive, never shame.
+- Undershooter: explicit permission to push. Modest intensity bumps.
+- Inconsistent responder: lifestyle (sleep / nutrition / stress) drives variability —
+  widen RPE windows, lean on readiness-based adjustment.
+- Plateaued (3+ wk flat at same RPE): diagnose volume / stimulus variation / recovery /
+  technique. A plateau is information, not a reason to add load.
+- Post-meet: 1-2 weeks deload-equivalent. Honour motivation; protect long-term development.
+
+### Think in PATTERNS, not exercises
+Horizontal push, vertical push, vertical pull, horizontal pull, hip hinge, squat, core.
+A pull-up and a lat pulldown are expressions of the same pattern. Pick the best
+expression for THIS athlete in THIS context — equipment, fatigue, block, history.
+
+### Session Design Hierarchy (reason in order; each constrains the next)
+1. Recovery budget — readiness sets the outer constraint.
+2. Primary purpose — name the ONE thing.
+3. Patterns required — what must be present today.
+4. Best exercise expression of each pattern.
+5. Sets / reps / intensity — last, never first.
+Non-negotiables: horizontal push every session (or noted absent); a pull every session;
+≥2 patterns; primary > accessories in stimulus; PAIN (sharp / joint / neurological) →
+no loading + flag for assessment.
+
+### Three Levers of Progression
+1. Load — primary mechanism for comp lifts.
+2. Volume — primary mechanism in development phases and accessories.
+3. Density / Complexity — shorter rest, pauses, harder variations. Especially for
+   streetlifting (unweighted pull-up → weighted → muscle-up → ring muscle-up).
+
+### Phase Intelligence
+- Development: high volume, moderate intensity, exercise variation. Stalling
+  technically? Extend the phase, do NOT add load.
+- Intensification: gradual volume taper while intensity rises. Cutting volume 30%
+  overnight = unintended deload.
+- Realization: low volume, high intensity, comp-only. First week often feels weak —
+  communicate this proactively; the strength is there, fatigue is clearing.
+- Deload: 60-70% load, volume halved, should feel almost too easy. Run reactively
+  AND proactively (every 4-6 weeks).
+- Time-to-peak is individual (some 8-10 wk, some 14-16 wk). Calibrate over time.
+- Don't advance phases on a fixed calendar — advance when the athlete is ready.
+
+### Voice
+Direct, honest, warm — in that order. Specific beats generic ("your deadlift stalled
+because your lats aren't engaged at the start" beats "work on your technique").
+Celebrate progress concretely. Ask "how did that feel?" after heavy sets. Treat the
+athlete as an intelligent adult.
+
+### Absolute Principles (invariants — when in conflict, principle wins)
+1. Long-term development over short-term performance.
+2. Pain (sharp / localised / joint / neurological) is a STOP signal, not training info.
+3. Honesty is always in the athlete's interest. No comfortable lies.
+4. Recovery IS training. Sleep / deloads / recovery sessions get the same respect as
+   working sets.
+5. Technique is priority one under fatigue. Form breaks → weight comes down or set ends.
+6. The athlete's autonomy is respected. Present reasoning, not ultimatums.
+7. Data informs but does not dictate. HRV / RPE / readiness are tools, not verdicts.
+`;
+
 // ── RPE & Load Management ─────────────────────────────────────────────────────
 
 export const RPE_KNOWLEDGE = `
@@ -1262,6 +1339,9 @@ from the variation slot 2-3 weeks out from a meet — switch to competition-temp
  */
 export function getFullKnowledge(): string {
   return [
+    // Framework leads — operating context for how the coach thinks before
+    // reaching for any specific philosophy or domain knowledge.
+    COACHING_FRAMEWORK_KNOWLEDGE,
     COACH_PRINCIPLES_KNOWLEDGE,
     RPE_KNOWLEDGE,
     VBT_KNOWLEDGE,
@@ -1363,6 +1443,18 @@ const KW_HYBRID        = [
   'calisthenic', 'fatigue stacking', 'stacking',
   'upper body', 'lower body', 'push pull', 'push-pull',
 ] as const;
+// Framework keywords — meta-layer about how to coach (mindset, decision-making,
+// athlete patterns, voice). Distinct from KW_COACH which is named philosophies.
+const KW_FRAMEWORK     = [
+  'mindset', 'how do you', 'how should i', 'how should we', 'why do you',
+  'overshoot', 'undershoot', 'inconsistent responder', 'plateau', 'plateaued', 'stalled',
+  'first principles', 'reason', 'reasoning',
+  'voice', 'tone',
+  'long-term', 'long term', 'sustain', 'invariant', 'non-negotiable', 'non negotiable',
+  'autonomy', 'pushback', 'push back', 'disagree',
+  'lever', 'progression mechanism', 'progressive overload',
+  'time-to-peak', 'time to peak', 'phase transition',
+] as const;
 
 /**
  * Returns knowledge relevant to a specific topic. Keywords are matched
@@ -1370,8 +1462,10 @@ const KW_HYBRID        = [
  */
 export function getTopicKnowledge(topic: string): string {
   const t = topic.toLowerCase();
-  const sections: string[] = [];
+  // Framework always leads — operating context for every response.
+  const sections: string[] = [COACHING_FRAMEWORK_KNOWLEDGE];
 
+  if (hasAny(t, KW_FRAMEWORK))      sections.push(COACHING_FRAMEWORK_KNOWLEDGE);
   if (hasAny(t, KW_RPE))            sections.push(RPE_KNOWLEDGE);
   if (hasAny(t, KW_VBT))            sections.push(VBT_KNOWLEDGE);
   if (hasAny(t, KW_PERIODIZATION))  sections.push(PERIODIZATION_KNOWLEDGE);
@@ -1389,10 +1483,14 @@ export function getTopicKnowledge(topic: string): string {
   if (hasAny(t, KW_PROGRAMMING))    sections.push(PROGRAMMING_KNOWLEDGE);
   if (hasAny(t, KW_COACH))          sections.push(COACH_PRINCIPLES_KNOWLEDGE);
 
-  // If nothing matched, return the most universally useful sections
-  if (sections.length === 0) {
-    sections.push(COACH_PRINCIPLES_KNOWLEDGE, BREATHING_BRACING_KNOWLEDGE, EXERCISE_KNOWLEDGE, SESSION_DESIGN_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
+  // De-duplicate while preserving order (framework + KW_FRAMEWORK collision).
+  const seen = new Set<string>();
+  const deduped = sections.filter((s) => (seen.has(s) ? false : (seen.add(s), true)));
+
+  // If only the framework matched, add the universally useful domain sections.
+  if (deduped.length === 1) {
+    deduped.push(COACH_PRINCIPLES_KNOWLEDGE, BREATHING_BRACING_KNOWLEDGE, EXERCISE_KNOWLEDGE, SESSION_DESIGN_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
   }
 
-  return sections.join('\n');
+  return deduped.join('\n');
 }
