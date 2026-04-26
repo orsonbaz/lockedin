@@ -35,6 +35,7 @@ export type CoachActionType =
   | 'UPDATE_MAX'
   | 'SWAP_EXERCISE'
   | 'MODIFY_SESSION'
+  | 'ADJUST_SET_LOAD'
   | 'SKIP_SESSION'
   | 'ADD_EXERCISE'
   | 'REMOVE_EXERCISE'
@@ -48,7 +49,8 @@ export type CoachActionType =
   | 'SET_NUTRITION_TARGETS'
   | 'SCHEDULE_REFEED'
   | 'REQUEST_FORM_CHECK'
-  | 'IMPORT_WEARABLE';
+  | 'IMPORT_WEARABLE'
+  | 'REGENERATE_SESSION';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -128,6 +130,18 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
         params,
         displayText: mod,
         confirmText: 'Apply changes',
+      };
+    }
+
+    case 'ADJUST_SET_LOAD': {
+      const exercise = params.exercise;
+      const load     = params.load;
+      if (!exercise || !load) return null;
+      return {
+        type,
+        params,
+        displayText: `Adjust ${exercise} → ${load} kg for remaining sets`,
+        confirmText: 'Update load',
       };
     }
 
@@ -295,6 +309,16 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
         confirmText: 'Open importer',
       };
 
+    case 'REGENERATE_SESSION': {
+      const reason = params.reason || 'Rebuild session from current data';
+      return {
+        type,
+        params,
+        displayText: `Regenerate today's session — ${reason}`,
+        confirmText: 'Regenerate session',
+      };
+    }
+
     default:
       return null;
   }
@@ -311,6 +335,8 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeSwapExercise(action.params);
       case 'MODIFY_SESSION':
         return await executeModifySession(action.params);
+      case 'ADJUST_SET_LOAD':
+        return await executeAdjustSetLoad(action.params);
       case 'SKIP_SESSION':
         return await executeSkipSession();
       case 'ADD_EXERCISE':
@@ -343,6 +369,8 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
           message: 'Opening wearable importer…',
           navigateTo: '/settings/wearables',
         };
+      case 'REGENERATE_SESSION':
+        return await executeRegenerateSession(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -720,6 +748,44 @@ async function executeSetRpeTarget(params: Record<string, string>): Promise<Acti
   return { success: true, message: `Set RPE target for ${target.name} to ${rpe}.` };
 }
 
+/**
+ * Adjusts the prescribed load on a specific exercise in the current session.
+ * Used mid-session when the athlete's actual RPE diverges from the target —
+ * the coach emits this after computing the corrected load via intra-session.ts.
+ * Only updates estimatedLoadKg; sets/reps/RPE stay unchanged so the progression
+ * logic for future sessions is unaffected.
+ */
+async function executeAdjustSetLoad(params: Record<string, string>): Promise<ActionResult> {
+  const session = await db.sessions
+    .where('scheduledDate').equals(today())
+    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
+    .first();
+  if (!session) {
+    return { success: false, message: 'No active session today.' };
+  }
+
+  const name  = params.exercise?.toLowerCase();
+  const load  = parseFloat(params.load ?? '');
+  if (!name || isNaN(load) || load <= 0) {
+    return { success: false, message: 'Invalid exercise name or load value.' };
+  }
+
+  const exercises = await db.exercises.where('sessionId').equals(session.id).toArray();
+  const target    = exercises.find((e) => e.name.toLowerCase().includes(name));
+  if (!target) {
+    return { success: false, message: `Could not find "${params.exercise}" in today's session.` };
+  }
+
+  const note = params.note ? ` (${params.note})` : '';
+  await db.exercises.update(target.id, { estimatedLoadKg: load });
+  await db.sessions.update(session.id, { status: 'MODIFIED' });
+
+  return {
+    success: true,
+    message: `Load for ${target.name} updated to ${load} kg for remaining sets${note}.`,
+  };
+}
+
 async function executeRemember(params: Record<string, string>): Promise<ActionResult> {
   const kind = (params.kind || '').toUpperCase();
   const content = params.content?.trim();
@@ -844,6 +910,33 @@ async function executeSetWeekAvailability(params: Record<string, string>): Promi
     success: true,
     message: `Week of ${weekStart} capped at ${minutes} min/day (${created.length} days).`,
   };
+}
+
+async function executeRegenerateSession(params: Record<string, string>): Promise<ActionResult> {
+  const session = await db.sessions
+    .where('scheduledDate').equals(today())
+    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
+    .first();
+  if (!session) return { success: false, message: 'No session found for today.' };
+
+  // Reset to SCHEDULED and clear readinessScore so ensureSessionFresh runs
+  // fresh, bypassing both the MODIFIED guard and the readiness-in-sync guard.
+  await db.sessions.update(session.id, {
+    status: 'SCHEDULED',
+    readinessScore: undefined as unknown as number,
+  });
+
+  const { ensureSessionFresh } = await import('@/lib/engine/ensure-session-fresh');
+  const result = await ensureSessionFresh(today());
+
+  if (result.status === 'regenerated') {
+    const reason = params.reason ? ` (${params.reason})` : '';
+    return {
+      success: true,
+      message: `Session rebuilt${reason} — ${result.exerciseCount} exercises generated.`,
+    };
+  }
+  return { success: false, message: `Could not regenerate: ${result.reason ?? 'unknown error'}.` };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

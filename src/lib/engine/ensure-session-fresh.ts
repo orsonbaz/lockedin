@@ -22,6 +22,7 @@ import { db, newId }          from '@/lib/db/database';
 import { generateSession }    from './session';
 import { loadRecentLiftExposures } from './lift-exposures';
 import { reviewSessionPure, packReviewIssues } from './session-review';
+import { advisorReviewSession, applyAdvisorModifications } from '@/lib/ai/session-advisor';
 import type { Lift, SessionExercise, TrainingSession } from '@/lib/db/types';
 
 export interface EnsureTodayResult {
@@ -106,7 +107,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const session = await db.sessions.where('scheduledDate').equals(dateStr).first();
   if (!session) return { status: 'missing', reason: 'no-session' };
 
-  // Don't touch a completed session; the athlete's log is the record of truth.
+  // Never touch completed or skipped sessions.
   if (session.status === 'COMPLETED' || session.status === 'SKIPPED') {
     return { status: 'skipped', reason: `session-${session.status.toLowerCase()}`, session };
   }
@@ -115,6 +116,41 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const loggedSetCount = await db.sets.where('sessionId').equals(session.id).count();
   if (loggedSetCount > 0) {
     return { status: 'skipped', reason: 'sets-logged', session };
+  }
+
+  // MODIFIED sessions were already processed by check-in or a prior
+  // ensureSessionFresh run. Skip unless they're missing their secondary
+  // comp block — which indicates the session was generated with old
+  // pre-pairing-rules code and needs a one-time regeneration.
+  if (session.status === 'MODIFIED') {
+    const [blockForCheck, compCount] = await Promise.all([
+      db.blocks.get(session.blockId),
+      db.exercises
+        .where('sessionId').equals(session.id)
+        .filter((e) => e.exerciseType === 'COMPETITION')
+        .count(),
+    ]);
+    const expectsSecondary =
+      blockForCheck &&
+      blockForCheck.blockType !== 'DELOAD' &&
+      blockForCheck.blockType !== 'REALIZATION';
+    if (!expectsSecondary || compCount >= 2) {
+      return { status: 'skipped', reason: 'session-modified', session };
+    }
+    // Fall through — stale session missing secondary comp block; regenerate.
+  }
+
+  // If check-in has already been submitted today and the session was generated
+  // from that same readiness score, skip regeneration. This preserves any
+  // post-check-in coach modifications (load adjustments, exercise swaps, etc.)
+  // that would otherwise be wiped by the delete+bulkAdd at the end.
+  const earlyReadiness = await db.readiness.where('date').equals(dateStr).first();
+  if (
+    earlyReadiness &&
+    session.readinessScore !== undefined &&
+    session.readinessScore === earlyReadiness.readinessScore
+  ) {
+    return { status: 'skipped', reason: 'readiness-in-sync', session };
   }
 
   const [profile, block, cycle] = await Promise.all([
@@ -141,7 +177,8 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
 
   // Latest readiness score for today if present (falls back to session value or 70).
-  const readinessRow = await db.readiness.where('date').equals(dateStr).first();
+  // earlyReadiness was already fetched for the in-sync check above; reuse it.
+  const readinessRow = earlyReadiness;
   const readinessScore =
     readinessRow?.readinessScore ?? session.readinessScore ?? 70;
 
@@ -175,8 +212,6 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   }
 
   const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
-  const readinessRow2 = await db.readiness.where('date').equals(dateStr).first().catch(() => undefined);
-  const sbdToday = readinessRow2?.sessionModality === 'SBD';
 
   let generated = generateSession({
     profile,
@@ -187,7 +222,6 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     weekWithinBlock,
     overshootHistory,
     recentLiftExposures,
-    sbdToday,
   });
 
   // Post-generation sanity review. If the review flags a BLOCK-severity
@@ -227,6 +261,14 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   });
   generated = finalReview.session;
   const reviewIssues = finalReview.issues;
+
+  // AI coach pre-save review — fires after rule engine, before DB write.
+  // Silent fallback on timeout/error so training is never blocked.
+  const advisorResult = await advisorReviewSession(generated, profile, block)
+    .catch(() => null);
+  if (advisorResult) {
+    generated = applyAdvisorModifications(generated, advisorResult);
+  }
 
   // Update session meta and replace exercises atomically.
   await db.transaction('rw', db.sessions, db.exercises, async () => {

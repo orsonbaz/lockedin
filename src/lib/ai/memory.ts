@@ -12,7 +12,6 @@
  * and confirmed by the user (same pattern as every other coach action).
  */
 
-import Groq from 'groq-sdk';
 import { db, newId } from '@/lib/db/database';
 import type {
   AthleteMemory,
@@ -144,83 +143,12 @@ export async function loadChatContext(mode: 'groq' | 'local' = 'groq'): Promise<
 // ── Rolling summarization ─────────────────────────────────────────────────────
 
 /**
- * If enough unsummarized messages have accumulated, produce a new rolling
- * summary. Uses Groq `llama-3.1-8b-instant` when available (cheap + fast);
- * otherwise silently skips (on-device summarization TBD).
- *
- * Returns the new summary row, or undefined if no summary was produced.
+ * No-op stub — rolling summarisation is deferred until a Gemini summarisation
+ * path is wired up. Returns undefined so callers behave gracefully.
  */
-export async function summarizeIfNeeded(groqApiKey?: string): Promise<ConversationSummary | undefined> {
-  const last = await getLatestSummary();
-  const since = last?.periodEnd ?? '';
-  const pending = await db.chat
-    .where('createdAt').above(since)
-    .toArray();
-
-  if (pending.length < SUMMARIZE_TRIGGER) return undefined;
-
-  const batch = pending.slice(0, SUMMARIZE_BATCH_MAX);
-  const transcript = batch
-    .map((m) => `${m.role === 'user' ? 'Athlete' : m.role === 'assistant' ? 'Coach' : 'System'}: ${m.content}`)
-    .join('\n')
-    .slice(0, 8000); // hard cap
-
-  const systemPrompt = `You are a summarizer for a powerlifting coaching app. Condense the conversation into a tight paragraph (under 600 chars) capturing: durable facts about the athlete, decisions made, advice given, and open questions. Then on a new line output TOPICS: a comma-separated list of 3-6 lowercase topic tags.`;
-
-  let summaryText = '';
-  let topics: string[] = [];
-
-  if (groqApiKey?.trim()) {
-    try {
-      const client = new Groq({ apiKey: groqApiKey.trim(), dangerouslyAllowBrowser: true });
-      // Non-streaming call — guard against hung sockets with a 25s timeout.
-      const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 25_000);
-      let res;
-      try {
-        res = await client.chat.completions.create(
-          {
-            model: 'llama-3.1-8b-instant',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: transcript },
-            ],
-            max_tokens: 400,
-          },
-          { signal: controller.signal },
-        );
-      } finally {
-        clearTimeout(timeoutId);
-      }
-      const out = res.choices[0]?.message?.content ?? '';
-      const topicMatch = out.match(/TOPICS:\s*(.+)$/im);
-      topics = topicMatch
-        ? topicMatch[1].split(',').map((t) => t.trim().toLowerCase()).filter(Boolean)
-        : [];
-      summaryText = out.replace(/TOPICS:.*$/im, '').trim();
-    } catch (err) {
-      console.warn('[memory] summarization failed:', err);
-      return undefined;
-    }
-  } else {
-    // Without Groq we skip silently; on-device summarization can be added later.
-    // Falling back to a naive extractive summary risks polluting the memory.
-    return undefined;
-  }
-
-  if (!summaryText) return undefined;
-
-  const summary: ConversationSummary = {
-    id: newId(),
-    periodStart: batch[0].createdAt,
-    periodEnd: batch[batch.length - 1].createdAt,
-    messageCount: batch.length,
-    summary: summaryText,
-    topics,
-    createdAt: new Date().toISOString(),
-  };
-  await db.conversationSummaries.add(summary);
-  return summary;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function summarizeIfNeeded(_apiKey?: string): Promise<ConversationSummary | undefined> {
+  return undefined;
 }
 
 // ── Memory CRUD (used by REMEMBER / FORGET actions and the settings page) ────

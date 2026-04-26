@@ -124,7 +124,7 @@ export const horizontalPullExercises: LibraryExercise[] = [
     name: 'Face Pull',
     equipment: ['CABLE', 'BANDS'],
     movementPattern: 'HORIZONTAL_PULL',
-    primaryLiftTarget: null,
+    primaryLiftTarget: 'BENCH',
     specificity: 1,
     primaryMuscles: ['REAR_DELTS', 'TRAPS'],
     secondaryMuscles: ['RHOMBOIDS', 'BICEPS'],

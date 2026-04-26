@@ -24,6 +24,7 @@ import {
   responderMultiplier,
   overshooterRpeAdjust,
 } from './calc';
+import { selectAccessories } from './accessory-selector';
 
 // ── Public Interfaces ──────────────────────────────────────────────────────────
 
@@ -52,18 +53,26 @@ export interface SessionInput {
    */
   recentLiftExposures?: LiftExposure[];
   /**
-   * Explicit athlete request to cover all three comp lifts today. When true
-   * the selector returns SQUAT primary with BENCH + DEADLIFT as secondary
-   * top-singles at reduced volume.
+   * @deprecated No longer used — all competition-lift sessions now include
+   * all three lifts by default (Sheiko methodology). Kept for API compatibility.
    */
   sbdToday?: boolean;
   /**
    * Override both rotation and adaptive selection to force a specific primary
    * lift. Used by the session review engine when it swaps today's primary
-   * (e.g. bench drought). Secondary-lift auto-stacking is disabled when this
-   * is set so the forced lift is the single focus.
+   * (e.g. bench drought). Secondary is auto-picked via `pickSecondary`.
    */
   forcePrimary?: Lift;
+  /**
+   * When true, include all three competition lifts in a single session
+   * (S→B→D rehearsal). Primary gets full block volume; the other two comp
+   * lifts each get 3 submaximal working sets. `forcePrimary` determines which
+   * lift is primary; omit to let the adaptive selector decide.
+   *
+   * Use sparingly — full SBD is a rehearsal format best deployed once every
+   * 3–4 weeks, not as an everyday session.
+   */
+  forceSBD?: boolean;
 }
 
 export interface GeneratedExercise {
@@ -118,24 +127,64 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const { profile, block, readinessScore, sessionNumber } = input;
 
   // ── 1. Determine primary lift(s) ───────────────────────────────────────────
-  // If the caller pinned a primary (review-engine rewrite, athlete override)
-  // we honor it. Otherwise adaptive selector when we have exposure history,
-  // falling back to fixed S/B/D rotation (cold start + test fixtures).
-  const selection = input.forcePrimary
-    ? { primary: input.forcePrimary, secondary: [] as Lift[] }
-    : input.recentLiftExposures && input.recentLiftExposures.length > 0
-    ? selectAdaptivePrimary({
+  const weekInBlockVal     = input.weekWithinBlock ?? 1;
+  const totalBlockWeeksVal = block.weekEnd - block.weekStart + 1;
+
+  const selection = (() => {
+    // Resolve primary via forcePrimary → adaptive → cold-start rotation.
+    const resolvePrimary = (): Lift => {
+      if (input.forcePrimary) return input.forcePrimary;
+      if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
+        return selectAdaptivePrimary({
+          exposures:       input.recentLiftExposures,
+          profile,
+          readinessScore,
+          blockType:       block.blockType,
+          weekInBlock:     weekInBlockVal,
+          totalBlockWeeks: totalBlockWeeksVal,
+        }).primary;
+      }
+      return selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+    };
+
+    if (input.forceSBD && block.blockType !== 'DELOAD' && block.blockType !== 'REALIZATION') {
+      // Full SBD rehearsal: primary gets block volume, the other two each get
+      // 3 submaximal working sets. Order enforced S→B→D later.
+      const primary = resolvePrimary();
+      const secondary = (['SQUAT', 'BENCH', 'DEADLIFT'] as Lift[]).filter((l) => l !== primary);
+      return { primary, secondary };
+    }
+
+    if (input.forcePrimary) {
+      return {
+        primary:   input.forcePrimary,
+        secondary: pickSecondary(
+          input.forcePrimary, input.recentLiftExposures, profile,
+          readinessScore, block.blockType, weekInBlockVal, totalBlockWeeksVal,
+        ),
+      };
+    }
+
+    if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
+      return selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
+        profile,
         readinessScore,
         blockType:       block.blockType,
-        weekInBlock:     input.weekWithinBlock ?? 1,
-        totalBlockWeeks: block.weekEnd - block.weekStart + 1,
-        sbdToday:        input.sbdToday === true,
-      })
-    : {
-        primary: selectPrimaryLift(sessionNumber, profile.weeklyFrequency),
-        secondary: [] as Lift[],
-      };
+        weekInBlock:     weekInBlockVal,
+        totalBlockWeeks: totalBlockWeeksVal,
+      });
+    }
+
+    const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+    return {
+      primary,
+      secondary: pickSecondary(
+        primary, [], profile, readinessScore, block.blockType,
+        weekInBlockVal, totalBlockWeeksVal,
+      ),
+    };
+  })();
   const primaryLift = selection.primary;
   const secondaryLifts = selection.secondary;
 
@@ -166,39 +215,44 @@ export function generateSession(input: SessionInput): GeneratedSession {
   }
 
   // ── 4. Build exercises ─────────────────────────────────────────────────────
-  const weekInBlock  = input.weekWithinBlock ?? 1;
-  const isDupRepeat  = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
+  const isDupRepeat = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
+  // Full SBD (3 comp lifts) already fills the session — skip variation + accessories.
+  // A regular 2-lift session (primary + one secondary) still gets variation + accessories.
+  const sbdDay = secondaryLifts.length >= 2;
   const exercises = buildSessionExercises(
-    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlock, isDupRepeat,
-    sessionNumber,
+    profile, block, primaryLift, volMult, totalRpeOffset, weekInBlockVal, isDupRepeat,
+    sessionNumber, sbdDay, secondaryLifts.length === 1,
   );
 
-  // Secondary comp blocks: low-volume top singles per additional lift. Ordering
-  // stays primary → secondaries → accessories (accessories already trailed the
-  // primary block when buildSessionExercises ran).
+  // SBD day: rebuild all exercises in competition order (S→B→D) so the
+  // session matches how the lifts appear on the platform. Primary gets the
+  // reduced-volume block from buildPrimaryExercises; secondaries each get 3
+  // working sets via buildSecondaryCompExercises.
   if (secondaryLifts.length > 0) {
-    // Accessory slots start after whatever buildSessionExercises produced;
-    // we insert secondary comps just after the primary comp(s) and push
-    // accessories down. Simpler: rebuild the order numbers at the end.
-    const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
-    const secondaryExercises: GeneratedExercise[] = [];
+    const totalBlockWeeks = totalBlockWeeksVal;
+
+    const liftMap = new Map<Lift, GeneratedExercise[]>();
+    liftMap.set(primaryLift, [...exercises]);
     for (const lift of secondaryLifts) {
-      secondaryExercises.push(
-        ...buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlock, totalBlockWeeks),
+      liftMap.set(
+        lift,
+        buildSecondaryCompExercises(profile, block.blockType, lift, totalRpeOffset, weekInBlockVal, totalBlockWeeks),
       );
     }
 
-    // Find the index right after the last COMPETITION exercise so secondary
-    // comps appear adjacent to the primary.
-    let insertAt = 0;
-    for (let i = 0; i < exercises.length; i++) {
-      if (exercises[i].exerciseType === 'COMPETITION') insertAt = i + 1;
+    // Enforce S→B→D competition order regardless of which lift was primary.
+    exercises.length = 0;
+    for (const lift of ['SQUAT', 'BENCH', 'DEADLIFT'] as Lift[]) {
+      const exs = liftMap.get(lift);
+      if (exs) exercises.push(...exs);
     }
-    exercises.splice(insertAt, 0, ...secondaryExercises);
     exercises.forEach((e, i) => { e.order = i + 1; });
 
+    const isFull = secondaryLifts.length === 2;
     modifications.push(
-      `SBD-style day: added top singles for ${secondaryLifts.join(' + ')}.`,
+      isFull
+        ? `Full SBD rehearsal (S→B→D): ${primaryLift} primary at block volume, ${secondaryLifts.join(' + ')} at 3 working sets each.`
+        : `Session includes ${primaryLift} primary + ${secondaryLifts[0]} secondary (3 working sets) in competition order.`,
     );
   }
 
@@ -206,6 +260,95 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const coachNote = buildCoachNote(readinessScore, block.blockType);
 
   return { sessionType, primaryLift, secondaryLifts: secondaryLifts.length > 0 ? secondaryLifts : undefined, exercises, modifications, coachNote };
+}
+
+// ── SBD Secondary Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Returns exactly one secondary competition lift for the session.
+ * Returns [] for REALIZATION, DELOAD, or non-comp primaries.
+ *
+ * Hard pairing rules (knowledge base: "Never heavy squat + heavy deadlift
+ * the same day outside of an SBD rehearsal once every 3–4 weeks"):
+ *   SQUAT primary    → BENCH secondary (always)
+ *   DEADLIFT primary → BENCH secondary (always)
+ *   BENCH primary    → adaptive pick from SQUAT or DEADLIFT only
+ *
+ * Bench achieves its 3-4×/week total through primaries (1-2×) + secondaries
+ * (1-2× as secondary on every SQ/DL day). WEEKLY_TARGET for bench is set
+ * lower (1.5) to reflect that only primary sessions are tracked in weekCount.
+ */
+function pickSecondary(
+  primary: Lift,
+  exposures: LiftExposure[] | undefined,
+  profile: AthleteProfile,
+  readinessScore: number,
+  blockType: BlockType,
+  weekInBlock: number,
+  totalBlockWeeks: number,
+): Lift[] {
+  if (blockType === 'REALIZATION' || blockType === 'DELOAD') return [];
+  if (primary !== 'SQUAT' && primary !== 'BENCH' && primary !== 'DEADLIFT') return [];
+
+  // SQUAT or DEADLIFT primary always pairs with BENCH.
+  if (primary === 'SQUAT' || primary === 'DEADLIFT') return ['BENCH'];
+
+  // BENCH primary: pick the most-due of SQUAT or DEADLIFT.
+  if (exposures && exposures.length > 0) {
+    const scored = scoreAdaptiveLifts({
+      exposures, profile, readinessScore, blockType, weekInBlock, totalBlockWeeks,
+    });
+    const pick = scored.find((s) => s.lift === 'SQUAT' || s.lift === 'DEADLIFT');
+    return pick ? [pick.lift] : ['SQUAT'];
+  }
+  // Cold start when bench is primary: default SQUAT secondary.
+  return ['SQUAT'];
+}
+
+/**
+ * Return the expected secondary lift for a given primary without running the
+ * full engine. Used by the check-in page to show a pairing preview before the
+ * athlete submits. When bench is primary and exposures are available, picks
+ * whichever of SQUAT/DEADLIFT is more overdue.
+ */
+export function getExpectedSecondary(
+  primary: 'SQUAT' | 'BENCH' | 'DEADLIFT',
+  exposures?: LiftExposure[],
+): 'SQUAT' | 'BENCH' | 'DEADLIFT' {
+  if (primary === 'SQUAT' || primary === 'DEADLIFT') return 'BENCH';
+  // BENCH primary: whichever of SQ/DL has more daysSince
+  if (exposures && exposures.length > 0) {
+    const sq = exposures.find((e) => e.lift === 'SQUAT')?.daysSince ?? Infinity;
+    const dl = exposures.find((e) => e.lift === 'DEADLIFT')?.daysSince ?? Infinity;
+    return sq >= dl ? 'SQUAT' : 'DEADLIFT';
+  }
+  return 'SQUAT';
+}
+
+/**
+ * Suggest the most-due primary lift for today's session. Uses
+ * frequency-weighted scoring (dueness + weekly-target gap) so that bench,
+ * whose total frequency comes partly from secondaries, isn't over-suggested
+ * as primary when the athlete is due for a big leg or pull day.
+ */
+export function suggestPrimaryLift(
+  exposures: LiftExposure[],
+): 'SQUAT' | 'BENCH' | 'DEADLIFT' | null {
+  if (exposures.length === 0) return null;
+  const compLifts: Array<'SQUAT' | 'BENCH' | 'DEADLIFT'> = ['SQUAT', 'BENCH', 'DEADLIFT'];
+  let best: 'SQUAT' | 'BENCH' | 'DEADLIFT' | null = null;
+  let bestScore = -Infinity;
+  for (const lift of compLifts) {
+    const exp = exposures.find((e) => e.lift === lift);
+    const daysSince = exp?.daysSince ?? 14;
+    const weekCount = exp?.weekCount ?? 0;
+    const target    = WEEKLY_TARGET[lift];
+    const dueness   = Math.min(daysSince, 10) / 10;
+    const gap       = Math.max(0, Math.min(1, (target - weekCount) / target));
+    const score     = 0.6 * dueness + 0.4 * gap;
+    if (score > bestScore) { bestScore = score; best = lift; }
+  }
+  return best;
 }
 
 // ── Primary Lift Rotation ──────────────────────────────────────────────────────
@@ -237,15 +380,22 @@ function selectPrimaryLift(sessionNumber: number, weeklyFrequency: number): Lift
 // ── Adaptive Primary-Lift Selector ────────────────────────────────────────────
 
 /**
- * Weekly exposure targets per elite-coach consensus:
- *   Squat     — 2 to 3 sessions
- *   Bench     — 3 to 4 sessions (higher SFR, lower systemic cost)
- *   Deadlift  — 2 to 3 sessions (highest systemic cost)
+ * Weekly PRIMARY-session targets per elite-coach consensus.
+ *
+ * These count only sessions where the lift is the primary focus. Secondary
+ * appearances (bench on every squat/DL day) are not tracked in weekCount,
+ * so bench's total frequency (3-4x) comes from primaries (1-2x) + secondaries
+ * (1-2x from the pairing rules). Setting bench's primary target lower prevents
+ * the adaptive selector from making bench primary every single day.
+ *
+ *   Squat     — 2 primary sessions/week
+ *   Bench     — 1.5 primary sessions/week (rest of its frequency comes as secondary)
+ *   Deadlift  — 2 primary sessions/week
  */
 const WEEKLY_TARGET: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
-  SQUAT:    2.5,
-  BENCH:    3.5,
-  DEADLIFT: 2.5,
+  SQUAT:    2.0,
+  BENCH:    1.5,
+  DEADLIFT: 2.0,
 };
 
 /**
@@ -260,11 +410,11 @@ const SYSTEMIC_LOAD: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
 
 interface AdaptiveInput {
   exposures: LiftExposure[];
+  profile: AthleteProfile;
   readinessScore: number;
   blockType: BlockType;
   weekInBlock: number;
   totalBlockWeeks: number;
-  sbdToday: boolean;
 }
 
 interface AdaptiveOutput {
@@ -274,50 +424,33 @@ interface AdaptiveOutput {
 
 /**
  * Score each of SQUAT / BENCH / DEADLIFT and pick the most "due" lift as
- * primary. Secondary lifts are added when readiness + block permit and
- * exposure gaps warrant covering more than one comp lift today.
+ * primary, then apply the same hard pairing rules as pickSecondary so the
+ * adaptive path never produces a SQUAT+DEADLIFT same-session combination.
+ * REALIZATION (meet week) is the only exception: single-lift focus preserves
+ * peaking specificity.
  *
- *   need = 0.35·dueness   // how many days since last exposure
- *        + 0.35·gap       // weekly target minus this-week count
- *        + 0.20·readFit   // readiness match (low readiness → bench; high → deadlift/squat)
- *        - 0.10·systemic  // damp heavy lifts when readiness is borderline
- *
- * Peaking / REALIZATION collapses to the fixed S/B/D rotation-driven pick so
- * specificity wins over adaptation in meet prep.
+ *   need = 0.30·dueness   // how many days since last exposure
+ *        + 0.30·gap       // weekly target minus this-week count
+ *        + 0.20·readFit   // readiness match
+ *        + 0.20·goalBoost // athlete goal / bottleneck bias
  */
 function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
-  // Keep peaking deterministic — meet week cares about order, not novelty.
-  if (input.blockType === 'REALIZATION') {
-    const byGap = scoreAdaptiveLifts(input);
-    return { primary: byGap[0].lift, secondary: [] };
-  }
-
   const scored = scoreAdaptiveLifts(input);
   const primary = scored[0].lift;
 
-  // Explicit SBD request: always two secondaries at reduced volume.
-  if (input.sbdToday) {
-    return {
-      primary,
-      secondary: scored.slice(1, 3).map((s) => s.lift),
-    };
+  // REALIZATION: single-lift focus only — meet prep specificity wins.
+  if (input.blockType === 'REALIZATION') {
+    return { primary, secondary: [] };
   }
 
-  // Auto-SBD: on a high-readiness day where two or three lifts are roughly
-  // equally due, cover them in one session rather than leaving fatigue on the
-  // table. Only consider this in ACCUMULATION or INTENSIFICATION.
-  const canStack = (input.blockType === 'ACCUMULATION' || input.blockType === 'INTENSIFICATION')
-    && input.readinessScore >= 80;
-  if (!canStack) return { primary, secondary: [] };
-
-  const secondary: Lift[] = [];
-  for (const s of scored.slice(1)) {
-    if (s.lift === 'UPPER') continue;
-    const gap = scored[0].score - s.score;
-    // Add a second comp block when it's within 20% of the top score.
-    if (gap <= scored[0].score * 0.20 && secondary.length < 2) {
-      secondary.push(s.lift);
-    }
+  // Hard pairing rules — mirror pickSecondary (never SQ+DL same session).
+  let secondary: Lift[];
+  if (primary === 'SQUAT' || primary === 'DEADLIFT') {
+    secondary = ['BENCH'];
+  } else {
+    // BENCH primary: most-due of SQUAT or DEADLIFT
+    const pick = scored.find((s) => s.lift === 'SQUAT' || s.lift === 'DEADLIFT');
+    secondary = pick ? [pick.lift] : ['SQUAT'];
   }
   return { primary, secondary };
 }
@@ -325,7 +458,7 @@ function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
 interface ScoredLift { lift: Lift; score: number; }
 
 function scoreAdaptiveLifts(input: AdaptiveInput): ScoredLift[] {
-  const { exposures, readinessScore } = input;
+  const { exposures, readinessScore, profile } = input;
   const byLift = new Map<Lift, LiftExposure>();
   for (const e of exposures) byLift.set(e.lift, e);
 
@@ -335,21 +468,24 @@ function scoreAdaptiveLifts(input: AdaptiveInput): ScoredLift[] {
     const weekCount = exp?.weekCount ?? 0;
     const target    = WEEKLY_TARGET[lift];
 
-    // Dueness: cap influence after ~7 days so a 30-day absence doesn't pin
-    // everything to a single lift. Normalize to roughly 0–1.
+    // Dueness: cap influence after ~10 days so a long absence doesn't
+    // permanently pin everything to one lift. Normalize to 0–1.
     const dueness = Math.min(daysSince, 10) / 10;
     // Gap: positive when under weekly target, negative when over. Normalize.
-    const gap     = Math.max(-1, Math.min(1, (target - weekCount) / target));
-    // Readiness fit: on a poor day bias toward bench (low systemic); on a
-    // great day don't penalize squat/deadlift.
-    const readFit = (1 - SYSTEMIC_LOAD[lift] / 10) * (1 - readinessScore / 100)
-                  + (SYSTEMIC_LOAD[lift] / 10) * (readinessScore / 100);
-    // Systemic damp: only hurts when readiness is actually borderline.
-    const systemicDamp = readinessScore < 60
-      ? (SYSTEMIC_LOAD[lift] / 10) * (1 - readinessScore / 100)
-      : 0;
+    const gap = Math.max(-1, Math.min(1, (target - weekCount) / target));
+    // Readiness fit: neutral at good readiness (≥60); only penalise
+    // high-systemic lifts when readiness is genuinely low. This prevents
+    // the old biased formula from always picking Deadlift at readiness 70.
+    const systemicFrac = SYSTEMIC_LOAD[lift] / 10;
+    const readFit = readinessScore >= 60
+      ? 1.0
+      : 1.0 - systemicFrac * (60 - readinessScore) / 60;
+    // Goal boost: weight each lift based on the athlete's declared goal,
+    // training focus, and bottleneck phenotype so the session plan emerges
+    // from what the athlete is actually working toward.
+    const goalBoost = computeGoalBoost(lift, profile);
 
-    const score = 0.35 * dueness + 0.35 * gap + 0.20 * readFit - 0.10 * systemicDamp;
+    const score = 0.30 * dueness + 0.30 * gap + 0.20 * readFit + 0.20 * goalBoost;
     return { lift, score };
   }
 
@@ -358,13 +494,65 @@ function scoreAdaptiveLifts(input: AdaptiveInput): ScoredLift[] {
   return entries;
 }
 
+/**
+ * Compute a 0–1 priority boost for a given lift based on the athlete's
+ * declared goal and profile characteristics. Lifts the programmer uses to
+ * build sessions from the athlete's actual goal rather than from arbitrary
+ * rotation order.
+ *
+ * Signals used (in priority order):
+ *   1. trainingGoalTarget — free-text mention of a specific lift
+ *   2. bottleneck — HYPERTROPHY → more bench; NEURAL → lift with biggest gym gap
+ *   3. trainingGoal — COMPETITION_PREP equally weights all three; others neutral
+ */
+function computeGoalBoost(
+  lift: 'SQUAT' | 'BENCH' | 'DEADLIFT',
+  profile: AthleteProfile,
+): number {
+  let boost = 0;
+
+  // Explicit goal target: parse free-text for lift mentions.
+  const targetText = (profile.trainingGoalTarget ?? '').toLowerCase();
+  if (targetText.includes('squat') && lift === 'SQUAT') boost += 0.20;
+  if ((targetText.includes('bench') || targetText.includes('press')) && lift === 'BENCH') boost += 0.20;
+  if ((targetText.includes('deadlift') || targetText.includes('pull')) && lift === 'DEADLIFT') boost += 0.20;
+
+  // Bottleneck phenotype.
+  if (profile.bottleneck === 'HYPERTROPHY' && lift === 'BENCH') {
+    // Bench has the best hypertrophy-to-fatigue ratio among the three lifts —
+    // more pressing volume builds the triceps/pecs that are almost always the
+    // hypertrophy bottleneck for powerlifters.
+    boost += 0.15;
+  }
+  if (profile.bottleneck === 'NEURAL') {
+    // Find the lift where the athlete's gym PR significantly exceeds their
+    // competition max — that gap signals untapped neural potential; practicing
+    // that lift more often reduces it.
+    const gymGaps: Record<'SQUAT' | 'BENCH' | 'DEADLIFT', number> = {
+      SQUAT:    (profile.gymSquat    ?? profile.maxSquat)    - profile.maxSquat,
+      BENCH:    (profile.gymBench    ?? profile.maxBench)    - profile.maxBench,
+      DEADLIFT: (profile.gymDeadlift ?? profile.maxDeadlift) - profile.maxDeadlift,
+    };
+    const maxGap = Math.max(gymGaps.SQUAT, gymGaps.BENCH, gymGaps.DEADLIFT);
+    if (maxGap > 5 && gymGaps[lift] === maxGap) boost += 0.15;
+  }
+
+  return Math.min(0.5, boost);
+}
+
 // ── Secondary Comp Block Builder ──────────────────────────────────────────────
 
 /**
- * Minimal top-single comp block for a non-primary lift on an SBD / stacked
- * day. Stays at RPE 7 with 1 top single + 1 backoff so total session stress
- * stays manageable. Respects block context but does not taper (primary block
- * already handles taper logic).
+ * Working-set comp block for a non-primary lift on a full SBD day.
+ * Generates straight sets at submaximal intensity — enough to constitute
+ * real training stimulus, not a token single. Rep scheme matches the block
+ * context so all three lifts feel coherent within the same session.
+ *
+ *   ACCUMULATION:    3 × 3 @ RPE 7   (moderate load, volume emphasis)
+ *   INTENSIFICATION: 3 × 2 @ RPE 7.5 (heavier, lower reps — strength phase)
+ *   MAINTENANCE:     3 × 3 @ RPE 7
+ *   DELOAD:          skipped          (protect taper)
+ *   REALIZATION:     skipped on meet week (protect taper)
  */
 function buildSecondaryCompExercises(
   profile: AthleteProfile,
@@ -374,38 +562,27 @@ function buildSecondaryCompExercises(
   weekInBlock: number,
   totalBlockWeeks: number,
 ): GeneratedExercise[] {
-  // DELOAD + REALIZATION meet week: don't add secondary comp — protect taper.
   if (blockType === 'DELOAD') return [];
   if (blockType === 'REALIZATION' && weekInBlock >= totalBlockWeeks) return [];
 
-  const maxKg  = getLiftMax(lift, profile);
-  const topRpe = clampRpe(7 + rpeOffset);
-  const topLoad = roundLoad(prescribeLoad(maxKg, topRpe, 1));
-  const bkLoad  = roundLoad(topLoad * 0.9);
+  const maxKg = getLiftMax(lift, profile);
+  const isIntensification = blockType === 'INTENSIFICATION';
+  const targetRpe  = clampRpe((isIntensification ? 7.5 : 7) + rpeOffset);
+  const targetReps = isIntensification ? 2 : 3;
+  const targetSets = 3;
+  const workLoad   = roundLoad(prescribeLoad(maxKg, targetRpe, targetReps));
 
   return [
     {
-      name:              `${getCompMovementName(lift)} — secondary`,
+      name:              getCompMovementName(lift),
       exerciseType:      'COMPETITION',
       setStructure:      'STRAIGHT',
-      sets:              1,
-      reps:              1,
-      rpeTarget:         topRpe,
-      estimatedLoadKg:   topLoad,
-      order:             0, // re-numbered by caller
-      notes:             `Secondary top single @RPE ${topRpe}. Skip if fatigue flares — primary lift is the priority.`,
-      libraryExerciseId: getCompMovementLibraryId(lift),
-    },
-    {
-      name:              `${getCompMovementName(lift)} — backoff`,
-      exerciseType:      'VARIATION',
-      setStructure:      'STRAIGHT',
-      sets:              1,
-      reps:              3,
-      rpeTarget:         clampRpe(topRpe - 1),
-      estimatedLoadKg:   bkLoad,
+      sets:              targetSets,
+      reps:              targetReps,
+      rpeTarget:         targetRpe,
+      estimatedLoadKg:   workLoad,
       order:             0,
-      notes:             `One backoff triple — feel for position + bar speed.`,
+      notes:             `Secondary block @RPE ${targetRpe} — submaximal, controlled effort. Focus on technique.`,
       libraryExerciseId: getCompMovementLibraryId(lift),
     },
   ];
@@ -436,110 +613,39 @@ function buildSessionExercises(
   weekWithinBlock = 1,
   isDupRepeat = false,
   sessionNumber = 1,
+  sbdDay = false,
+  hasSecondary = false,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
 
-  // Primary comp movement(s)
   const totalBlockWeeks = block.weekEnd - block.weekStart + 1;
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
-    weekWithinBlock, totalBlockWeeks, isDupRepeat, reward,
+    weekWithinBlock, totalBlockWeeks, isDupRepeat, reward, sbdDay,
   );
   exercises.push(...primaryExercises);
 
-  // Accessories (skipped in REALIZATION — comp focus)
-  if (block.blockType !== 'REALIZATION') {
-    const nextOrder = exercises.length + 1;
-    const accessories = buildAccessories(
-      primaryLift, block.blockType, profile, volMult, rpeOffset, nextOrder,
-      reward, sessionNumber,
-    );
-    exercises.push(...accessories);
-  }
-
-  // Cross-discipline accessory overlay — auto-adds face pulls on bench days
-  // (elite-coach non-negotiable for shoulder health), and when the athlete's
-  // disciplines include street-lift / calisthenics, adds a compatible light
-  // street-lift accessory so hybrid training stays hybrid without the
-  // athlete babysitting it. Suppressed in DELOAD and REALIZATION (comp focus).
-  if (block.blockType !== 'REALIZATION' && block.blockType !== 'DELOAD') {
-    const overlay = buildCrossDisciplineOverlay(
-      primaryLift, profile, exercises.length + 1, reward,
-    );
-    exercises.push(...overlay);
+  if (!sbdDay) {
+    // Accessories — library-driven, discipline-aware selection. When a secondary
+    // comp lift is present the session has more volume, so target 1 fewer accessory.
+    if (block.blockType !== 'REALIZATION') {
+      const accessories = selectAccessories({
+        primaryLift,
+        blockType: block.blockType,
+        profile,
+        existingExercises: exercises,
+        volMult,
+        rpeOffset,
+        sessionNumber,
+        reward,
+        countOverride: hasSecondary ? -1 : 0,
+      });
+      exercises.push(...accessories);
+    }
   }
 
   return exercises;
-}
-
-/**
- * Returns accessory overlays that elite programs include as table-stakes:
- *   - Face pulls on every bench day (shoulder health, Flex/Millz non-negotiable)
- *   - Weighted pull-up on squat / deadlift days when grip + upper back matter
- *     and the athlete trains any pulling discipline
- *   - Weighted dip on bench days when street-lift is in the discipline mix
- */
-function buildCrossDisciplineOverlay(
-  primaryLift: Lift,
-  profile: AthleteProfile,
-  startingOrder: number,
-  reward: RewardSystem,
-): GeneratedExercise[] {
-  const out: GeneratedExercise[] = [];
-  const disciplines = profile.disciplines ?? [];
-  const hasStreet = disciplines.includes('STREET_LIFT');
-  const hasCali   = disciplines.includes('CALISTHENICS') || disciplines.includes('HYBRID');
-  const hvBonus   = reward === 'HIGH_VOLUME' ? 1 : 0;
-  let order = startingOrder;
-
-  if (primaryLift === 'BENCH') {
-    out.push({
-      name:              'Face Pull',
-      exerciseType:      'ACCESSORY',
-      setStructure:      'STRAIGHT',
-      sets:              3 + hvBonus,
-      reps:              15,
-      rpeTarget:         7,
-      // Cable lift — no comp max reference. ~12% of bench gives a sane
-      // starting weight on most stacks; athlete fine-tunes by feel.
-      estimatedLoadKg:   Math.max(10, roundLoad((profile.maxBench ?? 80) * 0.12)),
-      order:             order++,
-      notes:             'Rear-delt + external rotation. Every bench day, non-negotiable.',
-      libraryExerciseId: 'face_pull',
-    });
-    if (hasStreet || hasCali) {
-      out.push({
-        name:              'Weighted Dip',
-        exerciseType:      'ACCESSORY',
-        setStructure:      'STRAIGHT',
-        sets:              3 + hvBonus,
-        reps:              6,
-        rpeTarget:         7,
-        estimatedLoadKg:   Math.max(5, roundLoad((profile.maxBench ?? 80) * 0.10)),
-        order:             order++,
-        notes:             'Street-lift carryover. Lean slightly forward. Stop each set with 2-3 reps in reserve.',
-        libraryExerciseId: 'tricep_dip',
-      });
-    }
-  } else if (primaryLift === 'SQUAT' || primaryLift === 'DEADLIFT') {
-    if (hasStreet || hasCali || disciplines.length === 0) {
-      out.push({
-        name:              'Weighted Pull-Up',
-        exerciseType:      'ACCESSORY',
-        setStructure:      'STRAIGHT',
-        sets:              3 + hvBonus,
-        reps:              5,
-        rpeTarget:         7,
-        estimatedLoadKg:   Math.max(5, roundLoad((profile.maxDeadlift ?? 120) * 0.10)),
-        order:             order++,
-        notes:             'Grip, lats, upper back — carries to every comp lift. Add weight via dip belt.',
-        libraryExerciseId: 'weighted_pull_up',
-      });
-    }
-  }
-
-  return out;
 }
 
 // ── Primary Exercise ───────────────────────────────────────────────────────────
@@ -554,6 +660,7 @@ function buildPrimaryExercises(
   totalBlockWeeks = 1,
   isDupRepeat = false,
   reward: RewardSystem = 'CONSISTENCY',
+  sbdDay = false,
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
   const baseRpe = getBaseRpeForBlock(blockType, weekInBlock, totalBlockWeeks);
@@ -635,10 +742,15 @@ function buildPrimaryExercises(
   }
 
   // ── ACCUMULATION / INTENSIFICATION / PIVOT / MAINTENANCE ──────────────────
-  const baseReps  = getRepsForBlock(blockType, profile.bottleneck);
-  const respMult  = responderMultiplier(profile.responder);
-  const rawSets   = blockToSets(blockType) * respMult * volMult;
-  const baseSets  = Math.max(1, Math.floor(rawSets));
+  const baseReps    = getRepsForBlock(blockType, profile.bottleneck);
+  const respMult    = responderMultiplier(profile.responder);
+  const rawSets     = blockToSets(blockType) * respMult * volMult;
+  const baseRawSets = Math.max(1, Math.floor(rawSets));
+  // On SBD days the primary takes ~35% fewer sets so the session stays
+  // manageable when secondaries each contribute 3 working sets.
+  const baseSets = sbdDay
+    ? Math.max(2, Math.round(baseRawSets * 0.65))
+    : baseRawSets;
 
   // Week-within-block undulation (Juggernaut / Noriega style). Keeps total
   // work roughly flat while shifting the stimulus from set-heavy → rep-heavy
@@ -696,7 +808,7 @@ function buildPrimaryExercises(
   // Intensification uses lower reps / fewer sets but keeps the variation
   // (e.g. pin press, block pull) so lockout / position strength keeps
   // developing during the strength phase.
-  if (variation !== null && (blockType === 'ACCUMULATION' || blockType === 'INTENSIFICATION')) {
+  if (!sbdDay && variation !== null && (blockType === 'ACCUMULATION' || blockType === 'INTENSIFICATION')) {
     const varRpe    = clampRpe(adjustedRpe - 0.5);
     const varReps   = blockType === 'INTENSIFICATION'
       ? Math.max(2, baseReps - 1)
@@ -723,121 +835,7 @@ function buildPrimaryExercises(
   return result;
 }
 
-// ── Accessory Exercises ────────────────────────────────────────────────────────
 
-function buildAccessories(
-  lift: Lift,
-  blockType: BlockType,
-  profile: AthleteProfile,
-  volMult: number,
-  rpeOffset: number,
-  startOrder: number,
-  reward: RewardSystem = 'CONSISTENCY',
-  sessionNumber = 1,
-): GeneratedExercise[] {
-  const accRpe  = clampRpe(7.5 + rpeOffset);
-  const baseAccSets = Math.max(1, Math.floor(3 * volMult));
-  // HIGH_VOLUME athletes get +1 accessory set
-  const accSets = reward === 'HIGH_VOLUME' ? baseAccSets + 1 : baseAccSets;
-  const isDeload = blockType === 'DELOAD';
-
-  const sq = profile.maxSquat;
-  const bp = profile.maxBench;
-  const dl = profile.maxDeadlift;
-
-  // [name, reps, refMaxKg]
-  // refMaxKg = the relevant competition max (sq/bp/dl).
-  // ACCESSORY_REF_COEFFICIENT[name] is then multiplied to get the accessory
-  // effective 1RM, then prescribeLoad() computes the training load.
-  // Note: Barbell Rows always reference bp (bench) regardless of session day.
-  type AccDef = [string, number, number];
-
-  let defs: AccDef[];
-
-  switch (lift) {
-    // ── SQUAT DAY ─────────────────────────────────────────────────────────
-    // Upper back pull included on every session (Sheiko, Juggernaut standard)
-    case 'SQUAT':
-    case 'LOWER':
-      defs = isDeload
-        ? [
-            ['Romanian Deadlift', 12, dl],
-            ['Barbell Rows',       8, bp],
-          ]
-        : [
-            ['Romanian Deadlift', 10, dl],  // posterior chain
-            ['Barbell Rows',       8, bp],  // upper back (critical for squat bracing)
-            ['Leg Press',         12, sq],  // quad volume
-            ['Lat Pulldowns',     10, dl],  // lat engagement
-          ];
-      break;
-
-    // ── BENCH DAY ─────────────────────────────────────────────────────────
-    // Upper pressing + rows (antagonist work = shoulder health)
-    case 'BENCH':
-    case 'UPPER':
-      defs = isDeload
-        ? [
-            ['Overhead Press', 8, bp],
-            ['Barbell Rows',   8, bp],
-          ]
-        : [
-            ['Close Grip Bench Press', 10, bp],  // tricep/lockout
-            ['Barbell Rows',           10, bp],  // upper back (shoulder health)
-            ['Overhead Press',          8, bp],  // shoulder work
-            ['Tricep Pushdowns',       12, bp],  // isolation lockout
-          ];
-      break;
-
-    // ── DEADLIFT DAY ──────────────────────────────────────────────────────
-    // Lats are the primary DL stabiliser; RDL for hamstring/glute volume
-    case 'DEADLIFT':
-      defs = isDeload
-        ? [
-            ['Romanian Deadlift', 12, dl],
-            ['Lat Pulldowns',     10, dl],
-          ]
-        : [
-            ['Romanian Deadlift', 10, dl],  // hamstrings/glutes
-            ['Lat Pulldowns',     10, dl],  // lats (bar path control)
-            ['Barbell Rows',      10, bp],  // upper back — bp reference, not dl
-            ['Deficit Deadlift',   5, dl],  // off-the-floor strength
-          ];
-      break;
-
-    default:
-      // FULL — general GPP
-      defs = [
-        ['Romanian Deadlift', 10, dl],
-        ['Overhead Press',     8, bp],
-        ['Lat Pulldowns',     10, dl],
-      ];
-  }
-
-  // VARIETY: rotate accessories — shift the order each session so the athlete
-  // sees different exercises first (and potentially different ones if the pool
-  // is larger than what fits in a session). Uses sessionNumber as the seed.
-  if (reward === 'VARIETY' && defs.length > 1) {
-    const shift = (sessionNumber - 1) % defs.length;
-    defs = [...defs.slice(shift), ...defs.slice(0, shift)];
-  }
-
-  return defs.map(([name, reps, refMaxKg], i) => {
-    const coeff = ACCESSORY_REF_COEFFICIENT[name] ?? 0.6;
-    const load  = roundLoad(prescribeLoad(refMaxKg * coeff, accRpe, reps));
-    return {
-      name,
-      exerciseType:      'ACCESSORY' as ExerciseType,
-      setStructure:      'STRAIGHT' as SetStructure,
-      sets:              accSets,
-      reps,
-      rpeTarget:         accRpe,
-      estimatedLoadKg:   load,
-      order:             startOrder + i,
-      libraryExerciseId: ACCESSORY_LIBRARY_IDS[name],
-    };
-  });
-}
 
 // ── Coach Note (Rule-Based) ────────────────────────────────────────────────────
 
@@ -1060,42 +1058,6 @@ function getVariationLibraryId(lift: Lift): string | null {
   return v?.libraryId ?? null;
 }
 
-/** Maps accessory display names to stable library exercise IDs. */
-const ACCESSORY_LIBRARY_IDS: Record<string, string> = {
-  'Romanian Deadlift':      'romanian_deadlift',
-  'Leg Press':              'leg_press',
-  'Walking Lunges':         'walking_lunge',
-  'Overhead Press':         'overhead_press',
-  'Tricep Pushdowns':       'tricep_pushdown',
-  'Close Grip Bench Press': 'close_grip_bench_press',
-  'Barbell Rows':           'barbell_row',
-  'Deficit Deadlift':       'deficit_deadlift',
-  'Lat Pulldowns':          'lat_pulldown',
-};
-
-// VARIATION_MAX_COEFFICIENT has been superseded by the coefficient field on
-// the VariationChoice records returned by selectVariation().
-
-/**
- * Accessory exercise effective 1RM as a fraction of the relevant competition
- * lift's 1RM. Multiplied by the competition max before calling prescribeLoad()
- * so that: (a) loads land in the correct range, and (b) accessories respond to
- * readiness changes (since load flows through prescribeLoad with the adjusted
- * accRpe, not a flat percentage).
- *
- * Sources: Tuchscherer, Noriega, Stanek, Swolefessor programming references
- * for intermediate-to-advanced raw powerlifters.
- */
-const ACCESSORY_REF_COEFFICIENT: Record<string, number> = {
-  'Romanian Deadlift':      0.85,  // of DL — strong hinge, shorter ROM
-  'Deficit Deadlift':       0.88,  // of DL — harder off floor
-  'Barbell Rows':           0.95,  // of BP — most lifters row close to bench
-  'Leg Press':              1.25,  // of SQ — favourable leverage, no bracing
-  'Lat Pulldowns':          0.45,  // of DL — upper-body pull fraction of DL
-  'Close Grip Bench Press': 0.90,  // of BP — slight ROM assist
-  'Overhead Press':         0.65,  // of BP — strict press limited by delts
-  'Tricep Pushdowns':       0.48,  // of BP — cable isolation
-};
 
 
 /**
@@ -1164,9 +1126,10 @@ function computeOvershootOffset(overshootHistory?: number): number {
   return -Math.min(1.0, overshootHistory * 0.5);
 }
 
-/** Clamp RPE to the valid [5, 10] range. */
+/** Clamp RPE to the valid [5, 10] range and round to nearest 0.5. */
 function clampRpe(rpe: number): number {
-  return Math.max(5, Math.min(10, rpe));
+  const rounded = Math.round(rpe * 2) / 2;
+  return Math.max(5, Math.min(10, rounded));
 }
 
 /**

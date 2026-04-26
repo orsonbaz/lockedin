@@ -28,6 +28,7 @@ export const verticalPullExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Overhand grip (pronated). Add weight via belt once bodyweight is easy. Full dead hang at the bottom. One of the best lat builders for powerlifters.',
     swapGroups: [SWAP_GROUPS.PULL_V_PULLUP],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -57,6 +58,7 @@ export const verticalPullExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Supinated (underhand) grip. More bicep activation than pull-ups. Great for lifters who want combined lat + bicep work.',
     swapGroups: [SWAP_GROUPS.PULL_V_PULLUP, SWAP_GROUPS.PULL_V_BICEP_ISO],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 
@@ -86,6 +88,7 @@ export const verticalPullExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Rings allow wrists to rotate naturally. Harder stability demand. Add weight once bodyweight is easy.',
     swapGroups: [SWAP_GROUPS.PULL_V_PULLUP],
+    disciplines: ['STREET_LIFT', 'CALISTHENICS', 'HYBRID'] as const,
     isCustom: false,
   },
 

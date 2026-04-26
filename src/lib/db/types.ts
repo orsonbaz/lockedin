@@ -93,6 +93,11 @@ export interface AthleteProfile {
   gymSquat?: number;
   gymBench?: number;
   gymDeadlift?: number;
+  // Street lift / calisthenics maxes (added weight in kg, not including bodyweight)
+  // Used for load prescription on weighted pull-up, dip, and muscle-up.
+  maxWeightedPullUp?: number;
+  maxWeightedDip?: number;
+  maxWeightedMuscleUp?: number;
   // AI diagnostics
   bottleneck: Bottleneck;
   rewardSystem: RewardSystem;
@@ -104,7 +109,9 @@ export interface AthleteProfile {
   peakDayOfWeek: number;         // 0=Sun … 6=Sat
   unitSystem: 'KG' | 'LBS';
   // Settings
-  groqApiKey?: string;           // optional Groq key for online AI
+  geminiApiKey?: string;         // optional Google Gemini key (free tier)
+  groqApiKey?: string;           // legacy — not used in UI
+  anthropicApiKey?: string;      // legacy — not used in UI
   onboardingComplete: boolean;
   createdAt: string;             // ISO date string
   updatedAt: string;

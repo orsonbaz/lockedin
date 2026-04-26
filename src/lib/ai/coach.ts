@@ -1,17 +1,12 @@
 /**
  * AI Coach — routing layer for Lockedin.
  *
- * Two modes:
- *   MODE A  On-device   Phi-3.5-mini via Transformers.js Web Worker (offline-first)
- *   MODE B  Groq online llama-3.3-70b-versatile (better quality, needs API key)
- *
- * Routing: if profile.groqApiKey is set, use Groq; otherwise use the Worker.
+ * Two modes: Gemini (online, free tier) or on-device Phi-3.5-mini (offline).
  *
  * All exports are pure functions / async generators — no React hooks.
  * This module is imported only by client components ('use client').
  */
 
-import Groq                 from 'groq-sdk';
 import { db, today }        from '@/lib/db/database';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getCompactKnowledge, getTopicKnowledge } from './knowledge-base';
@@ -20,6 +15,11 @@ import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 import { unpackReviewIssues } from '@/lib/engine/session-review';
+import {
+  summariseSessionRpeState,
+  formatSessionRpeStateForPrompt,
+  type SetFeedback,
+} from '@/lib/engine/intra-session';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface ProgressPayload {
@@ -33,16 +33,18 @@ export interface ProgressPayload {
 
 export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string };
 
-// Per-section character caps. Total ceiling ~12k chars (~3k tokens) for Groq,
+// Per-section character caps. Total ceiling ~12k chars for Gemini,
 // ~3k chars for Phi on-device. The `knowledge` cap is dynamic.
 const SECTION_CAPS = {
   role:       600,
   profile:    500,
+  program:    800,
   state:      500,
   summary:    800,
   memories:   1500,
   session:    700,
-  history:    600,
+  liveSession: 500,
+  history:    1200,
   weakPoints: 400,
   nutrition:  200,
   schedule:   400,
@@ -100,14 +102,14 @@ function hasWorker(): boolean {
 /**
  * Read athlete context from IndexedDB and build a comprehensive system prompt.
  *
- * @param userMessage  Optional — the user's latest message. Used to select
- *                     relevant knowledge-base sections (topic-aware injection).
- * @param isGroqMode   If true, includes the full knowledge base (larger context
- *                     window). Otherwise uses the compact version.
+ * @param userMessage   Optional — the user's latest message. Used to select
+ *                      relevant knowledge-base sections (topic-aware injection).
+ * @param isCloudMode   If true, includes the full knowledge base (larger context
+ *                      window). Otherwise uses the compact version.
  */
 export async function buildSystemPrompt(
   userMessage?: string,
-  isGroqMode = false,
+  isCloudMode = false,
 ): Promise<string> {
   // ── Read profile ─────────────────────────────────────────────────────────
   const profile = await db.profile.get('me');
@@ -126,22 +128,38 @@ export async function buildSystemPrompt(
     ? `${Math.round(profile.trainingAgeMonths / 12 * 10) / 10} years`
     : '?';
 
-  // ── Active cycle + block ──────────────────────────────────────────────────
+  // ── Active cycle + full program map ──────────────────────────────────────
   const cycle = await db.cycles
     .filter((c) => c.status === 'ACTIVE')
     .first();
 
   let blockInfo = '';
   let blockType = '';
+  let programMapInfo = '';
   if (cycle) {
-    const block = await db.blocks
+    const allBlocks = await db.blocks
       .where('cycleId')
       .equals(cycle.id)
-      .filter((b) => b.weekStart <= cycle.currentWeek && b.weekEnd >= cycle.currentWeek)
-      .first();
-    if (block) {
-      blockType = block.blockType;
-      blockInfo = `Training block: ${block.blockType}, week ${cycle.currentWeek} of ${cycle.totalWeeks}. Volume target: ${block.volumeTarget}x, intensity target: ${Math.round(block.intensityTarget * 100)}%.`;
+      .sortBy('weekStart');
+
+    const currentBlock = allBlocks.find(
+      (b) => b.weekStart <= cycle.currentWeek && b.weekEnd >= cycle.currentWeek,
+    );
+    if (currentBlock) {
+      blockType = currentBlock.blockType;
+      const weekInBlock = cycle.currentWeek - currentBlock.weekStart + 1;
+      const totalWeeks  = currentBlock.weekEnd - currentBlock.weekStart + 1;
+      blockInfo = `Training block: ${currentBlock.blockType}, week ${weekInBlock}/${totalWeeks} (program week ${cycle.currentWeek}/${cycle.totalWeeks}). Volume target: ${currentBlock.volumeTarget}x, intensity: ${Math.round(currentBlock.intensityTarget * 100)}%.`;
+    }
+
+    if (allBlocks.length > 0) {
+      const blockLines = allBlocks.map((b) => {
+        const isCurrent = currentBlock && b.id === currentBlock.id;
+        const totalW    = b.weekEnd - b.weekStart + 1;
+        const weekInB   = isCurrent ? cycle.currentWeek - b.weekStart + 1 : null;
+        return `  ${isCurrent ? '▶' : ' '} ${b.blockType} (weeks ${b.weekStart}–${b.weekEnd}, ${totalW}w | vol×${b.volumeTarget} int${Math.round(b.intensityTarget * 100)}%)${isCurrent && weekInB !== null ? ` ← CURRENT (week ${weekInB}/${totalW})` : ''}`;
+      });
+      programMapInfo = `Cycle: ${cycle.totalWeeks} total weeks (currently week ${cycle.currentWeek})\nBlocks:\n${blockLines.join('\n')}`;
     }
   }
 
@@ -188,6 +206,7 @@ export async function buildSystemPrompt(
     const daysLeft = Math.ceil(msUntil / 86_400_000);
     if (daysLeft >= 0) {
       meetInfo = `Upcoming meet: "${meet.name}" in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Federation: ${meet.federation}. Weight class: ${meet.weightClass} kg. Weigh-in: ${meet.weighIn === 'TWO_HOUR' ? '2-hour' : '24-hour'}.`;
+      if (programMapInfo) programMapInfo += `\n${meetInfo}`;
     }
   }
 
@@ -218,18 +237,65 @@ export async function buildSystemPrompt(
     }
   }
 
-  // ── Last 5 completed sessions (richer data) ────────────────────────────────
+  // ── Live set feedback (intra-session RPE deviation) ──────────────────────
+  // When the athlete is mid-session with logged sets, surface the RPE state
+  // so the LLM can suggest load adjustments without being asked explicitly.
+  let liveSessionInfo = '';
+  if (todaySession) {
+    const loggedSets = await db.sets
+      .where('sessionId')
+      .equals(todaySession.id)
+      .filter((sl) => sl.rpeLogged !== undefined)
+      .toArray();
+
+    if (loggedSets.length > 0) {
+      // Pair each logged set with the exercise prescription to build SetFeedback[]
+      const sessionExercises = await db.exercises
+        .where('sessionId')
+        .equals(todaySession.id)
+        .toArray();
+
+      // Index by id — explicit any to avoid Dexie generic inference loss in Map
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const exById = new Map<string, any>(sessionExercises.map((e: any) => [e.id, e]));
+
+      const feedbacks: SetFeedback[] = (loggedSets as any[])
+        .map((sl) => {
+          const ex = exById.get(sl.exerciseId);
+          if (!ex || sl.rpeLogged === undefined) return null;
+          return {
+            exerciseName:  ex.name        as string,
+            setNumber:     sl.setNumber   as number,
+            totalSets:     ex.sets        as number,
+            targetRpe:     ex.rpeTarget   as number,
+            targetReps:    ex.reps        as number,
+            targetLoadKg:  ex.estimatedLoadKg as number,
+            actualRpe:     sl.rpeLogged   as number,
+            actualLoadKg:  sl.loadKg      as number,
+            actualReps:    sl.reps        as number,
+          } satisfies SetFeedback;
+        })
+        .filter((f): f is SetFeedback => f !== null);
+
+      const rpeState = summariseSessionRpeState(feedbacks);
+      if (rpeState) {
+        liveSessionInfo = formatSessionRpeStateForPrompt(rpeState);
+      }
+    }
+  }
+
+  // ── Last 14 completed sessions ────────────────────────────────────────────
   const recentSessions = await db.sessions
     .filter((s) => s.status === 'COMPLETED')
     .toArray();
-  const last5 = recentSessions
+  const last14 = recentSessions
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
-    .slice(0, 5);
+    .slice(0, 14);
 
   let sessionHistory = '';
-  if (last5.length > 0) {
+  if (last14.length > 0) {
     const summaries = await Promise.all(
-      last5.map(async (s) => {
+      last14.map(async (s) => {
         const sets = await db.sets
           .where('sessionId')
           .equals(s.id)
@@ -240,10 +306,10 @@ export async function buildSystemPrompt(
           : '—';
         const totalVol = sets.reduce((sum, sl) => sum + sl.loadKg * sl.reps, 0);
         const volStr = totalVol > 1000 ? `${(totalVol / 1000).toFixed(1)}t` : `${Math.round(totalVol)}kg`;
-        return `${s.scheduledDate} ${s.primaryLift}: avg RPE ${avgRpe}, volume ${volStr}, ${sets.length} sets`;
+        return `${s.scheduledDate} ${s.primaryLift} (${s.sessionType}): avg RPE ${avgRpe}, volume ${volStr}, ${sets.length} sets`;
       }),
     );
-    sessionHistory = `Recent completed sessions:\n${summaries.map((s) => `  - ${s}`).join('\n')}`;
+    sessionHistory = `Recent completed sessions (newest first):\n${summaries.map((s) => `  - ${s}`).join('\n')}`;
   }
 
   // ── Bodyweight trend ──────────────────────────────────────────────────────
@@ -259,8 +325,8 @@ export async function buildSystemPrompt(
 
   // ── Knowledge base (topic-aware) ──────────────────────────────────────────
   let knowledge: string;
-  if (isGroqMode) {
-    // Groq has larger context — inject topic-relevant knowledge or full base
+  if (isCloudMode) {
+    // Gemini has larger context — inject topic-relevant knowledge or full base
     if (userMessage) {
       knowledge = getTopicKnowledge(userMessage);
     } else {
@@ -269,7 +335,7 @@ export async function buildSystemPrompt(
   } else {
     knowledge = getCompactKnowledge();
   }
-  const knowledgeCap = isGroqMode ? 6000 : 2000;
+  const knowledgeCap = isCloudMode ? 6000 : 2000;
 
   // ── Long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
   const [memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
@@ -293,6 +359,7 @@ Available actions:
 - [ACTION:UPDATE_REPS|name=Competition Back Squat|sets=4|reps=3] — Change sets/reps for an exercise
 - [ACTION:SET_RPE_TARGET|name=Competition Back Squat|rpe=7.5] — Change RPE target for an exercise
 - [ACTION:MODIFY_SESSION|rpe_offset=-0.5|volume_mult=0.8|modification=Reduced volume] — Adjust entire session
+- [ACTION:ADJUST_SET_LOAD|exercise=Competition Deadlift|load=200|note=RPE ran high on set 1] — Update the prescribed load for remaining sets of one exercise mid-session (use when Live Session Feedback shows overshoot/undershoot)
 - [ACTION:SKIP_SESSION] — Skip today's session entirely
 - [ACTION:REMEMBER|kind=INJURY|content=Left shoulder impingement|tags=shoulder,injury|importance=4] — Save a long-term fact about the athlete (kinds: INJURY, PREFERENCE, LIFE_EVENT, PAST_ADVICE, GOAL, CONSTRAINT)
 - [ACTION:FORGET|id=<memoryId>] — Remove a previously stored memory
@@ -303,6 +370,7 @@ Available actions:
 - [ACTION:SCHEDULE_REFEED|date=2026-04-20] — Mark today (or another date) as a refeed day
 - [ACTION:REQUEST_FORM_CHECK|lift=SQUAT] — Open the camera for a quick video form check (lift: SQUAT/BENCH/DEADLIFT/UPPER/LOWER/FULL)
 - [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
+- [ACTION:REGENERATE_SESSION|reason=Athlete wants different session type] — Fully rebuild today's session from current profile, readiness, and block data
 
 Rules:
 - IF THE ATHLETE ASKS YOU TO CHANGE / SWAP / ADD / REMOVE / ADJUST / SKIP / ABBREVIATE / LOG anything, you MUST emit the matching ACTION tag — without it, nothing happens. Always pair "Yes I'll do X" with the tag for X.
@@ -312,8 +380,10 @@ Rules:
 - When in doubt about whether to emit a tag: emit it. The athlete sees a confirm button before anything is applied — it's never destructive.
 - Use REMEMBER when the athlete shares a durable fact (injury, preference, constraint, goal). Keep content under 140 chars.
 - Use ABBREVIATE_TODAY when the athlete says they're short on time today. Use SET_WEEK_AVAILABILITY for multi-day constraints (travel, busy week).
+- Use ADJUST_SET_LOAD when "Live Session Feedback" shows a deviation ≥ 0.75 RPE, or when the athlete reports an RPE during a session. Always reference the exact exercise name and the corrected kg from the feedback.
 - For nutrition: reference "Nutrition Target Today" when present. LOG_NUTRITION when the athlete tells you what they ate; SET_NUTRITION_TARGETS for kcal/macro updates; SCHEDULE_REFEED for refeed days.
 - For form check / technique review / "felt off": REQUEST_FORM_CHECK. Don't guess form problems without seeing the lift.
+- Use REGENERATE_SESSION when the athlete wants to completely redo today's session, change the session type, or when multiple exercise changes would be easier as a clean rebuild.
 
 Worked example (the format the parser actually requires):
 > User: "Switch the RDL out for good mornings today and drop my squat sets to 3."
@@ -373,6 +443,17 @@ Worked example (the format the parser actually requires):
         `Federation: ${federation}. Equipment: ${profile?.equipment ?? 'RAW'}. Training age: ${trainingAge}.`,
         `Current competition maxes — Squat: ${squat} kg, Bench: ${bench} kg, Deadlift: ${deadlift} kg. Total: ${typeof squat === 'number' && typeof bench === 'number' && typeof deadlift === 'number' ? squat + bench + deadlift : '?'} kg.`,
         profile?.gymSquat ? `Gym PRs — Squat: ${profile.gymSquat} kg, Bench: ${profile.gymBench} kg, Deadlift: ${profile.gymDeadlift} kg.` : '',
+        (() => {
+          const hasStreet = profile?.disciplines?.some((d) => d === 'STREET_LIFT' || d === 'CALISTHENICS' || d === 'HYBRID');
+          if (!hasStreet) return '';
+          const parts: string[] = [];
+          if (profile?.maxWeightedPullUp !== undefined) parts.push(`pull-up +${profile.maxWeightedPullUp} kg`);
+          if (profile?.maxWeightedDip    !== undefined) parts.push(`dip +${profile.maxWeightedDip} kg`);
+          if (profile?.maxWeightedMuscleUp !== undefined) parts.push(`muscle-up +${profile.maxWeightedMuscleUp} kg`);
+          return parts.length > 0
+            ? `Street lift maxes: ${parts.join(', ')}.`
+            : 'Street lift maxes not yet logged.';
+        })(),
         `Phenotype — Bottleneck: ${bottleneck}. Responder: ${responder}. Overshooter: ${overshooter ? 'YES' : 'no'}. Reward system: ${rewardSys}. Peak time: ${profile?.timeToPeakWeeks ?? 3} weeks.`,
         profile?.disciplines?.length
           ? `Disciplines: ${profile.disciplines.join(', ')}${profile.primaryDiscipline ? ` (primary: ${profile.primaryDiscipline})` : ''}.`
@@ -400,6 +481,11 @@ Worked example (the format the parser actually requires):
       ].filter(Boolean).join('\n'),
     },
     {
+      name: 'program',
+      heading: 'Full Program Map',
+      content: programMapInfo,
+    },
+    {
       name: 'state',
       heading: 'Current Training State',
       content: [
@@ -407,13 +493,14 @@ Worked example (the format the parser actually requires):
         readinessDetails || (rdScore !== undefined ? `Readiness today: ${rdScore}/100 (${rdLabel}).` : 'No readiness check-in today.'),
         readinessTrend,
         bwTrend,
-        meetInfo,
+        programMapInfo ? '' : meetInfo,
       ].filter(Boolean).join('\n'),
     },
     { name: 'summary',  heading: 'Conversation Summary', content: summaryBody },
     { name: 'memories', heading: 'Long-Term Memory',     content: memoriesBody },
-    { name: 'session',  heading: "Today's Session",      content: sessionInfo },
-    { name: 'history',  heading: 'Training History',     content: sessionHistory },
+    { name: 'session',     heading: "Today's Session",       content: sessionInfo },
+    { name: 'liveSession', heading: 'Live Session Feedback', content: liveSessionInfo },
+    { name: 'history',     heading: 'Training History',      content: sessionHistory },
     { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
     { name: 'nutrition', heading: 'Nutrition Target Today', content: nutritionBody },
     { name: 'wearables', heading: 'Wearable Signals (last 7d)', content: wearablesBody },
@@ -473,70 +560,46 @@ async function* streamFromWorker(
 
 // ── Main public API ───────────────────────────────────────────────────────────
 
-/** Max ms between streamed tokens before we consider the stream stalled. */
-const GROQ_IDLE_TIMEOUT_MS  = 20_000;
-/** Max ms to wait for the first token after the request is sent. */
-const GROQ_FIRST_TOKEN_MS   = 30_000;
-/** How many times to retry the whole Groq call on a stall / network error. */
-const GROQ_MAX_RETRIES      = 1;
-
 /**
- * Wrap a Groq SDK streaming call so that any stall longer than
- * `idleMs` (or the first-token wait longer than `firstMs`) throws a named
- * error the caller can surface or fall back from.
+ * Stream a response from Google Gemini 2.5 Flash.
+ * Free tier; significantly smarter than on-device Phi.
+ * The system prompt is passed as a system instruction; user/assistant turns
+ * are mapped to Gemini's 'user'/'model' role names.
  */
-async function* groqStreamWithWatchdog(
-  groqApiKey: string,
-  messages:   ChatMessage[],
-  maxTokens:  number,
+/**
+ * Streams Gemini via the server-side /api/chat route.
+ * Runs server-to-server (no browser CORS restrictions).
+ * Error signals arrive as `__ERROR__:message` in the stream body.
+ */
+async function* geminiStream(
+  apiKey: string,
+  messages: ChatMessage[],
+  maxTokens: number,
 ): AsyncGenerator<string> {
-  const client = new Groq({ apiKey: groqApiKey, dangerouslyAllowBrowser: true });
+  const res = await fetch('/api/chat', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ messages, apiKey, maxTokens }),
+  });
 
-  const controller = new AbortController();
-  const stream = await client.chat.completions.create(
-    {
-      model:      'llama-3.3-70b-versatile',
-      messages:   messages as Groq.Chat.ChatCompletionMessageParam[],
-      max_tokens: maxTokens,
-      stream:     true,
-    },
-    { signal: controller.signal },
-  );
+  if (!res.ok) {
+    const errText = await res.text().catch(() => `HTTP ${res.status}`);
+    throw new Error(`Gemini API error (${res.status}): ${errText}`);
+  }
 
-  const iterator = (stream as unknown as AsyncIterable<Groq.Chat.Completions.ChatCompletionChunk>)
-    [Symbol.asyncIterator]();
+  if (!res.body) throw new Error('No response body from /api/chat');
 
-  let gotFirstToken = false;
+  const reader  = res.body.getReader();
+  const decoder = new TextDecoder();
 
   while (true) {
-    const timeoutMs = gotFirstToken ? GROQ_IDLE_TIMEOUT_MS : GROQ_FIRST_TOKEN_MS;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        controller.abort();
-        const err = new Error(
-          gotFirstToken
-            ? `Groq stream idle for ${timeoutMs / 1000}s — aborting.`
-            : `Groq stream produced no tokens in ${timeoutMs / 1000}s — aborting.`,
-        );
-        (err as Error & { code?: string }).code = 'GROQ_STREAM_IDLE';
-        reject(err);
-      }, timeoutMs);
-    });
-
-    let next: IteratorResult<Groq.Chat.Completions.ChatCompletionChunk>;
-    try {
-      next = await Promise.race([iterator.next(), timeoutPromise]);
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value, { stream: true });
+    if (text.startsWith('__ERROR__:')) {
+      throw new Error(text.slice('__ERROR__:'.length));
     }
-
-    if (next.done) return;
-    const content = next.value.choices[0]?.delta?.content;
-    if (content) {
-      gotFirstToken = true;
-      yield content;
-    }
+    if (text) yield text;
   }
 }
 
@@ -544,60 +607,26 @@ async function* groqStreamWithWatchdog(
  * Route a chat turn to the correct AI backend.
  * Yields string tokens as they stream from the model.
  *
- * When Groq is configured we auto-retry once on a stalled/idle stream and
- * fall back to the on-device worker if all Groq attempts fail.
+ * If geminiApiKey is set → Gemini 2.5 Flash; otherwise → on-device Worker.
  *
- * @param messages   Conversation history (user + assistant turns). Include
- *                   the system prompt as the first message with role 'system'.
- * @param groqApiKey If set, use Groq. Otherwise use the on-device Worker.
- * @param maxTokens  Max tokens to generate (default 512).
+ * @param messages     Conversation history including system prompt as first message.
+ * @param geminiApiKey Google Gemini API key (online, free tier).
+ * @param maxTokens    Max tokens to generate (default 2048).
  */
 export async function* sendMessage(
-  messages:    ChatMessage[],
-  groqApiKey?: string,
-  maxTokens    = 512,
+  messages:      ChatMessage[],
+  geminiApiKey?: string,
+  maxTokens      = 2048,
 ): AsyncGenerator<string> {
-  const trimmedKey = groqApiKey?.trim();
+  const trimmedGeminiKey = geminiApiKey?.trim();
 
-  if (trimmedKey) {
-    // Retry the whole call up to GROQ_MAX_RETRIES times on a stall. We only
-    // retry when the stream produced zero tokens so we don't double-emit
-    // partial responses to the UI.
-    for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
-      let emitted = 0;
-      try {
-        for await (const token of groqStreamWithWatchdog(trimmedKey, messages, maxTokens)) {
-          emitted++;
-          yield token;
-        }
-        return;
-      } catch (err) {
-        const code = (err as { code?: string })?.code;
-        const isStall = code === 'GROQ_STREAM_IDLE';
-        console.warn(
-          `[coach] Groq attempt ${attempt + 1} failed (emitted=${emitted}, stall=${isStall}):`,
-          err,
-        );
-        // If we already streamed tokens, don't retry — the user sees them.
-        if (emitted > 0) throw err;
-        // Only retry stalls / transient network errors; bail on auth etc.
-        if (!isStall && attempt >= GROQ_MAX_RETRIES) throw err;
-        if (attempt >= GROQ_MAX_RETRIES) {
-          // Final attempt exhausted — try on-device worker as a last resort.
-          if (hasWorker()) {
-            console.warn('[coach] falling back to on-device model after Groq stalls.');
-            yield* streamFromWorker(messages, maxTokens);
-            return;
-          }
-          throw err;
-        }
-        // Otherwise loop and retry.
-      }
-    }
+  if (trimmedGeminiKey) {
+    // ── Gemini 2.5 Flash (online, free tier) ─────────────────────────
+    yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
     return;
   }
 
-  // ── MODE A: On-device Worker ────────────────────────────────────────
+  // ── On-device Worker (offline) ────────────────────────────────────
   yield* streamFromWorker(messages, maxTokens);
 }
 

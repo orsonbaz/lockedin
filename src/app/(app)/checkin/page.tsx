@@ -23,17 +23,19 @@ import {
   calcReadinessScore,
   readinessLabel,
 } from '@/lib/engine/readiness';
-import { generateSession, abbreviateSession } from '@/lib/engine/session';
+import { generateSession, abbreviateSession, getExpectedSecondary, suggestPrimaryLift } from '@/lib/engine/session';
 import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import { reviewSessionPure, packReviewIssues } from '@/lib/engine/session-review';
+import { advisorReviewSession, applyAdvisorModifications } from '@/lib/ai/session-advisor';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
 import { addOverride, loadOverridesFor } from '@/lib/engine/schedule';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
 import { C }               from '@/lib/theme';
 import type {
   HRVSource, ReadinessRecord, SessionExercise, BodyweightEntry,
-  SessionModalityChoice,
+  SessionModalityChoice, Lift,
 } from '@/lib/db/types';
+import type { LiftExposure } from '@/lib/engine/session';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -158,8 +160,7 @@ const MODALITY_OPTIONS: {
   minutes?: number;
   equipment?: string[];
 }[] = [
-  { key: 'FULL',         label: 'Full gym',      sub: 'Barbell + accessories as programmed.', emoji: '🏋️' },
-  { key: 'SBD',          label: 'SBD day',       sub: 'Cover squat + bench + deadlift in one session.', emoji: '🏆' },
+  { key: 'FULL',         label: 'Full gym',      sub: 'Squat + bench + deadlift + accessories as programmed.', emoji: '🏋️' },
   { key: 'QUICK',        label: '30-min squeeze',sub: 'Keep comp lifts, drop accessories.',  emoji: '⏱️', minutes: 30 },
   { key: 'CALISTHENICS', label: 'Calisthenics',  sub: 'Bars / rings — weighted pull-ups, dips, skills.', emoji: '🤸', equipment: ['pullup_bar', 'dip_station', 'rings'] },
   { key: 'BODYWEIGHT',   label: 'Bodyweight',    sub: 'No gear at all. Push/pull/squat with what you have.', emoji: '💪', equipment: ['bodyweight'] },
@@ -207,10 +208,13 @@ function CheckInInner() {
   const [modality,     setModality]     = useState<SessionModalityChoice>('FULL');
 
   // ── Async state ─────────────────────────────────────────────────────────
-  const [hrvBaseline, setHrvBaseline] = useState<number | undefined>();
-  const [ready,       setReady]       = useState(false); // init done, safe to render
-  const [submitting,  setSubmitting]  = useState(false);
-  const [autoFilled,  setAutoFilled]  = useState<HRVSource | null>(null);
+  const [hrvBaseline,     setHrvBaseline]     = useState<number | undefined>();
+  const [ready,           setReady]           = useState(false); // init done, safe to render
+  const [submitting,      setSubmitting]      = useState(false);
+  const [autoFilled,      setAutoFilled]      = useState<HRVSource | null>(null);
+  const [liftExposures,    setLiftExposures]    = useState<LiftExposure[]>([]);
+  const [preferredPrimary, setPreferredPrimary] = useState<'SQUAT' | 'BENCH' | 'DEADLIFT' | null>(null);
+  const [sbdMode,          setSbdMode]          = useState(false);
 
   // ── HRV tooltip ─────────────────────────────────────────────────────────
   const [showHrvTip, setShowHrvTip] = useState(false);
@@ -257,6 +261,14 @@ function CheckInInner() {
           setAutoFilled(wearable.hrvSource);
         }
 
+        // Load lift exposures and auto-suggest the most-due primary lift.
+        const exposures = await loadRecentLiftExposures(today()).catch(() => []);
+        if (!cancelled) {
+          setLiftExposures(exposures);
+          const suggested = suggestPrimaryLift(exposures);
+          if (suggested) setPreferredPrimary(suggested);
+        }
+
         setReady(true);
       }
     }
@@ -291,6 +303,10 @@ function CheckInInner() {
   );
 
   const { label: rdLabel, colour: rdColour } = readinessLabel(readinessScore);
+
+  // Most-due primary lift — uses frequency-weighted scoring so bench (lower
+  // primary target) isn't over-suggested when the athlete is due for SQ/DL.
+  const suggestedLift = useMemo(() => suggestPrimaryLift(liftExposures), [liftExposures]);
 
   // True once the user has touched at least one input beyond the sleep-hours default
   const hasAnyInput =
@@ -382,11 +398,12 @@ function CheckInInner() {
         await db.bodyweight.add(bwEntry);
       }
 
-      // 2. Find today's scheduled session
+      // 2. Find today's active session — accept MODIFIED too because
+      //    ensureSessionFresh may have already set that status before check-in.
       const session = await db.sessions
         .where('scheduledDate')
         .equals(dateStr)
-        .filter((s) => s.status === 'SCHEDULED')
+        .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
         .first();
 
       if (session) {
@@ -457,15 +474,18 @@ function CheckInInner() {
             weekWithinBlock,
             overshootHistory,
             recentLiftExposures,
-            sbdToday: modality === 'SBD',
+            // Honor the athlete's lift preference and session format.
+            ...(preferredPrimary ? { forcePrimary: preferredPrimary as Lift } : {}),
+            ...(sbdMode ? { forceSBD: true } : {}),
           });
 
-          // 4a. Post-generation review — swap primary lift on bench/squat/DL drought.
+          // 4a. Post-generation review — swap primary lift on bench/squat/DL drought,
+          // but only when the athlete hasn't explicitly picked their focus lift.
           const reviewPass1 = reviewSessionPure({
             session: generated, profile, block,
             exposures: recentLiftExposures, weekDayOfWeek,
           });
-          const blockSwap1 = reviewPass1.issues.find(
+          const blockSwap1 = !preferredPrimary && reviewPass1.issues.find(
             (i) => i.severity === 'BLOCK' && /_DROUGHT$/.test(i.code),
           );
           if (blockSwap1) {
@@ -474,7 +494,7 @@ function CheckInInner() {
             generated = generateSession({
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
-              forcePrimary: forced,
+              forcePrimary: forced as Lift,
             });
           }
           const finalReview = reviewSessionPure({
@@ -489,6 +509,13 @@ function CheckInInner() {
           const modalityDef = MODALITY_OPTIONS.find((m) => m.key === modality);
           if (modalityDef?.minutes) {
             generated = abbreviateSession(generated, { maxMinutes: modalityDef.minutes });
+          }
+
+          // AI coach pre-save review — silent fallback on timeout/error.
+          const advisorResult = await advisorReviewSession(generated, profile, block)
+            .catch(() => null);
+          if (advisorResult) {
+            generated = applyAdvisorModifications(generated, advisorResult);
           }
 
           // 5a. Update session metadata — primaryLift can change on the fly
@@ -704,6 +731,109 @@ function CheckInInner() {
                 </p>
               )}
             </div>
+          </Section>
+
+          {/* ── SECTION: Focus lift today ────────────────────────────── */}
+          <Section title="What's your focus lift today?">
+            <div className="grid grid-cols-3 gap-2">
+              {(['SQUAT', 'BENCH', 'DEADLIFT'] as const).map((lift) => {
+                const daysSince = liftExposures.find((e) => e.lift === lift)?.daysSince ?? Infinity;
+                const on = preferredPrimary === lift;
+                const isSuggested = suggestedLift === lift && !sbdMode;
+                const daysLabel = !isFinite(daysSince)
+                  ? 'Never'
+                  : daysSince === 0
+                  ? 'Today'
+                  : daysSince === 1
+                  ? 'Yesterday'
+                  : `${Math.round(daysSince)}d ago`;
+                const liftLabel = lift === 'SQUAT' ? 'Squat'
+                  : lift === 'BENCH' ? 'Bench' : 'Deadlift';
+                return (
+                  <button
+                    key={lift}
+                    type="button"
+                    onClick={() => setPreferredPrimary(lift)}
+                    className="rounded-xl p-3 text-center transition-all active:scale-[0.97]"
+                    style={{
+                      backgroundColor: on ? `${ACCENT}18` : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${on ? ACCENT : C.border}`,
+                    }}
+                  >
+                    <p className="text-sm font-bold leading-tight" style={{ color: on ? ACCENT : TEXT }}>
+                      {liftLabel}
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: MUTED }}>{daysLabel}</p>
+                    {isSuggested && !on && (
+                      <p className="text-[10px] font-semibold mt-1" style={{ color: C.gold }}>
+                        suggested
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* SBD mode toggle — occasional full rehearsal, not every day */}
+            <button
+              type="button"
+              onClick={() => setSbdMode((prev) => !prev)}
+              className="w-full flex items-center justify-between rounded-xl px-4 py-3 transition-all active:scale-[0.99]"
+              style={{
+                backgroundColor: sbdMode ? `${C.gold}18` : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${sbdMode ? C.gold : C.border}`,
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-base leading-none">🏆</span>
+                <div className="text-left">
+                  <p className="text-sm font-bold" style={{ color: sbdMode ? C.gold : TEXT }}>
+                    Full SBD day
+                  </p>
+                  <p className="text-xs" style={{ color: MUTED }}>
+                    All three comp lifts — squat, bench, deadlift
+                  </p>
+                </div>
+              </div>
+              <div
+                className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
+                style={{
+                  borderColor:     sbdMode ? C.gold : MUTED,
+                  backgroundColor: sbdMode ? C.gold : 'transparent',
+                }}
+              >
+                {sbdMode && <span className="text-[10px] text-black font-bold">✓</span>}
+              </div>
+            </button>
+
+            {/* Pairing preview — updates live */}
+            {sbdMode && preferredPrimary ? (
+              <p className="text-xs text-center" style={{ color: MUTED }}>
+                {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
+                <span style={{ color: TEXT }}>primary</span>
+                {' · '}
+                {(['SQUAT', 'BENCH', 'DEADLIFT'] as const)
+                  .filter((l) => l !== preferredPrimary)
+                  .map((l) => l === 'SQUAT' ? 'Squat' : l === 'BENCH' ? 'Bench' : 'Deadlift')
+                  .join(' + ')}{' '}
+                <span style={{ color: TEXT }}>secondary</span>
+              </p>
+            ) : preferredPrimary ? (
+              <p className="text-xs text-center" style={{ color: MUTED }}>
+                {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
+                <span style={{ color: TEXT }}>primary</span>
+                {' · '}
+                {(() => {
+                  const sec = getExpectedSecondary(preferredPrimary, liftExposures);
+                  return sec === 'SQUAT' ? 'Squat' : sec === 'BENCH' ? 'Bench' : 'Deadlift';
+                })()}{' '}
+                <span style={{ color: TEXT }}>secondary</span>
+              </p>
+            ) : (
+              <p className="text-xs" style={{ color: MUTED }}>
+                Tap a lift above — we&apos;ll pair it with secondary work automatically.
+              </p>
+            )}
           </Section>
 
           {/* ── SECTION 1a: Training style today ─────────────────────── */}

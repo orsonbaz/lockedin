@@ -125,6 +125,12 @@ export interface LibraryExercise {
    * Defined as constants in swap-groups.ts.
    */
   swapGroups:          string[];
+  /**
+   * Which athlete disciplines this exercise is appropriate for.
+   * When set, the exercise is only offered to athletes whose profile includes
+   * at least one of these disciplines. When omitted, the exercise is universal.
+   */
+  disciplines?: import('@/lib/db/types').Discipline[];
   /** Discriminant for LibraryExercise | CustomExercise union narrowing. */
   isCustom:            false;
 }
