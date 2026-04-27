@@ -759,9 +759,19 @@ export default function SettingsPage() {
         </div>
 
         {/* Version */}
-        <p className="text-center text-xs mt-8" style={{ color: C.muted }}>
-          Lockedin · local-first powerlifting coach · v0.1
-        </p>
+        <div className="text-center text-xs mt-8 leading-relaxed" style={{ color: C.muted }}>
+          <p>Lockedin · local-first powerlifting coach</p>
+          <p>
+            v{process.env.NEXT_PUBLIC_APP_VERSION}
+            {' · '}
+            <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+              {process.env.NEXT_PUBLIC_BUILD_SHA}
+            </span>
+          </p>
+          {process.env.NEXT_PUBLIC_BUILD_TIME && (
+            <p>Built {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString()}</p>
+          )}
+        </div>
 
       </div>
     </div>
