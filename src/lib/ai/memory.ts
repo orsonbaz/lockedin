@@ -155,6 +155,48 @@ export function isValidMemoryKind(s: string): s is MemoryKind {
   return (MEMORY_KINDS as string[]).includes(s);
 }
 
+/**
+ * Parse a duration spec into an ISO `expiresAt` string. Returns `undefined`
+ * for permanent memories so they're stored without an expiry (and never
+ * filtered out by `retrieveRelevantMemories`).
+ *
+ * Accepts:
+ *   - undefined / "" / "permanent" / "always" / "none" → permanent
+ *   - "Nd" / "Nw" / "Nm" — N days/weeks/months (months ≈ 30 days)
+ *   - "YYYY-MM-DD" — absolute date
+ */
+export function parseExpiry(spec: string | undefined): string | undefined {
+  if (!spec) return undefined;
+  const s = spec.trim().toLowerCase();
+  if (!s || s === 'permanent' || s === 'always' || s === 'none') return undefined;
+
+  const rel = s.match(/^(\d+)\s*([dwm])$/);
+  if (rel) {
+    const n = parseInt(rel[1], 10);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    const days = rel[2] === 'd' ? n : rel[2] === 'w' ? n * 7 : n * 30;
+    return new Date(Date.now() + days * 86_400_000).toISOString();
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const date = new Date(spec);
+    if (!isNaN(date.getTime())) return date.toISOString();
+  }
+  return undefined;
+}
+
+/** Human-readable expiry status for UI badges. */
+export function describeExpiry(expiresAt: string | undefined, now = Date.now()): string {
+  if (!expiresAt) return 'permanent';
+  const ms = new Date(expiresAt).getTime() - now;
+  if (ms <= 0) return 'expired';
+  const days = Math.ceil(ms / 86_400_000);
+  if (days === 1) return 'expires tomorrow';
+  if (days < 14)  return `expires in ${days} days`;
+  if (days < 60)  return `expires in ${Math.round(days / 7)} weeks`;
+  return `expires ${expiresAt.slice(0, 10)}`;
+}
+
 export interface MemoryInput {
   kind: MemoryKind;
   content: string;

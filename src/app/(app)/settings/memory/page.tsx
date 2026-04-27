@@ -11,9 +11,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft, Trash2, Plus } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, Trash2, Plus, MessageSquare } from 'lucide-react';
 import { C } from '@/lib/theme';
-import { addMemory, listMemories, removeMemory } from '@/lib/ai/memory';
+import { addMemory, listMemories, removeMemory, describeExpiry, parseExpiry } from '@/lib/ai/memory';
 import type { AthleteMemory, MemoryKind } from '@/lib/db/types';
 
 const KIND_LABELS: Record<MemoryKind, string> = {
@@ -29,6 +30,14 @@ const KIND_ORDER: MemoryKind[] = [
   'INJURY', 'CONSTRAINT', 'PREFERENCE', 'GOAL', 'LIFE_EVENT', 'PAST_ADVICE',
 ];
 
+const EXPIRY_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'permanent', label: 'Permanent' },
+  { value: '7d',        label: '1 week'    },
+  { value: '14d',       label: '2 weeks'   },
+  { value: '1m',        label: '1 month'   },
+  { value: '3m',        label: '3 months'  },
+];
+
 export default function MemorySettingsPage() {
   const router = useRouter();
   const [memories, setMemories] = useState<AthleteMemory[]>([]);
@@ -38,6 +47,7 @@ export default function MemorySettingsPage() {
   const [newKind, setNewKind] = useState<MemoryKind>('PREFERENCE');
   const [newContent, setNewContent] = useState('');
   const [newTags, setNewTags] = useState('');
+  const [newExpiry, setNewExpiry] = useState<string>('permanent');
 
   const refresh = useCallback(async () => {
     const rows = await listMemories();
@@ -66,13 +76,15 @@ export default function MemorySettingsPage() {
       content,
       tags: newTags.split(',').map((t) => t.trim()).filter(Boolean),
       importance: 3,
+      expiresAt: parseExpiry(newExpiry),
     });
     setNewContent('');
     setNewTags('');
+    setNewExpiry('permanent');
     setAddOpen(false);
     toast.success('Memory saved');
     void refresh();
-  }, [newKind, newContent, newTags, refresh]);
+  }, [newKind, newContent, newTags, newExpiry, refresh]);
 
   const grouped = KIND_ORDER.map((kind) => ({
     kind,
@@ -154,6 +166,18 @@ export default function MemorySettingsPage() {
               style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
             />
 
+            <label className="text-xs uppercase tracking-wider" style={{ color: C.muted }}>Duration</label>
+            <select
+              value={newExpiry}
+              onChange={(e) => setNewExpiry(e.target.value)}
+              className="w-full rounded-lg px-2 py-2 text-sm"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              {EXPIRY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+
             <div className="flex gap-2 pt-2">
               <button
                 onClick={handleAdd}
@@ -197,33 +221,46 @@ export default function MemorySettingsPage() {
               className="rounded-xl overflow-hidden divide-y"
               style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, borderColor: C.border }}
             >
-              {group.items.map((m) => (
-                <div
-                  key={m.id}
-                  className="flex items-start gap-3 px-3 py-3"
-                  style={{ borderColor: C.border }}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm leading-snug" style={{ color: C.text }}>
-                      {m.content}
-                    </p>
-                    {m.tags.length > 0 && (
-                      <p className="text-xs mt-1" style={{ color: C.muted }}>
-                        {m.tags.map((t) => `#${t}`).join(' ')}
-                        {m.importance >= 4 ? ' · priority' : ''}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleDelete(m.id)}
-                    aria-label="Forget memory"
-                    className="p-1.5 rounded"
-                    style={{ color: C.muted }}
+              {group.items.map((m) => {
+                const meta: string[] = [];
+                if (m.tags.length > 0)   meta.push(m.tags.map((t) => `#${t}`).join(' '));
+                if (m.importance >= 4)   meta.push('priority');
+                meta.push(describeExpiry(m.expiresAt));
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-start gap-3 px-3 py-3"
+                    style={{ borderColor: C.border }}
                   >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm leading-snug" style={{ color: C.text }}>
+                        {m.content}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: C.muted }}>
+                        {meta.join(' · ')}
+                      </p>
+                      {m.sourceMessageId && (
+                        <Link
+                          href={`/coach?msg=${m.sourceMessageId}`}
+                          className="inline-flex items-center gap-1 text-xs mt-1.5 underline-offset-2 hover:underline"
+                          style={{ color: C.accent }}
+                        >
+                          <MessageSquare size={12} />
+                          From chat
+                        </Link>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleDelete(m.id)}
+                      aria-label="Forget memory"
+                      className="p-1.5 rounded"
+                      style={{ color: C.muted }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </section>
         ))}

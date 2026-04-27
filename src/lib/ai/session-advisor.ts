@@ -21,6 +21,7 @@
 
 import { db, today }           from '@/lib/db/database';
 import { getFullKnowledge }     from './knowledge-base';
+import { buildMemorySection }   from './memory';
 import type { GeneratedSession, GeneratedExercise } from '@/lib/engine/session';
 import type { AthleteProfile, TrainingBlock } from '@/lib/db/types';
 
@@ -285,10 +286,10 @@ async function buildAdvisorContext(
     ? `Skill goals: ${profile.calisthenicsGoals.join(', ')}`
     : '';
 
+  const secondaryDisciplines = disciplines.filter((d) => d !== primaryDisc);
+
   sections.push(`# ATHLETE
 Name: ${profile.name || 'Athlete'}
-Primary discipline: ${primaryDisc}${disciplines.length > 1 ? `  |  All disciplines: ${disciplines.join(', ')}` : ''}
-${goalLine ? `Goal: ${goalLine}` : ''}${skillGoals ? `\n${skillGoals}` : ''}
 Powerlifting maxes: S${profile.maxSquat} / B${profile.maxBench} / D${profile.maxDeadlift} (total: ${total} kg)
 Gym PRs: S${profile.gymSquat ?? profile.maxSquat} / B${profile.gymBench ?? profile.maxBench} / D${profile.gymDeadlift ?? profile.maxDeadlift}${streetLiftLines.length ? `\nStreet lift: ${streetLiftLines.join('  |  ')}` : ''}
 Bodyweight: ${profile.weightKg} kg  |  Target class: ${profile.targetWeightClass} kg
@@ -296,6 +297,16 @@ Federation: ${profile.federation}  |  Equipment: ${profile.equipment}
 Training age: ${profile.trainingAgeMonths ? `${(profile.trainingAgeMonths / 12).toFixed(1)} years` : 'unknown'}
 Phenotype: bottleneck=${profile.bottleneck}, responder=${profile.responder}, overshooter=${profile.overshooter ? 'YES' : 'no'}
 Reward system: ${profile.rewardSystem}`);
+
+  // ── 1b. Goals tab snapshot (primary + any secondary objectives) ──────────
+  const goalLines: string[] = [];
+  goalLines.push(`Primary discipline: ${primaryDisc}`);
+  if (secondaryDisciplines.length > 0) {
+    goalLines.push(`Secondary disciplines (the athlete actively pursues these — include relevant work when feasible): ${secondaryDisciplines.join(', ')}`);
+  }
+  if (goalLine) goalLines.push(`Primary goal: ${goalLine}`);
+  if (skillGoals) goalLines.push(skillGoals);
+  sections.push(`# GOALS\n${goalLines.join('\n')}`);
 
   // ── 2. Full program map (all blocks in active cycle) ─────────────────────
   const cycle = await db.cycles.filter((c) => c.status === 'ACTIVE').first();
@@ -322,6 +333,22 @@ Reward system: ${profile.rewardSystem}`);
   }
   if (programMap) {
     sections.push(`# PROGRAM MAP\n${programMap}`);
+  }
+
+  // ── 2b. Athlete memories (durable facts persisted from coach chat) ───────
+  // Bias retrieval toward memories tagged with this session's lift / block so
+  // lift-specific notes (e.g. "ramp deadlift back gradually") surface first.
+  const memoryQuery = [
+    generated.primaryLift,
+    ...(generated.secondaryLifts ?? []),
+    block.blockType,
+    generated.sessionType,
+  ].join(' ').toLowerCase();
+  const memorySection = await buildMemorySection(memoryQuery, 2000);
+  if (memorySection) {
+    sections.push(`# ATHLETE MEMORIES
+Durable facts the coach has persisted from prior conversations. Treat them as standing instructions unless current readiness or recent training data clearly overrides them.
+${memorySection}`);
   }
 
   // ── 3. Readiness (today + 14-day trend) ──────────────────────────────────
@@ -475,6 +502,8 @@ Run the Coach's First Questions before deciding:
 5. What is the ONE primary purpose of this session, and does the draft protect it?
 
 Then check the Non-Negotiables — horizontal push every session (or noted absent), a pull every session, ≥2 patterns, primary > accessories in stimulus, no loading of painful joints. If any are violated, fix them.
+
+The athlete's GOALS section and ATHLETE MEMORIES section are standing context the engine cannot see. Secondary disciplines (street lift, calisthenics, etc.), skill goals, free-text goal targets, and persisted memories from prior coach conversations are all part of the program — when there is room and readiness allows, include work that serves them. A "powerlifting primary, street-lift secondary" athlete should see street-lift work surface in their accessory slots, not just powerlifting accessories. Memories override engine defaults: if a memory says the athlete is returning from layoff, ramp loads back; if it says they want streetlifts integrated, integrate them.
 
 Hard invariants (only these — everything else is judgment):
 - Never remove a COMPETITION exercise.

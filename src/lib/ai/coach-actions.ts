@@ -23,7 +23,7 @@ import { db, today, newId } from '@/lib/db/database';
 import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
 import { EXERCISE_BY_ID, EXERCISE_LIBRARY } from '@/lib/exercises/index';
 import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
-import { addMemory, removeMemory, isValidMemoryKind } from './memory';
+import { addMemory, removeMemory, isValidMemoryKind, parseExpiry, describeExpiry } from './memory';
 import { abbreviateSession, estimateSessionMinutes, type GeneratedExercise } from '@/lib/engine/session';
 import { applyWeekTimeBox, mondayOf, addOverride } from '@/lib/engine/schedule';
 import { recordRefeed, saveTodayTarget } from '@/lib/engine/nutrition-db';
@@ -57,6 +57,13 @@ export interface CoachAction {
   params: Record<string, string>;
   displayText: string;       // Human-readable description
   confirmText: string;       // Button label
+  /**
+   * ID of the chat message this action was parsed from. Stamped by
+   * `parseActions` when supplied. Currently used by REMEMBER so the resulting
+   * memory links back to its originating turn (the settings page renders a
+   * "from chat" badge that deep-links into /coach).
+   */
+  sourceMessageId?: string;
 }
 
 export interface ActionResult {
@@ -74,7 +81,7 @@ const ACTION_REGEX = /\[ACTION:(\w+)(?:\|([^\]]+))?\]/g;
  * Parse action tags from an LLM response string.
  * Returns the cleaned text (actions removed) and the parsed actions.
  */
-export function parseActions(text: string): {
+export function parseActions(text: string, sourceMessageId?: string): {
   cleanText: string;
   actions: CoachAction[];
 } {
@@ -89,7 +96,10 @@ export function parseActions(text: string): {
     }
 
     const action = buildAction(type as CoachActionType, params);
-    if (action) actions.push(action);
+    if (action) {
+      if (sourceMessageId) action.sourceMessageId = sourceMessageId;
+      actions.push(action);
+    }
     return ''; // Remove action tag from display text
   });
 
@@ -206,10 +216,11 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       const kind = (params.kind || '').toUpperCase();
       const content = params.content;
       if (!isValidMemoryKind(kind) || !content) return null;
+      const expiresAt = parseExpiry(params.expires);
       return {
         type,
         params: { ...params, kind },
-        displayText: `Remember (${kind.toLowerCase()}): ${content}`,
+        displayText: `Remember (${kind.toLowerCase()}): ${content}  ·  ${describeExpiry(expiresAt)}`,
         confirmText: 'Save memory',
       };
     }
@@ -348,7 +359,7 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
       case 'SET_RPE_TARGET':
         return await executeSetRpeTarget(action.params);
       case 'REMEMBER':
-        return await executeRemember(action.params);
+        return await executeRemember(action.params, action.sourceMessageId);
       case 'FORGET':
         return await executeForget(action.params);
       case 'ABBREVIATE_TODAY':
@@ -786,7 +797,10 @@ async function executeAdjustSetLoad(params: Record<string, string>): Promise<Act
   };
 }
 
-async function executeRemember(params: Record<string, string>): Promise<ActionResult> {
+async function executeRemember(
+  params: Record<string, string>,
+  sourceMessageId?: string,
+): Promise<ActionResult> {
   const kind = (params.kind || '').toUpperCase();
   const content = params.content?.trim();
   if (!isValidMemoryKind(kind) || !content) {
@@ -797,9 +811,10 @@ async function executeRemember(params: Record<string, string>): Promise<ActionRe
     .map((t) => t.trim())
     .filter(Boolean);
   const importance = parseInt(params.importance || '3', 10);
+  const expiresAt = parseExpiry(params.expires);
 
-  const memory = await addMemory({ kind, content, tags, importance });
-  return { success: true, message: `Saved memory: ${memory.content}` };
+  const memory = await addMemory({ kind, content, tags, importance, expiresAt, sourceMessageId });
+  return { success: true, message: `Saved memory: ${memory.content} (${describeExpiry(memory.expiresAt)})` };
 }
 
 async function executeForget(params: Record<string, string>): Promise<ActionResult> {

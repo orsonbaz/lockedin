@@ -16,8 +16,9 @@ import {
   useEffect,
   useRef,
   useCallback,
+  Suspense,
 } from 'react';
-import { useRouter }                                        from 'next/navigation';
+import { useRouter, useSearchParams }                       from 'next/navigation';
 import { toast }                                            from 'sonner';
 import {
   Sheet,
@@ -179,12 +180,20 @@ interface BubbleProps {
   role:    'user' | 'assistant';
   content: string;
   streaming?: boolean;
+  /** When provided, the bubble's outer wrapper carries this DOM id so it can be scrolled into view via ?msg=<id>. */
+  domId?:    string;
+  /** When true, draws a fading highlight ring (used by deep-link scroll). */
+  highlight?: boolean;
 }
 
-function MessageBubble({ role, content, streaming = false }: BubbleProps) {
+function MessageBubble({ role, content, streaming = false, domId, highlight = false }: BubbleProps) {
   const isUser = role === 'user';
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+    <div
+      id={domId}
+      className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
+      style={highlight ? { transition: 'box-shadow 1.5s ease-out', boxShadow: `0 0 0 2px ${C.accent}` } : undefined}
+    >
       <div
         className="max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words"
         style={{
@@ -211,11 +220,37 @@ function MessageBubble({ role, content, streaming = false }: BubbleProps) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function CoachPage() {
+  // useSearchParams needs a Suspense boundary for Next 16 static prerender.
+  return (
+    <Suspense fallback={<CoachFallback />}>
+      <CoachInner />
+    </Suspense>
+  );
+}
+
+function CoachFallback() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ backgroundColor: C.bg }}
+    >
+      <div
+        className="w-10 h-10 rounded-full border-4 animate-spin"
+        style={{ borderColor: `${C.accent} transparent transparent transparent` }}
+      />
+    </div>
+  );
+}
+
+function CoachInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkMsgId = searchParams?.get('msg') ?? null;
   // ── Data state ────────────────────────────────────────────────────────────
   const [messages,       setMessages]       = useState<DBChatMessage[]>([]);
   const [geminiKey,      setGeminiKey]      = useState<string>('');
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>(DEFAULT_PROMPTS);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
 
   // ── Input state ───────────────────────────────────────────────────────────
   const [input,          setInput]          = useState('');
@@ -281,10 +316,27 @@ export default function CoachPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Deep-link scroll: ?msg=<id> from settings → memory "from chat" badge ──
+  // Runs after messages load. Scrolls the targeted bubble into view and pulses
+  // a highlight ring for ~1.5s so the user can spot it.
+  useEffect(() => {
+    if (!deepLinkMsgId || messages.length === 0) return;
+    const target = messages.find((m) => m.id === deepLinkMsgId);
+    if (!target) return;
+    const el = document.getElementById(`msg-${deepLinkMsgId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMsgId(deepLinkMsgId);
+    const t = setTimeout(() => setHighlightedMsgId(null), 1800);
+    return () => clearTimeout(t);
+  }, [deepLinkMsgId, messages]);
+
   // ── Auto-scroll to bottom ─────────────────────────────────────────────────
   useEffect(() => {
+    // Skip auto-scroll when we've intentionally jumped to a deep-linked msg.
+    if (highlightedMsgId) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingText]);
+  }, [messages, streamingText, highlightedMsgId]);
 
   // ── Save Gemini key ───────────────────────────────────────────────────────
   const handleGeminiKeyChange = useCallback(async (key: string) => {
@@ -384,13 +436,16 @@ export default function CoachPage() {
       }
     }
 
-    // Parse actions from response and clean the display text
-    const { cleanText, actions } = parseActions(fullResponse);
+    // Pre-allocate the assistant message id so any actions parsed out of this
+    // turn can be stamped with sourceMessageId — that's how memories link back
+    // to their originating chat message in the settings page.
+    const assistantMsgId = newId();
+    const { cleanText, actions } = parseActions(fullResponse, assistantMsgId);
 
     // Persist assistant message (clean text without action tags)
     if (cleanText) {
       const assistantMsg: DBChatMessage = {
-        id:        newId(),
+        id:        assistantMsgId,
         role:      'assistant',
         content:   cleanText,
         createdAt: isoNow(),
@@ -544,7 +599,13 @@ export default function CoachPage() {
 
         {/* Persisted messages */}
         {messages.map((m) => (
-          <MessageBubble key={m.id} role={m.role as 'user' | 'assistant'} content={m.content} />
+          <MessageBubble
+            key={m.id}
+            role={m.role as 'user' | 'assistant'}
+            content={m.content}
+            domId={`msg-${m.id}`}
+            highlight={highlightedMsgId === m.id}
+          />
         ))}
 
         {/* Streaming message */}
