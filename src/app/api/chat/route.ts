@@ -31,13 +31,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Build strictly alternating user→model history.
-  // Drop trailing user entries so history always ends with 'model' or is empty.
+  // Gemini requires the first history entry (if any) to be 'user' and that
+  // history end on 'model' before sendMessage runs the next user turn.
+  // Drop leading 'model' entries — happens when the 20-message window slices
+  // mid-turn or after a stack of action-confirmation status messages.
+  // Drop trailing 'user' entries so history always ends with 'model' or is empty.
   const rawHistory = nonSystem
     .slice(0, -1)
     .map((m) => ({
       role:  m.role === 'assistant' ? 'model' : 'user' as 'user' | 'model',
       parts: [{ text: m.content }],
     }));
+  while (rawHistory.length > 0 && rawHistory[0].role === 'model') {
+    rawHistory.shift();
+  }
   while (rawHistory.length > 0 && rawHistory[rawHistory.length - 1].role === 'user') {
     rawHistory.pop();
   }
