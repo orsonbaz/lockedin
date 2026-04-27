@@ -72,6 +72,12 @@ export interface AdvisorResult {
   rationale: string;
   /** Number of athlete memories that were available in the advisor's context — surfaced for diagnostics. */
   memoryCount?: number;
+  /**
+   * When set, the result is a silent fallback — the model never produced
+   * structured output. Distinguishes "advisor genuinely approved" from
+   * "advisor failed and we faked an approval."
+   */
+  failureReason?: 'no-api-key' | 'timeout' | 'http-error' | 'parse-error' | 'unknown';
 }
 
 /**
@@ -92,7 +98,7 @@ export async function advisorReviewSession(
   block:     TrainingBlock,
 ): Promise<AdvisorResult> {
   const key = profile.geminiApiKey?.trim();
-  if (!key) return fallback(generated.coachNote);
+  if (!key) return fallback(generated.coachNote, 'no-api-key');
 
   try {
     const result = await Promise.race([
@@ -100,14 +106,19 @@ export async function advisorReviewSession(
       timeout(15000),
     ]);
     console.info(
-      `[advisor] ${result.assessment} — ${result.modifications.length} modification(s) emitted`,
+      `[advisor] ${result.assessment} — ${result.modifications.length} modification(s), saw ${result.memoryCount ?? 0} memor${result.memoryCount === 1 ? 'y' : 'ies'}`,
       result.modifications.map((m) => `${m.type}${m.target ? `:${m.target}` : ''}`),
     );
     return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[advisor] review failed — falling back to engine output:', msg);
-    return fallback(generated.coachNote);
+    const reason: AdvisorResult['failureReason'] =
+      /timeout/i.test(msg)         ? 'timeout'
+      : /HTTP \d+/.test(msg)       ? 'http-error'
+      : /JSON|parse/i.test(msg)    ? 'parse-error'
+      :                              'unknown';
+    return fallback(generated.coachNote, reason);
   }
 }
 
@@ -218,12 +229,13 @@ export function applyAdvisorModifications(
 
 // ── Internal ──────────────────────────────────────────────────────────────────
 
-function fallback(coachNote: string): AdvisorResult {
+function fallback(coachNote: string, failureReason: AdvisorResult['failureReason']): AdvisorResult {
   return {
     coachNote,
     modifications: [],
     assessment:    'APPROVED',
-    rationale:     'Fallback — AI advisor skipped (no key, timeout, or parse error).',
+    rationale:     `Fallback — AI advisor skipped (${failureReason ?? 'unknown'}).`,
+    failureReason,
   };
 }
 
@@ -270,13 +282,25 @@ async function runAdvisor(
 
   if (raw.startsWith('__ERROR__:')) throw new Error(raw.slice(10));
 
-  // Strip markdown code fences if the model wrapped the JSON.
-  const jsonStr = raw
+  // Strip markdown code fences AND any prose wrapping the JSON object.
+  // The model occasionally emits "Here is the JSON:" prefix or a trailing
+  // explanation; lift the first {...} block out of the response.
+  const stripped = raw
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```\s*$/, '')
     .trim();
+  const firstBrace = stripped.indexOf('{');
+  const lastBrace  = stripped.lastIndexOf('}');
+  const jsonStr = firstBrace >= 0 && lastBrace > firstBrace
+    ? stripped.slice(firstBrace, lastBrace + 1)
+    : stripped;
 
-  const parsed = JSON.parse(jsonStr) as AdvisorResult;
+  let parsed: AdvisorResult;
+  try {
+    parsed = JSON.parse(jsonStr) as AdvisorResult;
+  } catch {
+    throw new Error(`JSON parse error — model returned non-JSON. First 120 chars: ${raw.slice(0, 120)}`);
+  }
   // Ensure required fields exist with safe defaults.
   return {
     coachNote:     parsed.coachNote     ?? generated.coachNote,

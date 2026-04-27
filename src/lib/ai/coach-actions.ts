@@ -967,9 +967,12 @@ function describeAdvisorOutcome(
   advisor: { assessment: string; modificationCount: number; memoryCount?: number; errorMessage?: string } | undefined,
 ): string {
   if (!advisor) return 'AI advisor: skipped (no API key configured).';
+  if (advisor.errorMessage === 'no-api-key') {
+    return 'AI advisor: skipped (no API key configured in Settings → AI Coach).';
+  }
   const memSuffix = advisor.memoryCount !== undefined ? ` (saw ${advisor.memoryCount} memor${advisor.memoryCount === 1 ? 'y' : 'ies'})` : '';
   if (advisor.assessment === 'failed') {
-    return `⚠ AI advisor failed (${advisor.errorMessage?.slice(0, 80) || 'unknown'}); engine output saved as-is.`;
+    return `⚠ AI advisor failed: ${advisor.errorMessage?.slice(0, 80) || 'unknown'} — engine output saved as-is${memSuffix}.`;
   }
   if (advisor.assessment === 'APPROVED' || advisor.modificationCount === 0) {
     return `AI advisor: APPROVED — engine draft already aligned (0 changes)${memSuffix}.`;

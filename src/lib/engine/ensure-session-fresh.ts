@@ -287,12 +287,24 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
       return null;
     });
   if (advisorResult) {
-    generated = applyAdvisorModifications(generated, advisorResult, profile);
-    advisorDiagnostic = {
-      assessment: advisorResult.assessment,
-      modificationCount: advisorResult.modifications.length,
-      memoryCount: advisorResult.memoryCount,
-    };
+    // Distinguish a real APPROVED-with-0-mods from a silent fallback. The
+    // fallback path sets failureReason; surface it as 'failed' so the user
+    // sees an honest signal in the regen message instead of a fake APPROVED.
+    if (advisorResult.failureReason) {
+      advisorDiagnostic = {
+        assessment: 'failed',
+        modificationCount: 0,
+        memoryCount: advisorResult.memoryCount,
+        errorMessage: advisorResult.failureReason,
+      };
+    } else {
+      generated = applyAdvisorModifications(generated, advisorResult, profile);
+      advisorDiagnostic = {
+        assessment: advisorResult.assessment,
+        modificationCount: advisorResult.modifications.length,
+        memoryCount: advisorResult.memoryCount,
+      };
+    }
     const afterLoads = generated.exercises
       .filter((e) => e.exerciseType === 'COMPETITION')
       .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
