@@ -98,11 +98,25 @@ export async function advisorReviewSession(
   block:     TrainingBlock,
 ): Promise<AdvisorResult> {
   const key = profile.geminiApiKey?.trim();
-  if (!key) return fallback(generated.coachNote, 'no-api-key');
+  if (!key) return fallback(generated.coachNote, 'no-api-key', 0);
+
+  // Build context once so the memory count survives even if the LLM call
+  // throws — otherwise a parse-error wipes the diagnostic.
+  let context: string;
+  let memoryCount = 0;
+  try {
+    const built = await buildAdvisorContext(profile, block, generated);
+    context = built.context;
+    memoryCount = built.memoryCount;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[advisor] context build failed:', msg);
+    return fallback(generated.coachNote, 'unknown', 0);
+  }
 
   try {
     const result = await Promise.race([
-      runAdvisor(key, generated, profile, block),
+      runAdvisor(key, generated, context, memoryCount),
       timeout(15000),
     ]);
     console.info(
@@ -118,7 +132,7 @@ export async function advisorReviewSession(
       : /HTTP \d+/.test(msg)       ? 'http-error'
       : /JSON|parse/i.test(msg)    ? 'parse-error'
       :                              'unknown';
-    return fallback(generated.coachNote, reason);
+    return fallback(generated.coachNote, reason, memoryCount, msg);
   }
 }
 
@@ -229,13 +243,19 @@ export function applyAdvisorModifications(
 
 // ── Internal ──────────────────────────────────────────────────────────────────
 
-function fallback(coachNote: string, failureReason: AdvisorResult['failureReason']): AdvisorResult {
+function fallback(
+  coachNote: string,
+  failureReason: AdvisorResult['failureReason'],
+  memoryCount: number,
+  detail?: string,
+): AdvisorResult {
   return {
     coachNote,
     modifications: [],
     assessment:    'APPROVED',
-    rationale:     `Fallback — AI advisor skipped (${failureReason ?? 'unknown'}).`,
+    rationale:     detail ?? `Fallback — AI advisor skipped (${failureReason ?? 'unknown'}).`,
     failureReason,
+    memoryCount,
   };
 }
 
@@ -246,13 +266,11 @@ function timeout(ms: number): Promise<never> {
 }
 
 async function runAdvisor(
-  apiKey:    string,
-  generated: GeneratedSession,
-  profile:   AthleteProfile,
-  block:     TrainingBlock,
+  apiKey:      string,
+  generated:   GeneratedSession,
+  context:     string,
+  memoryCount: number,
 ): Promise<AdvisorResult> {
-  const { context, memoryCount } = await buildAdvisorContext(profile, block, generated);
-
   const messages = [
     { role: 'system' as const,    content: ADVISOR_SYSTEM_PROMPT },
     { role: 'user'   as const,    content: context },
@@ -263,7 +281,10 @@ async function runAdvisor(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       apiKey,
-      maxTokens: 2048,
+      // 4096 — the per-memory rationale + several modifications + coachNote
+      // can exceed 2k tokens when there are 5+ active memories. Truncating
+      // mid-JSON was masquerading as a parse-error in regen results.
+      maxTokens: 4096,
       messages,
     }),
   });
@@ -298,8 +319,11 @@ async function runAdvisor(
   let parsed: AdvisorResult;
   try {
     parsed = JSON.parse(jsonStr) as AdvisorResult;
-  } catch {
-    throw new Error(`JSON parse error — model returned non-JSON. First 120 chars: ${raw.slice(0, 120)}`);
+  } catch (parseErr) {
+    const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+    console.error('[advisor] JSON parse failed:', parseMsg, '\n  raw output:', raw.slice(0, 500));
+    // Surface enough of the raw output that we can diagnose without devtools.
+    throw new Error(`parse-error — model returned non-JSON: "${raw.slice(0, 80).replace(/\s+/g, ' ').trim()}…"`);
   }
   // Ensure required fields exist with safe defaults.
   return {

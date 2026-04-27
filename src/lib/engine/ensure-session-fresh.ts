@@ -291,11 +291,17 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     // fallback path sets failureReason; surface it as 'failed' so the user
     // sees an honest signal in the regen message instead of a fake APPROVED.
     if (advisorResult.failureReason) {
+      // Use the detailed rationale if it carries more than the enum — the
+      // catch path stuffs the model's raw output snippet in there for
+      // diagnosis. Falls back to the enum when rationale is the generic stub.
+      const detail = advisorResult.rationale && !advisorResult.rationale.startsWith('Fallback —')
+        ? advisorResult.rationale
+        : advisorResult.failureReason;
       advisorDiagnostic = {
         assessment: 'failed',
         modificationCount: 0,
         memoryCount: advisorResult.memoryCount,
-        errorMessage: advisorResult.failureReason,
+        errorMessage: detail,
       };
     } else {
       generated = applyAdvisorModifications(generated, advisorResult, profile);
