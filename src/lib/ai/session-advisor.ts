@@ -95,8 +95,12 @@ export async function advisorReviewSession(
   try {
     const result = await Promise.race([
       runAdvisor(key, generated, profile, block),
-      timeout(8000),
+      timeout(15000),
     ]);
+    console.info(
+      `[advisor] ${result.assessment} — ${result.modifications.length} modification(s) emitted`,
+      result.modifications.map((m) => `${m.type}${m.target ? `:${m.target}` : ''}`),
+    );
     return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -484,7 +488,10 @@ Reason about the draft above from the Framework and the knowledge base — not f
 - Are the Non-Negotiables present (horizontal push, a pull, ≥2 patterns, primary > accessories)?
 - Does the recent log reveal anything the draft missed — a weak point, fatigue accumulation, an undertrained pattern, an overshoot signal, a stall?
 - Does the pairing of primary + secondary lifts serve this week's needs?
+- **Do any ATHLETE MEMORIES conflict with the engine's prescribed loads, sets, or exercises?** A memory that says "returning from layoff, keep loads at 80%" or "reintroductory week, RPE cap 7.5" or "joint flare-up, drop bench volume" is a direct instruction to reshape the session — not advisory.
 - What single thing should the athlete hold in mind for this session?
+
+If a memory or readiness state calls for changes to the engine's draft, EMIT MODIFICATIONS — do not return APPROVED. APPROVED is only correct when the engine's draft already honours every memory and constraint. When in doubt, modify; the athlete's history overrides the engine's defaults every time.
 
 Reshape the session to whatever good programming actually calls for. The number of modifications is whatever the principles require — make them all.
 

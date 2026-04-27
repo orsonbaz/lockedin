@@ -264,6 +264,10 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
 
   // AI coach pre-save review — fires after rule engine, before DB write.
   // Silent fallback on timeout/error so training is never blocked.
+  const beforeLoads = generated.exercises
+    .filter((e) => e.exerciseType === 'COMPETITION')
+    .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
+    .join(', ');
   const advisorResult = await advisorReviewSession(generated, profile, block)
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -272,6 +276,13 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     });
   if (advisorResult) {
     generated = applyAdvisorModifications(generated, advisorResult, profile);
+    const afterLoads = generated.exercises
+      .filter((e) => e.exerciseType === 'COMPETITION')
+      .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
+      .join(', ');
+    if (beforeLoads !== afterLoads) {
+      console.info(`[ensure-session-fresh] advisor reshaped comp loads:\n  before: ${beforeLoads}\n  after:  ${afterLoads}`);
+    }
   }
 
   // Update session meta and replace exercises atomically.
