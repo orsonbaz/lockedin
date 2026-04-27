@@ -22,6 +22,8 @@
 import { db, today }           from '@/lib/db/database';
 import { getFullKnowledge }     from './knowledge-base';
 import { buildMemorySection }   from './memory';
+import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
+import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
 import type { GeneratedSession, GeneratedExercise } from '@/lib/engine/session';
 import type { AthleteProfile, TrainingBlock } from '@/lib/db/types';
 
@@ -32,6 +34,7 @@ export interface AdvisorModification {
     | 'ADJUST_SETS'
     | 'ADJUST_REPS'
     | 'ADJUST_RPE'
+    | 'ADJUST_LOAD'
     | 'ADD_EXERCISE'
     | 'REMOVE_EXERCISE'
     | 'ADD_NOTE'
@@ -95,7 +98,9 @@ export async function advisorReviewSession(
       timeout(8000),
     ]);
     return result;
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[advisor] review failed — falling back to engine output:', msg);
     return fallback(generated.coachNote);
   }
 }
@@ -104,12 +109,27 @@ export async function advisorReviewSession(
  * Apply advisor modifications to a generated session.
  * Returns a new session with coachNote and exercises updated.
  * COMPETITION exercises are never removed regardless of advisor instructions.
+ *
+ * When `profile` is provided, RPE and rep changes on COMPETITION exercises
+ * trigger a load recompute (`prescribeLoad(max, rpe, reps)`). Without it,
+ * the prescribed weight stays at the engine's original value even after an
+ * advisor RPE adjustment — so "ramp loads back" memory cues had no teeth.
  */
 export function applyAdvisorModifications(
   generated: GeneratedSession,
   result:    AdvisorResult,
+  profile?:  AthleteProfile,
 ): GeneratedSession {
   let exercises = generated.exercises.map((e) => ({ ...e }));
+
+  /** Recompute load for a COMPETITION exercise after RPE/reps changed. */
+  const recomputeLoad = (ex: GeneratedExercise) => {
+    if (!profile || ex.exerciseType !== 'COMPETITION') return;
+    const max = getMaxForLift(profile, liftAnchorForExercise(ex, generated.primaryLift));
+    if (max > 0) {
+      ex.estimatedLoadKg = roundLoad(prescribeLoad(max, ex.rpeTarget, ex.reps));
+    }
+  };
 
   for (const mod of result.modifications) {
     switch (mod.type) {
@@ -120,12 +140,23 @@ export function applyAdvisorModifications(
       }
       case 'ADJUST_REPS': {
         const idx = exercises.findIndex((e) => e.name === mod.target);
-        if (idx !== -1 && mod.value !== undefined) exercises[idx].reps = mod.value;
+        if (idx !== -1 && mod.value !== undefined) {
+          exercises[idx].reps = mod.value;
+          recomputeLoad(exercises[idx]);
+        }
         break;
       }
       case 'ADJUST_RPE': {
         const idx = exercises.findIndex((e) => e.name === mod.target);
-        if (idx !== -1 && mod.value !== undefined) exercises[idx].rpeTarget = mod.value;
+        if (idx !== -1 && mod.value !== undefined) {
+          exercises[idx].rpeTarget = mod.value;
+          recomputeLoad(exercises[idx]);
+        }
+        break;
+      }
+      case 'ADJUST_LOAD': {
+        const idx = exercises.findIndex((e) => e.name === mod.target);
+        if (idx !== -1 && mod.value !== undefined) exercises[idx].estimatedLoadKg = mod.value;
         break;
       }
       case 'ADD_NOTE': {
@@ -463,9 +494,9 @@ Respond ONLY with valid JSON — no markdown fences, no prose outside the object
   "coachNote": "<1-2 sentence note for the athlete — direct, specific, motivating>",
   "modifications": [
     {
-      "type": "ADJUST_SETS | ADJUST_REPS | ADJUST_RPE | ADD_EXERCISE | REMOVE_EXERCISE | ADD_NOTE | REPLACE_EXERCISE",
+      "type": "ADJUST_SETS | ADJUST_REPS | ADJUST_RPE | ADJUST_LOAD | ADD_EXERCISE | REMOVE_EXERCISE | ADD_NOTE | REPLACE_EXERCISE",
       "target": "<exact exercise name from the list above, or omit for ADD_EXERCISE>",
-      "value": <number, e.g. new sets/reps/RPE — omit if not applicable>,
+      "value": <number — for ADJUST_SETS / ADJUST_REPS / ADJUST_RPE: the new value; for ADJUST_LOAD: the new prescribed weight in kg. Omit if not applicable.>,
       "name": "<new exercise name for ADD_EXERCISE / REPLACE_EXERCISE>",
       "sets": <number, for ADD_EXERCISE>,
       "reps": <number, for ADD_EXERCISE>,
@@ -504,6 +535,8 @@ Run the Coach's First Questions before deciding:
 Then check the Non-Negotiables — horizontal push every session (or noted absent), a pull every session, ≥2 patterns, primary > accessories in stimulus, no loading of painful joints. If any are violated, fix them.
 
 The athlete's GOALS section and ATHLETE MEMORIES section are standing context the engine cannot see. Secondary disciplines (street lift, calisthenics, etc.), skill goals, free-text goal targets, and persisted memories from prior coach conversations are all part of the program — when there is room and readiness allows, include work that serves them. A "powerlifting primary, street-lift secondary" athlete should see street-lift work surface in their accessory slots, not just powerlifting accessories. Memories override engine defaults: if a memory says the athlete is returning from layoff, ramp loads back; if it says they want streetlifts integrated, integrate them.
+
+When a memory or readiness signal calls for lighter weights (layoff return, reintroductory week, joint flare-up), use ADJUST_LOAD directly with a kg value that reflects the cut — do not rely on RPE/rep changes alone to lower load. Compute the target weight from the athlete's max (e.g. "drop bench to 80% of 170 kg" → ADJUST_LOAD value 135). RPE and rep adjustments still apply load math, but ADJUST_LOAD is the unambiguous lever when you know the target weight.
 
 Hard invariants (only these — everything else is judgment):
 - Never remove a COMPETITION exercise.

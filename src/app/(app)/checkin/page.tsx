@@ -513,9 +513,13 @@ function CheckInInner() {
 
           // AI coach pre-save review — silent fallback on timeout/error.
           const advisorResult = await advisorReviewSession(generated, profile, block)
-            .catch(() => null);
+            .catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error('[check-in] advisor failed:', msg);
+              return null;
+            });
           if (advisorResult) {
-            generated = applyAdvisorModifications(generated, advisorResult);
+            generated = applyAdvisorModifications(generated, advisorResult, profile);
           }
 
           // 5a. Update session metadata — primaryLift can change on the fly

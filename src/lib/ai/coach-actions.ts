@@ -24,6 +24,7 @@ import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
 import { EXERCISE_BY_ID, EXERCISE_LIBRARY } from '@/lib/exercises/index';
 import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
 import { addMemory, removeMemory, isValidMemoryKind, parseExpiry, describeExpiry } from './memory';
+import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
 import { abbreviateSession, estimateSessionMinutes, type GeneratedExercise } from '@/lib/engine/session';
 import { applyWeekTimeBox, mondayOf, addOverride } from '@/lib/engine/schedule';
 import { recordRefeed, saveTodayTarget } from '@/lib/engine/nutrition-db';
@@ -961,40 +962,6 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getMaxForLift(profile: { maxSquat?: number; maxBench?: number; maxDeadlift?: number }, lift: string): number {
-  switch (lift) {
-    case 'SQUAT': return profile.maxSquat ?? 0;
-    case 'BENCH': return profile.maxBench ?? 0;
-    case 'DEADLIFT': return profile.maxDeadlift ?? 0;
-    // Match engine getLiftMax() — UPPER/LOWER/FULL alias to the closest comp lift.
-    case 'UPPER': return profile.maxBench ?? 0;
-    case 'LOWER': return profile.maxSquat ?? 0;
-    case 'FULL':  return profile.maxDeadlift ?? 0;
-    default: return 0;
-  }
-}
-
-/**
- * Determine which competition-lift max should anchor an exercise's prescribed
- * load. Uses the exercise's own identity (library `primaryLiftTarget`, then
- * name matching) before falling back to the session's primary lift.
- *
- * Fixes the bug where, on a squat day, recomputing load for the bench
- * secondary used `session.primaryLift = 'SQUAT'` and prescribed bench at a
- * fraction of the squat max — well over the athlete's actual bench.
- */
-function liftAnchorForExercise(
-  ex: { name: string; libraryExerciseId?: string },
-  sessionPrimaryLift: string,
-): string {
-  const lib = ex.libraryExerciseId ? EXERCISE_BY_ID.get(ex.libraryExerciseId) : undefined;
-  if (lib?.primaryLiftTarget) return lib.primaryLiftTarget;
-
-  const n = ex.name.toLowerCase();
-  if (n.includes('squat'))                                         return 'SQUAT';
-  if (n.includes('deadlift') || n.includes('rdl') || n.includes('romanian')) return 'DEADLIFT';
-  if (n.includes('bench')   || n.includes('press'))                return 'BENCH';
-
-  return sessionPrimaryLift;
-}
+// `getMaxForLift` and `liftAnchorForExercise` live in ./lift-anchor so the
+// session advisor can reuse the same anchoring logic when it recomputes
+// loads from advisor-issued RPE/reps adjustments.

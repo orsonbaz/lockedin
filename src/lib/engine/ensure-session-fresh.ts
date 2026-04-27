@@ -265,9 +265,13 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   // AI coach pre-save review — fires after rule engine, before DB write.
   // Silent fallback on timeout/error so training is never blocked.
   const advisorResult = await advisorReviewSession(generated, profile, block)
-    .catch(() => null);
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[ensure-session-fresh] advisor failed:', msg);
+      return null;
+    });
   if (advisorResult) {
-    generated = applyAdvisorModifications(generated, advisorResult);
+    generated = applyAdvisorModifications(generated, advisorResult, profile);
   }
 
   // Update session meta and replace exercises atomically.
