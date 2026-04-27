@@ -519,9 +519,11 @@ async function executeSwapExercise(params: Record<string, string>): Promise<Acti
   const profile = await db.profile.get('me');
   let newLoad = fromEx.estimatedLoadKg;
   if (toLib && profile) {
-    // Try to estimate a reasonable load for the new exercise
+    // Try to estimate a reasonable load for the new exercise. Anchor to the
+    // NEW exercise's primary-lift target (e.g. swapping squat→bench should
+    // use bench max), not the session's primary lift.
     const liftMax = fromEx.exerciseType === 'COMPETITION'
-      ? getMaxForLift(profile, session.primaryLift)
+      ? getMaxForLift(profile, liftAnchorForExercise(toLib, session.primaryLift))
       : fromEx.estimatedLoadKg;
     if (liftMax > 0) {
       newLoad = roundLoad(prescribeLoad(liftMax, fromEx.rpeTarget, fromEx.reps));
@@ -568,7 +570,7 @@ async function executeModifySession(params: Record<string, string>): Promise<Act
       if (updates.rpeTarget) {
         const profile = await db.profile.get('me');
         if (profile) {
-          const max = getMaxForLift(profile, session.primaryLift);
+          const max = getMaxForLift(profile, liftAnchorForExercise(ex, session.primaryLift));
           if (max > 0 && ex.exerciseType === 'COMPETITION') {
             updates.estimatedLoadKg = roundLoad(
               prescribeLoad(max, updates.rpeTarget, updates.sets ? Math.round(ex.reps) : ex.reps),
@@ -621,11 +623,15 @@ async function executeAddExercise(params: Record<string, string>): Promise<Actio
   // Find in library
   const libEx = EXERCISE_LIBRARY.find((e) => e.name.toLowerCase().includes(name.toLowerCase()));
 
-  // Estimate load
+  // Estimate load. Anchor to the new exercise's own primary-lift target so
+  // an upper-body accessory on a squat day uses bench max, not squat max.
   const profile = await db.profile.get('me');
   let load = 0;
   if (profile) {
-    const max = getMaxForLift(profile, session.primaryLift);
+    const anchor = libEx
+      ? liftAnchorForExercise(libEx, session.primaryLift)
+      : session.primaryLift;
+    const max = getMaxForLift(profile, anchor);
     load = roundLoad(prescribeLoad(max * 0.6, rpe, reps)); // Conservative for accessories
   }
   if (params.load) load = roundLoad(parseFloat(params.load));
@@ -708,7 +714,7 @@ async function executeUpdateReps(params: Record<string, string>): Promise<Action
   if (updates.reps || updates.sets) {
     const profile = await db.profile.get('me');
     if (profile && target.exerciseType === 'COMPETITION') {
-      const max = getMaxForLift(profile, session.primaryLift);
+      const max = getMaxForLift(profile, liftAnchorForExercise(target, session.primaryLift));
       updates.estimatedLoadKg = roundLoad(
         prescribeLoad(max, target.rpeTarget, updates.reps || target.reps),
       );
@@ -749,7 +755,7 @@ async function executeSetRpeTarget(params: Record<string, string>): Promise<Acti
   const updates: Partial<SessionExercise> = { rpeTarget: rpe };
   const profile = await db.profile.get('me');
   if (profile && target.exerciseType === 'COMPETITION') {
-    const max = getMaxForLift(profile, session.primaryLift);
+    const max = getMaxForLift(profile, liftAnchorForExercise(target, session.primaryLift));
     updates.estimatedLoadKg = roundLoad(prescribeLoad(max, rpe, target.reps));
   }
 
@@ -961,6 +967,34 @@ function getMaxForLift(profile: { maxSquat?: number; maxBench?: number; maxDeadl
     case 'SQUAT': return profile.maxSquat ?? 0;
     case 'BENCH': return profile.maxBench ?? 0;
     case 'DEADLIFT': return profile.maxDeadlift ?? 0;
+    // Match engine getLiftMax() — UPPER/LOWER/FULL alias to the closest comp lift.
+    case 'UPPER': return profile.maxBench ?? 0;
+    case 'LOWER': return profile.maxSquat ?? 0;
+    case 'FULL':  return profile.maxDeadlift ?? 0;
     default: return 0;
   }
+}
+
+/**
+ * Determine which competition-lift max should anchor an exercise's prescribed
+ * load. Uses the exercise's own identity (library `primaryLiftTarget`, then
+ * name matching) before falling back to the session's primary lift.
+ *
+ * Fixes the bug where, on a squat day, recomputing load for the bench
+ * secondary used `session.primaryLift = 'SQUAT'` and prescribed bench at a
+ * fraction of the squat max — well over the athlete's actual bench.
+ */
+function liftAnchorForExercise(
+  ex: { name: string; libraryExerciseId?: string },
+  sessionPrimaryLift: string,
+): string {
+  const lib = ex.libraryExerciseId ? EXERCISE_BY_ID.get(ex.libraryExerciseId) : undefined;
+  if (lib?.primaryLiftTarget) return lib.primaryLiftTarget;
+
+  const n = ex.name.toLowerCase();
+  if (n.includes('squat'))                                         return 'SQUAT';
+  if (n.includes('deadlift') || n.includes('rdl') || n.includes('romanian')) return 'DEADLIFT';
+  if (n.includes('bench')   || n.includes('press'))                return 'BENCH';
+
+  return sessionPrimaryLift;
 }
