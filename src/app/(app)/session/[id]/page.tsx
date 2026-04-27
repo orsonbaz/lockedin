@@ -256,6 +256,20 @@ export default function SessionPage({
   const [swapForExId,      setSwapForExId]      = useState<string | null>(null);
   const [swapCandidates,   setSwapCandidates]   = useState<SwapCandidate[]>([]);
 
+  // Lock body scroll while the swap modal is open so iOS Safari (home-screen
+  // webapp) doesn't chain touch-scroll to the underlying session view.
+  useEffect(() => {
+    if (!swapForExId) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'contain';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
+    };
+  }, [swapForExId]);
+
   // ── Page flow ────────────────────────────────────────────────────────────
   const [pageState,        setPageState]        = useState<PageState>('overview');
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
@@ -1123,8 +1137,8 @@ export default function SessionPage({
             aria-label="Exercise swap suggestions"
           >
             <div
-              className="rounded-t-3xl max-h-[80vh] overflow-y-auto pb-10"
-              style={{ backgroundColor: C.surface }}
+              className="rounded-t-3xl max-h-[80vh] overflow-y-auto overscroll-contain pb-10"
+              style={{ backgroundColor: C.surface, WebkitOverflowScrolling: 'touch' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="sticky top-0 px-5 pt-5 pb-3" style={{ backgroundColor: C.surface }}>
