@@ -99,6 +99,8 @@ export interface EnsureResult {
     /** 'failed' when the advisor threw or timed out — engine output was saved as-is. */
     assessment: 'APPROVED' | 'TWEAKED' | 'REDUCED' | 'REBUILT' | 'failed';
     modificationCount: number;
+    /** How many ATHLETE MEMORIES were available in the advisor's context. */
+    memoryCount?: number;
     /** Failure reason when assessment === 'failed'. */
     errorMessage?: string;
   };
@@ -289,6 +291,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     advisorDiagnostic = {
       assessment: advisorResult.assessment,
       modificationCount: advisorResult.modifications.length,
+      memoryCount: advisorResult.memoryCount,
     };
     const afterLoads = generated.exercises
       .filter((e) => e.exerciseType === 'COMPETITION')

@@ -21,7 +21,7 @@
 
 import { db, today }           from '@/lib/db/database';
 import { getFullKnowledge }     from './knowledge-base';
-import { buildMemorySection }   from './memory';
+import { retrieveRelevantMemories } from './memory';
 import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
 import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
 import type { GeneratedSession, GeneratedExercise } from '@/lib/engine/session';
@@ -70,6 +70,8 @@ export interface AdvisorResult {
   assessment: 'APPROVED' | 'TWEAKED' | 'REDUCED' | 'REBUILT';
   /** Internal AI reasoning — logged but not shown to athlete. */
   rationale: string;
+  /** Number of athlete memories that were available in the advisor's context — surfaced for diagnostics. */
+  memoryCount?: number;
 }
 
 /**
@@ -237,7 +239,7 @@ async function runAdvisor(
   profile:   AthleteProfile,
   block:     TrainingBlock,
 ): Promise<AdvisorResult> {
-  const context = await buildAdvisorContext(profile, block, generated);
+  const { context, memoryCount } = await buildAdvisorContext(profile, block, generated);
 
   const messages = [
     { role: 'system' as const,    content: ADVISOR_SYSTEM_PROMPT },
@@ -281,6 +283,7 @@ async function runAdvisor(
     modifications: parsed.modifications ?? [],
     assessment:    parsed.assessment    ?? 'APPROVED',
     rationale:     parsed.rationale     ?? '',
+    memoryCount,
   };
 }
 
@@ -290,7 +293,7 @@ async function buildAdvisorContext(
   profile:   AthleteProfile,
   block:     TrainingBlock,
   generated: GeneratedSession,
-): Promise<string> {
+): Promise<{ context: string; memoryCount: number }> {
   const dateStr = today();
   const sections: string[] = [];
 
@@ -379,11 +382,13 @@ Reward system: ${profile.rewardSystem}`);
     block.blockType,
     generated.sessionType,
   ].join(' ').toLowerCase();
-  const memorySection = await buildMemorySection(memoryQuery, 2000);
-  if (memorySection) {
-    sections.push(`# ATHLETE MEMORIES
-Durable facts the coach has persisted from prior conversations. Treat them as standing instructions unless current readiness or recent training data clearly overrides them.
-${memorySection}`);
+  const memories = await retrieveRelevantMemories(memoryQuery, 12);
+  const memoryCount = memories.length;
+  if (memoryCount > 0) {
+    const memLines = memories.map((m, i) => `${i + 1}. [${m.kind}] ${m.content}${m.tags.length ? ` (${m.tags.join(', ')})` : ''}`);
+    sections.push(`# ATHLETE MEMORIES (${memoryCount} active — you MUST address each one)
+Durable facts the coach has persisted from prior conversations. Treat them as standing instructions unless current readiness or recent training data clearly overrides them. Each memory below is numbered — your rationale must walk through them by number and explain how the session honours each.
+${memLines.join('\n')}`);
   }
 
   // ── 3. Readiness (today + 14-day trend) ──────────────────────────────────
@@ -481,6 +486,10 @@ ${modLines}`);
   sections.push(`# COACHING KNOWLEDGE BASE\n${getFullKnowledge()}`);
 
   // ── 8. Output schema ──────────────────────────────────────────────────────
+  const memoryDirective = memoryCount > 0
+    ? `\n\nMEMORY CHECK (mandatory — there are ${memoryCount} active memories above): in your rationale, walk through every numbered memory in turn. For each one, state EITHER "Memory N already honoured because <reason>" OR "Memory N requires <modification>". You may not skip any memory. Returning APPROVED with 0 modifications is only correct when you have explicitly justified every numbered memory — otherwise emit modifications.`
+    : '';
+
   sections.push(`# YOUR TASK
 Reason about the draft above from the Framework and the knowledge base — not from the engine's choices. Ask:
 
@@ -491,7 +500,7 @@ Reason about the draft above from the Framework and the knowledge base — not f
 - **Do any ATHLETE MEMORIES conflict with the engine's prescribed loads, sets, or exercises?** A memory that says "returning from layoff, keep loads at 80%" or "reintroductory week, RPE cap 7.5" or "joint flare-up, drop bench volume" is a direct instruction to reshape the session — not advisory.
 - What single thing should the athlete hold in mind for this session?
 
-If a memory or readiness state calls for changes to the engine's draft, EMIT MODIFICATIONS — do not return APPROVED. APPROVED is only correct when the engine's draft already honours every memory and constraint. When in doubt, modify; the athlete's history overrides the engine's defaults every time.
+If a memory or readiness state calls for changes to the engine's draft, EMIT MODIFICATIONS — do not return APPROVED. APPROVED is only correct when the engine's draft already honours every memory and constraint. The engine has zero awareness of memories — when memories exist, the burden of proof is on you to show, point by point, that the draft already aligns. When in doubt, modify; the athlete's history overrides the engine's defaults every time.${memoryDirective}
 
 Reshape the session to whatever good programming actually calls for. The number of modifications is whatever the principles require — make them all.
 
@@ -512,10 +521,10 @@ Respond ONLY with valid JSON — no markdown fences, no prose outside the object
     }
   ],
   "assessment": "APPROVED | TWEAKED | REDUCED | REBUILT",
-  "rationale": "<2-4 sentences of internal reasoning — not shown to athlete>"
+  "rationale": "<address each numbered memory in order; for memories you skipped, explain why the engine's draft already honours them>"
 }`);
 
-  return sections.join('\n\n');
+  return { context: sections.join('\n\n'), memoryCount };
 }
 
 function mondayOf(dateStr: string): string {

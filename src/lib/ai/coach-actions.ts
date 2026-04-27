@@ -964,16 +964,17 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
 
 /** Render the advisor diagnostic so the user sees, in chat, whether their memories actually shaped the new session. */
 function describeAdvisorOutcome(
-  advisor: { assessment: string; modificationCount: number; errorMessage?: string } | undefined,
+  advisor: { assessment: string; modificationCount: number; memoryCount?: number; errorMessage?: string } | undefined,
 ): string {
   if (!advisor) return 'AI advisor: skipped (no API key configured).';
+  const memSuffix = advisor.memoryCount !== undefined ? ` (saw ${advisor.memoryCount} memor${advisor.memoryCount === 1 ? 'y' : 'ies'})` : '';
   if (advisor.assessment === 'failed') {
     return `⚠ AI advisor failed (${advisor.errorMessage?.slice(0, 80) || 'unknown'}); engine output saved as-is.`;
   }
   if (advisor.assessment === 'APPROVED' || advisor.modificationCount === 0) {
-    return 'AI advisor: APPROVED — engine draft already aligned with your context (0 changes).';
+    return `AI advisor: APPROVED — engine draft already aligned (0 changes)${memSuffix}.`;
   }
-  return `AI advisor: ${advisor.assessment} — ${advisor.modificationCount} modification${advisor.modificationCount === 1 ? '' : 's'} applied.`;
+  return `AI advisor: ${advisor.assessment} — ${advisor.modificationCount} modification${advisor.modificationCount === 1 ? '' : 's'} applied${memSuffix}.`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
