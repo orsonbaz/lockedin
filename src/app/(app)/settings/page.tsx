@@ -17,8 +17,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter }                         from 'next/navigation';
 import { toast }                             from 'sonner';
-import { ArrowLeft, TriangleAlert, Check, Download, Upload }   from 'lucide-react';
+import { ArrowLeft, TriangleAlert, Check, Download, Upload, RefreshCw }   from 'lucide-react';
 import { db, exportAll, importAll }           from '@/lib/db/database';
+import { forceRefreshApp }                     from '@/components/lockedin/ServiceWorkerRegistration';
 import { ProfilePatchSchema }                 from '@/lib/db/schemas';
 import { SegmentedControl }                   from '@/components/lockedin/SegmentedControl';
 import { C }                                  from '@/lib/theme';
@@ -663,6 +664,29 @@ export default function SettingsPage() {
                 e.target.value = '';
               }}
             />
+          </Row>
+        </SettingsCard>
+
+        {/* ── 6b. APP ─────────────────────────────────────────────────── */}
+        <SectionHeader title="App" />
+        <SettingsCard>
+          <Row>
+            <RowLabel
+              label="Force refresh"
+              sub="Wipe cached bundles and reload — use this if a new version isn't appearing on its own. Your training data is preserved."
+            />
+            <button
+              type="button"
+              onClick={() => {
+                toast('Refreshing…', { duration: 1500 });
+                void forceRefreshApp();
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, color: C.text }}
+            >
+              <RefreshCw size={15} />
+              Refresh
+            </button>
           </Row>
         </SettingsCard>
 

@@ -1,5 +1,5 @@
 /**
- * Lockedin Service Worker — lockedin-v2
+ * Lockedin Service Worker — lockedin-v4
  *
  * Strategy matrix:
  *   /_next/static/*   → cache-first  (content-hashed filenames, safe forever)
@@ -11,7 +11,7 @@
  * Bump CACHE_NAME on each deploy to force cache refresh.
  */
 
-const CACHE_NAME  = 'lockedin-v3';
+const CACHE_NAME  = 'lockedin-v4';
 const OFFLINE_URL = '/offline';
 
 // Assets pre-cached on install so /offline is available immediately

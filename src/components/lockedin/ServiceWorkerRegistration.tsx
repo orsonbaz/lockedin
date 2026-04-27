@@ -11,18 +11,21 @@ export function ServiceWorkerRegistration() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
+    let registration: ServiceWorkerRegistration | null = null;
+
     navigator.serviceWorker
       .register('/sw.js')
-      .then((registration) => {
+      .then((reg) => {
+        registration = reg;
         // Check for updates on registration
-        registration.addEventListener('updatefound', () => {
-          const newWorker = registration.installing;
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
           if (!newWorker) return;
 
           newWorker.addEventListener('statechange', () => {
             // New SW is installed and waiting — prompt user
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              showUpdateBanner(registration);
+              showUpdateBanner(reg);
             }
           });
         });
@@ -30,14 +33,55 @@ export function ServiceWorkerRegistration() {
       .catch((err) => console.error('SW registration failed:', err));
 
     // Also handle case where SW was already waiting before this component mounted
-    navigator.serviceWorker.ready.then((registration) => {
-      if (registration.waiting) {
-        showUpdateBanner(registration);
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg.waiting) {
+        showUpdateBanner(reg);
       }
     });
+
+    // ── Update polling ────────────────────────────────────────────────────
+    // Safari iOS PWAs almost never check for SW updates on their own. Poll
+    // explicitly so the update banner reliably fires after a deploy:
+    //   • Every time the app comes back to the foreground
+    //   • Every 15 minutes while it's foregrounded
+    const checkForUpdate = () => {
+      registration?.update().catch(() => undefined);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') checkForUpdate();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', checkForUpdate);
+    const interval = window.setInterval(checkForUpdate, 15 * 60_000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', checkForUpdate);
+      window.clearInterval(interval);
+    };
   }, []);
 
   return null;
+}
+
+/**
+ * Nuclear force-refresh — unregisters every SW, wipes every cache, and
+ * reloads. Used by the "Force refresh app" button in Settings when the
+ * normal update flow doesn't deliver a new build (typical on Safari
+ * home-screen webapps).
+ *
+ * Does NOT touch localStorage or IndexedDB, so athlete data is preserved.
+ */
+export async function forceRefreshApp(): Promise<void> {
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  window.location.reload();
 }
 
 /** Show a fixed banner prompting the user to reload for updates. */
