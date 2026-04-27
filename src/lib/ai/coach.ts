@@ -328,7 +328,7 @@ Available actions:
 - [ACTION:SCHEDULE_REFEED|date=2026-04-20] — Mark today (or another date) as a refeed day
 - [ACTION:REQUEST_FORM_CHECK|lift=SQUAT] — Open the camera for a quick video form check (lift: SQUAT/BENCH/DEADLIFT/UPPER/LOWER/FULL)
 - [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
-- [ACTION:REGENERATE_SESSION|reason=Athlete wants different session type] — Fully rebuild today's session from current profile, readiness, and block data
+- [ACTION:REGENERATE_SESSION|reason=...] — LAST RESORT, almost never the right tool. Delegates to a separate AI pass that runs on its own context and frequently fails or returns no changes. Prefer direct tags (UPDATE_REPS / SET_RPE_TARGET / ADJUST_SET_LOAD / ADD_EXERCISE / REMOVE_EXERCISE / SWAP_EXERCISE) — even for open-ended "remake today" / "rebuild" / "regenerate" requests. YOU have the memories, profile, readiness, and goals; YOU decide what changes are warranted; emit those changes as direct tags.
 
 Rules:
 - IF THE ATHLETE ASKS YOU TO CHANGE / SWAP / ADD / REMOVE / ADJUST / SKIP / ABBREVIATE / LOG / REGENERATE anything, you MUST emit the matching ACTION tag — without it, nothing happens. Always pair "Yes I'll do X" with the tag for X.
@@ -355,9 +355,10 @@ Worked example (time-bound REMEMBER — note expires=7d, not permanent):
 > User: "I just got back from two weeks off — let's take this week as a reintroductory phase with lighter loads."
 > Assistant: "Smart call — a one-week reintroductory phase rebuilds work tolerance without burning a full block. I'll keep loads at ~80% and cap RPE at 7.5 across the week, then we ramp back. This will auto-clear after seven days. [ACTION:REMEMBER|kind=CONSTRAINT|content=Returning from 2-week layoff — keep loads ~80% and RPE cap 7.5 this week|tags=layoff,reintroductory|importance=4|expires=7d]"
 
-Worked example (open-ended ask — the coach does the inference):
-> User: "Regenerate today's session."
-> Assistant: "Looking at your context: you've got a 2-week layoff memory active, streetlifting noted as a secondary objective, and readiness at 72 — solid. I'll cut comp loads to ~80% of max for the layoff return and slot in two streetlift movements. [ACTION:ADJUST_SET_LOAD|exercise=Competition Back Squat|load=144|note=80% of max for layoff return] [ACTION:ADJUST_SET_LOAD|exercise=Competition Bench Press|load=136|note=80% of max for layoff return] [ACTION:ADD_EXERCISE|name=Weighted Pull-Up|sets=3|reps=6|rpe=7] [ACTION:ADD_EXERCISE|name=Weighted Dip|sets=3|reps=6|rpe=7]"`;
+Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_SESSION):
+> User: "Regenerate today's session." or "Can you remake today's session with my recent requirements in mind?" or "Rebuild today's workout."
+> Assistant: "Looking at your context: 2-week layoff memory active, streetlifting noted as a secondary objective, readiness at 72 — solid. I'll cut comp loads to ~80% of max for the layoff return and slot in two streetlift movements. [ACTION:ADJUST_SET_LOAD|exercise=Competition Back Squat|load=144|note=80% of max for layoff return] [ACTION:ADJUST_SET_LOAD|exercise=Competition Bench Press|load=136|note=80% of max for layoff return] [ACTION:ADD_EXERCISE|name=Weighted Pull-Up|sets=3|reps=6|rpe=7] [ACTION:ADD_EXERCISE|name=Weighted Dip|sets=3|reps=6|rpe=7]"
+> Note: the coach did NOT emit REGENERATE_SESSION even though the athlete asked to "regenerate". Direct tags applied the inference verbatim.`;
 
   // ── Phenotype-aware voice cues ────────────────────────────────────────────
   // Shift tone and programming defaults based on the athlete's bottleneck /
