@@ -94,6 +94,14 @@ export interface EnsureResult {
   reason?:      string;
   session?:     TrainingSession;
   exerciseCount?: number;
+  /** AI advisor diagnostics — surfaced in the regen toast so the user sees what the advisor decided without needing devtools. */
+  advisor?: {
+    /** 'failed' when the advisor threw or timed out — engine output was saved as-is. */
+    assessment: 'APPROVED' | 'TWEAKED' | 'REDUCED' | 'REBUILT' | 'failed';
+    modificationCount: number;
+    /** Failure reason when assessment === 'failed'. */
+    errorMessage?: string;
+  };
 }
 
 /**
@@ -268,14 +276,20 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     .filter((e) => e.exerciseType === 'COMPETITION')
     .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
     .join(', ');
+  let advisorDiagnostic: EnsureResult['advisor'] = undefined;
   const advisorResult = await advisorReviewSession(generated, profile, block)
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[ensure-session-fresh] advisor failed:', msg);
+      advisorDiagnostic = { assessment: 'failed', modificationCount: 0, errorMessage: msg };
       return null;
     });
   if (advisorResult) {
     generated = applyAdvisorModifications(generated, advisorResult, profile);
+    advisorDiagnostic = {
+      assessment: advisorResult.assessment,
+      modificationCount: advisorResult.modifications.length,
+    };
     const afterLoads = generated.exercises
       .filter((e) => e.exerciseType === 'COMPETITION')
       .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
@@ -321,5 +335,6 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     status:        'regenerated',
     session:       { ...session, primaryLift: generated.primaryLift, coachNote: generated.coachNote },
     exerciseCount: generated.exercises.length,
+    advisor:       advisorDiagnostic,
   };
 }

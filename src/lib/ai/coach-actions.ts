@@ -953,12 +953,27 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
 
   if (result.status === 'regenerated') {
     const reason = params.reason ? ` (${params.reason})` : '';
+    const advisorLine = describeAdvisorOutcome(result.advisor);
     return {
       success: true,
-      message: `Session rebuilt${reason} — ${result.exerciseCount} exercises generated.`,
+      message: `Session rebuilt${reason} — ${result.exerciseCount} exercises. ${advisorLine}`,
     };
   }
   return { success: false, message: `Could not regenerate: ${result.reason ?? 'unknown error'}.` };
+}
+
+/** Render the advisor diagnostic so the user sees, in chat, whether their memories actually shaped the new session. */
+function describeAdvisorOutcome(
+  advisor: { assessment: string; modificationCount: number; errorMessage?: string } | undefined,
+): string {
+  if (!advisor) return 'AI advisor: skipped (no API key configured).';
+  if (advisor.assessment === 'failed') {
+    return `⚠ AI advisor failed (${advisor.errorMessage?.slice(0, 80) || 'unknown'}); engine output saved as-is.`;
+  }
+  if (advisor.assessment === 'APPROVED' || advisor.modificationCount === 0) {
+    return 'AI advisor: APPROVED — engine draft already aligned with your context (0 changes).';
+  }
+  return `AI advisor: ${advisor.assessment} — ${advisor.modificationCount} modification${advisor.modificationCount === 1 ? '' : 's'} applied.`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
