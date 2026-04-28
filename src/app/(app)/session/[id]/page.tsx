@@ -32,7 +32,12 @@ import { unpackReviewIssues }                             from '@/lib/engine/ses
 import { detectSessionPRs }                               from '@/lib/engine/session-prs';
 import type { SessionPR }                                 from '@/lib/engine/session-prs';
 import { timerTick, timerDone }                           from '@/lib/ui/timer-cues';
-import { PlateBreakdownLine }                             from '@/components/lockedin/PlateBreakdownLine';
+import {
+  acquireWakeLock,
+  releaseWakeLock,
+  ensureNotificationPermission,
+  notifyRestComplete,
+}                                                         from '@/lib/ui/rest-notify';
 import type { SetOutcome }                                from '@/lib/db/types';
 
 // ── Design tokens (extends shared theme with session-specific colours) ───────
@@ -274,6 +279,7 @@ export default function SessionPage({
   const [pageState,        setPageState]        = useState<PageState>('overview');
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [showModifications,setShowModifications]= useState(false);
+  const [reorderMode,      setReorderMode]      = useState(false);
 
   // Gear for this session — initialised from profile.defaultGear (or DEFAULT_GEAR)
   // and editable per session via the overview chip strip. Persisted back to
@@ -296,8 +302,17 @@ export default function SessionPage({
   draftRpeRef.current  = draftRpe;
 
   // ── Rest timer ─────────────────────────────────────────────────────────
-  const [restTimerSecs,    setRestTimerSecs]    = useState<number | null>(null);
+  // Tracked as an absolute end-timestamp (ms since epoch) instead of a
+  // decrementing counter so the timer stays correct when the tab gets
+  // backgrounded/throttled (mobile browsers freeze setTimeout when hidden).
+  // `restTimerTick` just exists to force a re-render once per second.
+  const [restEndsAt,       setRestEndsAt]       = useState<number | null>(null);
   const [restTimerMax,     setRestTimerMax]     = useState(180);
+  const [, forceTimerTick]                      = useState(0);
+  const lastTickSecsRef = useRef<number | null>(null);
+  const restTimerSecs = restEndsAt === null
+    ? null
+    : Math.max(0, Math.ceil((restEndsAt - Date.now()) / 1000));
 
   // ── Set outcome (failed/partial flag for the next Log Set tap) ─────────
   const [draftOutcome, setDraftOutcome] = useState<SetOutcome>('COMPLETE');
@@ -371,21 +386,82 @@ export default function SessionPage({
 
   // ── Rest timer countdown ───────────────────────────────────────────────
   // Fires audio + haptic cues at T-3/2/1 (subtle ticks) and T-0 (done tone)
-  // so athletes don't have to stare at the screen during rest.
+  // so athletes don't have to stare at the screen during rest. Uses an
+  // absolute end-timestamp (`restEndsAt`) so a backgrounded/throttled tab
+  // catches up correctly when it resumes.
   useEffect(() => {
-    if (restTimerSecs === null) return;
-    if (restTimerSecs <= 0) {
-      timerDone();
-      setRestTimerSecs(null);
+    if (restEndsAt === null) {
+      lastTickSecsRef.current = null;
       return;
     }
-    if (restTimerSecs <= 3) timerTick();
-    const t = setTimeout(
-      () => setRestTimerSecs((s) => (s !== null && s > 0 ? s - 1 : null)),
-      1000,
-    );
-    return () => clearTimeout(t);
-  }, [restTimerSecs]);
+
+    let cancelled = false;
+    const activeExName = exercises[activeExIdx]?.name;
+
+    const step = () => {
+      if (cancelled) return;
+      const remaining = Math.max(0, Math.ceil((restEndsAt - Date.now()) / 1000));
+      const prev = lastTickSecsRef.current;
+
+      if (remaining <= 0) {
+        if (prev !== 0) {
+          timerDone();
+          void notifyRestComplete(activeExName);
+        }
+        lastTickSecsRef.current = 0;
+        setRestEndsAt(null);
+        forceTimerTick((n) => n + 1);
+        return;
+      }
+
+      if (remaining <= 3 && prev !== remaining) {
+        timerTick();
+      }
+      lastTickSecsRef.current = remaining;
+      forceTimerTick((n) => n + 1);
+
+      // Re-align to the next whole-second boundary so the on-screen ring stays
+      // smooth even if a previous tick was throttled.
+      const drift = (restEndsAt - Date.now()) % 1000;
+      const delay = drift <= 0 ? 1000 : drift;
+      window.setTimeout(step, delay);
+    };
+
+    step();
+    return () => { cancelled = true; };
+  }, [restEndsAt, exercises, activeExIdx]);
+
+  // ── Wake lock + notifications during logging ───────────────────────────
+  // Hold a screen wake lock while the athlete is actively logging so the
+  // tab doesn't get suspended (which is what kills the rest timer).
+  // Re-acquire on visibilitychange — wake locks are auto-released when the
+  // page is hidden.
+  useEffect(() => {
+    if (pageState !== 'logging') {
+      void releaseWakeLock();
+      return;
+    }
+    void acquireWakeLock();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void acquireWakeLock();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      void releaseWakeLock();
+    };
+  }, [pageState]);
+
+  // Re-render the timer when the user tabs back to the page so the displayed
+  // count reflects elapsed real time, not the stale value from when the tab
+  // was hidden.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') forceTimerTick((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   // ── Pre-fill draft when active exercise changes ────────────────────────
   // Order of preference for the load seed:
@@ -402,7 +478,7 @@ export default function SessionPage({
     setDraftRpe(ex.rpeTarget);
     setDraftOutcome('COMPLETE');
     // Dismiss rest timer when moving to a new exercise
-    setRestTimerSecs(null);
+    setRestEndsAt(null);
 
     let cancelled = false;
     void (async () => {
@@ -516,11 +592,11 @@ export default function SessionPage({
     // long-rest treatment.
     const dur = outcome !== 'COMPLETE' ? 300 : finalRpe < 8 ? 180 : finalRpe < 9 ? 240 : 300;
     setRestTimerMax(dur);
-    setRestTimerSecs(dur);
+    setRestEndsAt(Date.now() + dur * 1000);
   }, [activeExercise, sessionId, setLogs]);
 
   const completeExercise = useCallback(() => {
-    setRestTimerSecs(null);
+    setRestEndsAt(null);
     if (activeExIdx + 1 >= exerciseCount) {
       setPageState('complete');
     } else {
@@ -644,9 +720,44 @@ export default function SessionPage({
     toast(`Swapped to ${candidate.exercise.name}`, { duration: 2000 });
   }, [swapForExId, exercises]);
 
+  /**
+   * Swap two exercises' positions in the session by exchanging their `order`
+   * fields. Optimistic — updates local state synchronously, then writes back
+   * to Dexie. The live query at `liveExercises` will re-confirm the order
+   * once the writes land.
+   */
+  const moveExercise = useCallback(async (exId: string, direction: -1 | 1) => {
+    const idx = exercises.findIndex((e) => e.id === exId);
+    if (idx === -1) return;
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= exercises.length) return;
+
+    const a = exercises[idx];
+    const b = exercises[targetIdx];
+
+    const next = [...exercises];
+    next[idx] = { ...b, order: a.order };
+    next[targetIdx] = { ...a, order: b.order };
+    next.sort((x, y) => x.order - y.order);
+    setExercises(next);
+
+    try {
+      await db.transaction('rw', db.exercises, async () => {
+        await db.exercises.update(a.id, { order: b.order });
+        await db.exercises.update(b.id, { order: a.order });
+      });
+    } catch (err) {
+      console.error('[Session] reorder failed:', err);
+      toast('Couldn\'t save the new order — try again.', { duration: 2500 });
+    }
+  }, [exercises]);
+
   const startSession = useCallback(() => {
     setSessionStartTime(new Date());
     setPageState('logging');
+    // Best-effort: ask once for notification permission so the rest timer can
+    // alert the athlete when the page is backgrounded. Silent if unsupported.
+    void ensureNotificationPermission();
   }, []);
 
   const finishSession = useCallback(async () => {
@@ -1001,9 +1112,26 @@ export default function SessionPage({
 
           {/* Exercise list */}
           <div className="flex flex-col gap-3 mb-8">
-            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
-              Exercises ({exercises.length})
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+                Exercises ({exercises.length})
+              </p>
+              {exercises.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setReorderMode((v) => !v)}
+                  className="text-xs font-semibold px-3 py-1 rounded-full transition-colors active:opacity-70"
+                  style={{
+                    backgroundColor: reorderMode ? `${C.accent}20` : C.dim,
+                    color:           reorderMode ? C.accent : C.muted,
+                    border:          `1px solid ${reorderMode ? C.accent : C.border}`,
+                  }}
+                  aria-pressed={reorderMode}
+                >
+                  {reorderMode ? 'Done' : 'Reorder ↕'}
+                </button>
+              )}
+            </div>
             {exercises.length === 0 ? (
               <div
                 className="rounded-xl p-6 text-center"
@@ -1014,55 +1142,81 @@ export default function SessionPage({
                 </p>
               </div>
             ) : (
-              exercises.map((ex) => (
+              exercises.map((ex, idx) => (
                 <div
                   key={ex.id}
-                  className="rounded-xl p-4"
+                  className="rounded-xl p-4 flex items-stretch gap-3"
                   style={{ backgroundColor: C.surface }}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <span className="font-semibold text-base" style={{ color: C.text }}>
-                      {ex.name}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <ExerciseBadge type={ex.exerciseType} />
-                      {ex.libraryExerciseId && (
-                        <button
-                          type="button"
-                          onClick={() => openSwapModal(ex)}
-                          className="text-xs px-2 py-0.5 rounded-full transition-colors active:opacity-70"
-                          style={{ backgroundColor: 'rgba(245,166,35,0.15)', color: C.gold }}
-                        >
-                          Swap ↕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm" style={{ color: C.muted }}>
-                      {ex.sets} × {ex.reps} @ RPE {ex.rpeTarget}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: C.dim, color: C.muted }}>
-                      ~{ex.estimatedLoadKg} kg
-                    </span>
-                    {ex.tempo && (
-                      <span
-                        className="text-xs font-bold px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: `${C.accent}20`, color: C.accent }}
-                        title="Eccentric-Pause-Concentric tempo (seconds)"
+                  {reorderMode && (
+                    <div className="flex flex-col gap-1 shrink-0 justify-center">
+                      <button
+                        type="button"
+                        onClick={() => void moveExercise(ex.id, -1)}
+                        disabled={idx === 0}
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold active:scale-90 transition-transform disabled:opacity-30"
+                        style={{ backgroundColor: C.dim, color: C.text }}
+                        aria-label={`Move ${ex.name} up`}
                       >
-                        Tempo {ex.tempo}
-                      </span>
-                    )}
-                    <span className="text-xs capitalize" style={{ color: C.muted }}>
-                      {ex.setStructure.toLowerCase()} sets
-                    </span>
-                  </div>
-                  {ex.notes && (
-                    <p className="text-xs mt-2 italic" style={{ color: C.muted }}>
-                      {ex.notes}
-                    </p>
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void moveExercise(ex.id, 1)}
+                        disabled={idx === exercises.length - 1}
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold active:scale-90 transition-transform disabled:opacity-30"
+                        style={{ backgroundColor: C.dim, color: C.text }}
+                        aria-label={`Move ${ex.name} down`}
+                      >
+                        ↓
+                      </button>
+                    </div>
                   )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <span className="font-semibold text-base" style={{ color: C.text }}>
+                        {ex.name}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <ExerciseBadge type={ex.exerciseType} />
+                        {!reorderMode && ex.libraryExerciseId && (
+                          <button
+                            type="button"
+                            onClick={() => openSwapModal(ex)}
+                            className="text-xs px-2 py-0.5 rounded-full transition-colors active:opacity-70"
+                            style={{ backgroundColor: 'rgba(245,166,35,0.15)', color: C.gold }}
+                          >
+                            Swap ↕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm" style={{ color: C.muted }}>
+                        {ex.sets} × {ex.reps} @ RPE {ex.rpeTarget}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: C.dim, color: C.muted }}>
+                        ~{ex.estimatedLoadKg} kg
+                      </span>
+                      {ex.tempo && (
+                        <span
+                          className="text-xs font-bold px-2 py-0.5 rounded-full"
+                          style={{ backgroundColor: `${C.accent}20`, color: C.accent }}
+                          title="Eccentric-Pause-Concentric tempo (seconds)"
+                        >
+                          Tempo {ex.tempo}
+                        </span>
+                      )}
+                      <span className="text-xs capitalize" style={{ color: C.muted }}>
+                        {ex.setStructure.toLowerCase()} sets
+                      </span>
+                    </div>
+                    {ex.notes && (
+                      <p className="text-xs mt-2 italic" style={{ color: C.muted }}>
+                        {ex.notes}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -1232,7 +1386,7 @@ export default function SessionPage({
           <RestTimerOverlay
             secsRemaining={restTimerSecs}
             maxSecs={restTimerMax}
-            onSkip={() => setRestTimerSecs(null)}
+            onSkip={() => setRestEndsAt(null)}
           />
         )}
 
@@ -1328,9 +1482,6 @@ export default function SessionPage({
               +
             </button>
           </div>
-
-          {/* ROW 1b: Plates per side hint — saves mental math at the bar */}
-          <PlateBreakdownLine loadKg={draftLoad} />
 
           {/* ROW 2: Reps stepper */}
           <div className="flex items-center gap-3">

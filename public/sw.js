@@ -11,7 +11,7 @@
  * Bump CACHE_NAME on each deploy to force cache refresh.
  */
 
-const CACHE_NAME  = 'lockedin-v4';
+const CACHE_NAME  = 'lockedin-v5';
 const OFFLINE_URL = '/offline';
 
 // Assets pre-cached on install so /offline is available immediately
@@ -27,6 +27,25 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+});
+
+// ── Notification click → focus existing app tab (or open one) ────────────────
+// Used by the rest timer "Rest complete" notification: tapping it should pull
+// the athlete straight back to the active session, not spawn a fresh window.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = all.find((c) => c.url.includes('/session/'))
+      ?? all[0];
+    if (existing) {
+      try { await existing.focus(); } catch { /* ignore */ }
+      return;
+    }
+    if (self.clients.openWindow) {
+      await self.clients.openWindow('/home');
+    }
+  })());
 });
 
 // ── Install ───────────────────────────────────────────────────────────────────
