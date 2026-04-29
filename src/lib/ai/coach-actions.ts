@@ -941,44 +941,95 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
     .first();
   if (!session) return { success: false, message: 'No session found for today.' };
 
-  // Reset to SCHEDULED and clear readinessScore so ensureSessionFresh runs
-  // fresh, bypassing both the MODIFIED guard and the readiness-in-sync guard.
-  await db.sessions.update(session.id, {
-    status: 'SCHEDULED',
-    readinessScore: undefined as unknown as number,
+  const [profile, block] = await Promise.all([
+    db.profile.get('me'),
+    db.blocks.get(session.blockId),
+  ]);
+  if (!profile || !block) {
+    return { success: false, message: 'Could not regenerate — profile or training block missing.' };
+  }
+
+  const readinessRow = await db.readiness.where('date').equals(today()).first();
+  const readinessScore = readinessRow?.readinessScore ?? session.readinessScore ?? 70;
+
+  // Build a deterministic baseline from the rule engine, then ask the LLM
+  // session author to (re-)author from full goal + memory context.
+  const { generateSession } = await import('@/lib/engine/session');
+  const { loadRecentLiftExposures } = await import('@/lib/engine/lift-exposures');
+  const { authorSessionFromCoach } = await import('@/lib/ai/session-author');
+  const { newId } = await import('@/lib/db/database');
+
+  const recentLiftExposures = await loadRecentLiftExposures(today()).catch(() => []);
+  const ws = mondayOf(today());
+  const weekSessions = await db.sessions
+    .where('cycleId').equals(session.cycleId)
+    .filter((s) => s.scheduledDate >= ws && s.scheduledDate <= today())
+    .sortBy('scheduledDate');
+  const sessionIdx = weekSessions.findIndex((s) => s.id === session.id);
+  const sessionNumber = sessionIdx >= 0 ? sessionIdx + 1 : 1;
+  const cycle = await db.cycles.get(session.cycleId);
+  const cycleWeek = cycle?.currentWeek ?? 1;
+  const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
+
+  const baseline = generateSession({
+    profile, block,
+    weekDayOfWeek: new Date(`${today()}T12:00:00`).getDay(),
+    readinessScore, sessionNumber, weekWithinBlock,
+    recentLiftExposures,
   });
 
-  const { ensureSessionFresh } = await import('@/lib/engine/ensure-session-fresh');
-  const result = await ensureSessionFresh(today());
+  const authored = await authorSessionFromCoach({
+    profile, block, baseline, readinessScore,
+  }).catch((err: unknown) => {
+    console.error('[regen action] author crashed:', err);
+    return null;
+  });
 
-  if (result.status === 'regenerated') {
-    const reason = params.reason ? ` (${params.reason})` : '';
-    const advisorLine = describeAdvisorOutcome(result.advisor);
+  const finalSession = authored?.source === 'authored' ? authored.session : baseline;
+
+  await db.transaction('rw', db.sessions, db.exercises, async () => {
+    await db.sessions.update(session.id, {
+      readinessScore,
+      primaryLift:     finalSession.primaryLift,
+      sessionType:     finalSession.sessionType,
+      coachNote:       finalSession.coachNote,
+      aiModifications: JSON.stringify(finalSession.modifications),
+      status:          authored?.source === 'authored' ? 'MODIFIED' : 'SCHEDULED',
+    });
+    await db.exercises.where('sessionId').equals(session.id).delete();
+    await db.exercises.bulkAdd(finalSession.exercises.map((ex) => ({
+      id:              newId(),
+      sessionId:       session.id,
+      name:            ex.name,
+      exerciseType:    ex.exerciseType,
+      setStructure:    ex.setStructure,
+      sets:            ex.sets,
+      reps:            ex.reps,
+      rpeTarget:       ex.rpeTarget,
+      estimatedLoadKg: ex.estimatedLoadKg,
+      order:           ex.order,
+      notes:           ex.notes,
+      ...(ex.tempo ? { tempo: ex.tempo } : {}),
+    })));
+  });
+
+  const reason = params.reason ? ` (${params.reason})` : '';
+  const memSuffix = authored?.memoryCount
+    ? ` (saw ${authored.memoryCount} memor${authored.memoryCount === 1 ? 'y' : 'ies'})`
+    : '';
+  if (authored?.source === 'authored') {
     return {
       success: true,
-      message: `Session rebuilt${reason} — ${result.exerciseCount} exercises. ${advisorLine}`,
+      message: `Session rebuilt by AI coach${reason} — ${finalSession.exercises.length} exercises${memSuffix}.`,
     };
   }
-  return { success: false, message: `Could not regenerate: ${result.reason ?? 'unknown error'}.` };
+  const fallbackReason = authored?.failureReason ?? 'no-api-key';
+  return {
+    success: true,
+    message: `Session rebuilt from rule engine${reason} — ${finalSession.exercises.length} exercises. AI author skipped: ${fallbackReason}.`,
+  };
 }
 
-/** Render the advisor diagnostic so the user sees, in chat, whether their memories actually shaped the new session. */
-function describeAdvisorOutcome(
-  advisor: { assessment: string; modificationCount: number; memoryCount?: number; errorMessage?: string } | undefined,
-): string {
-  if (!advisor) return 'AI advisor: skipped (no API key configured).';
-  if (advisor.errorMessage === 'no-api-key') {
-    return 'AI advisor: skipped (no API key configured in Settings → AI Coach).';
-  }
-  const memSuffix = advisor.memoryCount !== undefined ? ` (saw ${advisor.memoryCount} memor${advisor.memoryCount === 1 ? 'y' : 'ies'})` : '';
-  if (advisor.assessment === 'failed') {
-    return `⚠ AI advisor failed: ${advisor.errorMessage?.slice(0, 200) || 'unknown'} — engine output saved as-is${memSuffix}.`;
-  }
-  if (advisor.assessment === 'APPROVED' || advisor.modificationCount === 0) {
-    return `AI advisor: APPROVED — engine draft already aligned (0 changes)${memSuffix}.`;
-  }
-  return `AI advisor: ${advisor.assessment} — ${advisor.modificationCount} modification${advisor.modificationCount === 1 ? '' : 's'} applied${memSuffix}.`;
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // `getMaxForLift` and `liftAnchorForExercise` live in ./lift-anchor so the

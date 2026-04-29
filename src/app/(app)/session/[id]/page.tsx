@@ -342,9 +342,9 @@ export default function SessionPage({
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      // If this is today's session and the athlete hasn't started logging
-      // yet, regenerate exercises from the live engine so stale content
-      // from an old app version gets rebuilt on view.
+      // Seed a rule-engine baseline if the user navigates straight here
+      // before doing check-in. No-op once exercises exist — the LLM author
+      // runs at check-in submit and its output is preserved across views.
       const preSession = await db.sessions.get(sessionId);
       if (preSession?.scheduledDate === today()) {
         await ensureSessionFresh(today()).catch((err) => {

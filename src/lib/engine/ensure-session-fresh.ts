@@ -1,28 +1,28 @@
 /**
- * ensure-session-fresh.ts — Regenerate today's session exercises from the
- * live engine every time the user opens Home or the session page.
+ * ensure-session-fresh.ts — Make sure today's session row + exercises exist.
  *
- * Motivation:
- *   Seed creates exactly one session row. Onboarding and check-in regenerate
- *   exercises, but if neither fires (e.g. cycle has advanced, a previous
- *   session was carried over, or the engine has been updated since the rows
- *   were written) the user sees stale exercises.
+ * Behaviour after the LLM-author migration:
+ *   - The LLM session author runs ONLY at check-in submit. Page mounts no
+ *     longer regenerate exercises.
+ *   - This module's job shrinks to: create the session row if missing,
+ *     and seed it with a deterministic rule-engine baseline IF AND ONLY IF
+ *     the row has zero exercises (so users who skip check-in still see
+ *     something to train against).
+ *   - Once exercises exist (whether authored by the LLM or seeded by the
+ *     engine), this function is a no-op. No more "I just opened the app
+ *     and my session changed" surprises.
  *
- * Safety contract:
+ * Safety contract preserved:
  *   - Only touches sessions for the requested date.
- *   - NEVER mutates a session that has logged sets (the athlete is mid-workout).
+ *   - NEVER mutates a session that has logged sets.
  *   - NEVER mutates COMPLETED or SKIPPED sessions.
- *   - Missing profile / block / cycle → no-op (caller handles empty state).
- *
- * The helper is cheap enough to run on every page mount: one indexed lookup,
- * one profile fetch, a pure generator, then a delete + bulkAdd of exercises.
+ *   - Missing profile / block / cycle → no-op.
  */
 
 import { db, newId }          from '@/lib/db/database';
 import { generateSession }    from './session';
 import { loadRecentLiftExposures } from './lift-exposures';
 import { reviewSessionPure, packReviewIssues } from './session-review';
-import { advisorReviewSession, applyAdvisorModifications } from '@/lib/ai/session-advisor';
 import type { Lift, SessionExercise, TrainingSession } from '@/lib/db/types';
 
 export interface EnsureTodayResult {
@@ -89,21 +89,11 @@ function weekStartOf(dateStr: string): string {
 }
 
 export interface EnsureResult {
-  /** 'regenerated' = exercises rebuilt; 'skipped' = left as-is; 'missing' = no session for this date. */
+  /** 'regenerated' = exercises seeded; 'skipped' = left as-is; 'missing' = no session for this date. */
   status:       'regenerated' | 'skipped' | 'missing';
   reason?:      string;
   session?:     TrainingSession;
   exerciseCount?: number;
-  /** AI advisor diagnostics — surfaced in the regen toast so the user sees what the advisor decided without needing devtools. */
-  advisor?: {
-    /** 'failed' when the advisor threw or timed out — engine output was saved as-is. */
-    assessment: 'APPROVED' | 'TWEAKED' | 'REDUCED' | 'REBUILT' | 'failed';
-    modificationCount: number;
-    /** How many ATHLETE MEMORIES were available in the advisor's context. */
-    memoryCount?: number;
-    /** Failure reason when assessment === 'failed'. */
-    errorMessage?: string;
-  };
 }
 
 /**
@@ -128,40 +118,21 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     return { status: 'skipped', reason: 'sets-logged', session };
   }
 
-  // MODIFIED sessions were already processed by check-in or a prior
-  // ensureSessionFresh run. Skip unless they're missing their secondary
-  // comp block — which indicates the session was generated with old
-  // pre-pairing-rules code and needs a one-time regeneration.
-  if (session.status === 'MODIFIED') {
-    const [blockForCheck, compCount] = await Promise.all([
-      db.blocks.get(session.blockId),
-      db.exercises
-        .where('sessionId').equals(session.id)
-        .filter((e) => e.exerciseType === 'COMPETITION')
-        .count(),
-    ]);
-    const expectsSecondary =
-      blockForCheck &&
-      blockForCheck.blockType !== 'DELOAD' &&
-      blockForCheck.blockType !== 'REALIZATION';
-    if (!expectsSecondary || compCount >= 2) {
-      return { status: 'skipped', reason: 'session-modified', session };
-    }
-    // Fall through — stale session missing secondary comp block; regenerate.
+  // ── New invariant (LLM-author migration) ────────────────────────────────
+  // The LLM session author runs at check-in submit. If exercises already
+  // exist for this session — whether authored by the LLM or seeded by a
+  // previous ensureSessionFresh — we leave them alone. No more page-mount
+  // regeneration replacing what the athlete just authored.
+  const existingExerciseCount = await db.exercises
+    .where('sessionId').equals(session.id).count();
+  if (existingExerciseCount > 0) {
+    return { status: 'skipped', reason: 'exercises-already-present', session };
   }
 
-  // If check-in has already been submitted today and the session was generated
-  // from that same readiness score, skip regeneration. This preserves any
-  // post-check-in coach modifications (load adjustments, exercise swaps, etc.)
-  // that would otherwise be wiped by the delete+bulkAdd at the end.
+  // From here on we know exercises is empty — seed a deterministic baseline
+  // so users who navigate to the session before doing check-in still see
+  // something to train against.
   const earlyReadiness = await db.readiness.where('date').equals(dateStr).first();
-  if (
-    earlyReadiness &&
-    session.readinessScore !== undefined &&
-    session.readinessScore === earlyReadiness.readinessScore
-  ) {
-    return { status: 'skipped', reason: 'readiness-in-sync', session };
-  }
 
   const [profile, block, cycle] = await Promise.all([
     db.profile.get('me'),
@@ -272,53 +243,8 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   generated = finalReview.session;
   const reviewIssues = finalReview.issues;
 
-  // AI coach pre-save review — fires after rule engine, before DB write.
-  // Silent fallback on timeout/error so training is never blocked.
-  const beforeLoads = generated.exercises
-    .filter((e) => e.exerciseType === 'COMPETITION')
-    .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
-    .join(', ');
-  let advisorDiagnostic: EnsureResult['advisor'] = undefined;
-  const advisorResult = await advisorReviewSession(generated, profile, block)
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error('[ensure-session-fresh] advisor failed:', msg);
-      advisorDiagnostic = { assessment: 'failed', modificationCount: 0, errorMessage: msg };
-      return null;
-    });
-  if (advisorResult) {
-    // Distinguish a real APPROVED-with-0-mods from a silent fallback. The
-    // fallback path sets failureReason; surface it as 'failed' so the user
-    // sees an honest signal in the regen message instead of a fake APPROVED.
-    if (advisorResult.failureReason) {
-      // Use the detailed rationale if it carries more than the enum — the
-      // catch path stuffs the model's raw output snippet in there for
-      // diagnosis. Falls back to the enum when rationale is the generic stub.
-      const detail = advisorResult.rationale && !advisorResult.rationale.startsWith('Fallback —')
-        ? advisorResult.rationale
-        : advisorResult.failureReason;
-      advisorDiagnostic = {
-        assessment: 'failed',
-        modificationCount: 0,
-        memoryCount: advisorResult.memoryCount,
-        errorMessage: detail,
-      };
-    } else {
-      generated = applyAdvisorModifications(generated, advisorResult, profile);
-      advisorDiagnostic = {
-        assessment: advisorResult.assessment,
-        modificationCount: advisorResult.modifications.length,
-        memoryCount: advisorResult.memoryCount,
-      };
-    }
-    const afterLoads = generated.exercises
-      .filter((e) => e.exerciseType === 'COMPETITION')
-      .map((e) => `${e.name}=${e.estimatedLoadKg}kg`)
-      .join(', ');
-    if (beforeLoads !== afterLoads) {
-      console.info(`[ensure-session-fresh] advisor reshaped comp loads:\n  before: ${beforeLoads}\n  after:  ${afterLoads}`);
-    }
-  }
+  // The LLM author no longer runs from this path — it runs only from the
+  // check-in submit handler. Page mounts get a clean rule-engine seed.
 
   // Update session meta and replace exercises atomically.
   await db.transaction('rw', db.sessions, db.exercises, async () => {
@@ -356,6 +282,5 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     status:        'regenerated',
     session:       { ...session, primaryLift: generated.primaryLift, coachNote: generated.coachNote },
     exerciseCount: generated.exercises.length,
-    advisor:       advisorDiagnostic,
   };
 }

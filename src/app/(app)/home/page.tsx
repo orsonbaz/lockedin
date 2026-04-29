@@ -99,9 +99,9 @@ export default function HomePage() {
         db.bodyweight.orderBy('date').reverse().first(),
       ]);
 
-      // Regenerate today's exercises from the live engine so stale content
-      // from an old app version gets rebuilt on view. No-op if the athlete
-      // has already started logging sets.
+      // Seed a rule-engine baseline if the user navigates here before doing
+      // check-in. No-op when exercises already exist — the LLM author runs at
+      // check-in submit and its output is preserved here.
       await ensureSessionFresh(todayStr).catch((err) => {
         console.warn('[home] ensureSessionFresh failed:', err);
       });
