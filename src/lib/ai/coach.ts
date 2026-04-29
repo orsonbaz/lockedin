@@ -518,10 +518,13 @@ async function* geminiStream(
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const text = decoder.decode(value, { stream: true });
-    if (text.startsWith('__ERROR__:')) {
-      throw new Error(text.slice('__ERROR__:'.length));
+    const raw = decoder.decode(value, { stream: true });
+    if (raw.startsWith('__ERROR__:')) {
+      throw new Error(raw.slice('__ERROR__:'.length));
     }
+    // Strip server heartbeat markers (zero-width spaces emitted while we wait
+    // on Gemini's first real token; see /api/chat).
+    const text = raw.replace(/​/g, '');
     if (text) yield text;
   }
 }

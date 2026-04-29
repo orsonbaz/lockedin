@@ -285,23 +285,22 @@ async function runAdvisor(
       // can exceed 2k tokens when there are 5+ active memories. Truncating
       // mid-JSON was masquerading as a parse-error in regen results.
       maxTokens: 4096,
+      // Non-streaming: we buffer the whole response anyway and a streaming
+      // call exposes us to Vercel's 25s idle-timeout. Non-stream returns a
+      // single `{ text }` payload bounded only by the function maxDuration.
+      stream: false,
       messages,
     }),
   });
 
-  if (!res.ok) throw new Error(`advisor HTTP ${res.status}`);
-
-  const reader  = res.body?.getReader();
-  const decoder = new TextDecoder();
-  let   raw     = '';
-
-  while (reader) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    raw += decoder.decode(value, { stream: true });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`advisor HTTP ${res.status}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
   }
 
-  if (raw.startsWith('__ERROR__:')) throw new Error(raw.slice(10));
+  const payload = await res.json().catch(() => ({})) as { text?: string; error?: string };
+  if (payload.error) throw new Error(payload.error);
+  const raw = payload.text ?? '';
 
   // Strip markdown code fences AND any prose wrapping the JSON object.
   // The model occasionally emits "Here is the JSON:" prefix or a trailing

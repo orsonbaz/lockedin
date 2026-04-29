@@ -49,13 +49,16 @@ export default function ApiKeyGate({ children }: { children: React.ReactNode }) 
     setError('');
 
     try {
-      // Validate the key with a minimal test call.
+      // Validate the key with a minimal non-streaming test call. Non-stream
+      // mode bypasses the platform's idle-timeout entirely and returns a
+      // single JSON `{ text }` payload — perfect for a connectivity check.
       const res = await fetch('/api/chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiKey:    key,
           maxTokens: 16,
+          stream:    false,
           messages: [
             { role: 'system',    content: 'You are a test assistant.' },
             { role: 'user',      content: 'Reply with just: ok' },
@@ -72,20 +75,8 @@ export default function ApiKeyGate({ children }: { children: React.ReactNode }) 
         throw new Error(inner);
       }
 
-      // Drain the stream to confirm the key works end-to-end.
-      const reader  = res.body?.getReader();
-      const decoder = new TextDecoder();
-      let   reply   = '';
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        reply += decoder.decode(value, { stream: true });
-        if (reply.length > 200) break; // enough to confirm success
-      }
-
-      if (reply.startsWith('__ERROR__:')) {
-        throw new Error(reply.slice('__ERROR__:'.length));
-      }
+      const json = await res.json().catch(() => ({})) as { text?: string; error?: string };
+      if (json.error) throw new Error(json.error);
 
       // Save the key into the profile (create profile row if missing).
       const existing = await db.profile.get('me');
