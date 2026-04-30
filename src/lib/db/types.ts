@@ -354,6 +354,13 @@ export interface TrainingSession {
   scheduledDate: string;         // YYYY-MM-DD
   sessionType: SessionType;
   primaryLift: Lift;
+  /**
+   * Additional comp lifts performed in this session (e.g. bench primary +
+   * deadlift secondary). Persisted so the chat coach can see what actually
+   * happened — without this it was reading bench-primary/deadlift-secondary
+   * sessions as "bench only" and missing the deadlift exposure.
+   */
+  secondaryLifts?: Lift[];
   status: SessionStatus;
   readinessScore?: number;       // 0-100 at time of session
   aiModifications?: string;      // JSON string of changes made

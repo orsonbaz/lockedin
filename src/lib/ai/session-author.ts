@@ -38,6 +38,14 @@ export interface AuthorInput {
   readinessScore:  number;
   /** Athlete's chosen primary lift at check-in, if any. */
   preferredPrimary?: Lift;
+  /**
+   * Athlete's explicit secondary-comp choice from check-in:
+   *   'AUTO'  — let the LLM pick (default)
+   *   'NONE'  — primary lift only, no secondary comp work
+   *   <lift>  — pin this specific lift as the secondary comp
+   * Independent of `preferredPrimary` — both can be specified.
+   */
+  preferredSecondary?: 'AUTO' | 'NONE' | Lift;
 }
 
 export type AuthorFailureReason =

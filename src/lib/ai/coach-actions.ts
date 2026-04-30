@@ -51,7 +51,8 @@ export type CoachActionType =
   | 'SCHEDULE_REFEED'
   | 'REQUEST_FORM_CHECK'
   | 'IMPORT_WEARABLE'
-  | 'REGENERATE_SESSION';
+  | 'REGENERATE_SESSION'
+  | 'RESET_TODAY';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -331,6 +332,16 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    case 'RESET_TODAY': {
+      const reason = params.reason || 'Wipe today and let the athlete redo check-in';
+      return {
+        type,
+        params,
+        displayText: `Reset today's session — ${reason}`,
+        confirmText: 'Reset today',
+      };
+    }
+
     default:
       return null;
   }
@@ -383,6 +394,8 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         };
       case 'REGENERATE_SESSION':
         return await executeRegenerateSession(action.params);
+      case 'RESET_TODAY':
+        return await executeResetToday(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -991,6 +1004,7 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
     await db.sessions.update(session.id, {
       readinessScore,
       primaryLift:     finalSession.primaryLift,
+      secondaryLifts:  finalSession.secondaryLifts ?? [],
       sessionType:     finalSession.sessionType,
       coachNote:       finalSession.coachNote,
       aiModifications: JSON.stringify(finalSession.modifications),
@@ -1027,6 +1041,35 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
   return {
     success: true,
     message: `Session rebuilt from rule engine${reason} — ${finalSession.exercises.length} exercises. AI author skipped: ${fallbackReason}.`,
+  };
+}
+
+async function executeResetToday(params: Record<string, string>): Promise<ActionResult> {
+  const { resetTodaySession } = await import('@/lib/engine/reset-session');
+  const result = await resetTodaySession(today());
+
+  if (result.status === 'no-session') {
+    return { success: false, message: 'No session found for today.' };
+  }
+  if (result.status === 'session-completed') {
+    return {
+      success: false,
+      message: 'Today\'s session is already completed — reset declined to protect your training log.',
+    };
+  }
+
+  const c = result.cleared!;
+  const bits: string[] = [];
+  if (c.exercises) bits.push(`${c.exercises} exercise${c.exercises === 1 ? '' : 's'}`);
+  if (c.sets)      bits.push(`${c.sets} logged set${c.sets === 1 ? '' : 's'}`);
+  if (c.readiness) bits.push('readiness');
+  if (c.bodyweight)bits.push('bodyweight');
+  const reason = params.reason ? ` (${params.reason})` : '';
+  const cleared = bits.length > 0 ? bits.join(', ') : 'nothing already';
+  return {
+    success: true,
+    message: `Today reset${reason} — wiped ${cleared}. Heading to check-in.`,
+    navigateTo: '/checkin',
   };
 }
 

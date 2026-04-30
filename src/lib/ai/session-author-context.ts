@@ -71,6 +71,17 @@ Reward system: ${profile.rewardSystem}`);
   if (preferredPrimary) {
     goalLines.push(`Athlete picked at check-in — primary lift today: ${preferredPrimary}`);
   }
+  // Honour the secondary-comp override exactly as picked. 'NONE' means the
+  // session must have NO secondary comp lift (no extra squat/bench/deadlift
+  // work beyond the primary). A specific lift means pin that lift as the
+  // secondary. 'AUTO' / undefined means the LLM is free to pick.
+  if (input.preferredSecondary && input.preferredSecondary !== 'AUTO') {
+    if (input.preferredSecondary === 'NONE') {
+      goalLines.push(`Athlete picked at check-in — secondary comp lift: NONE. Do not include any secondary squat / bench / deadlift work today; the primary stands alone.`);
+    } else {
+      goalLines.push(`Athlete picked at check-in — secondary comp lift today: ${input.preferredSecondary}. This is an explicit override — do not substitute a different lift.`);
+    }
+  }
   sections.push(`# GOALS\n${goalLines.join('\n')}`);
 
   // ── 2. Athlete memories — durable instructions from prior coach chats ─────
@@ -155,16 +166,27 @@ ${memLines.join('\n')}`);
     .slice(0, 21);
   if (last21.length > 0) {
     const summaries = await Promise.all(last21.map(async (s) => {
-      const sets = await db.sets
-        .where('sessionId').equals(s.id)
-        .filter((sl) => sl.rpeLogged !== undefined)
-        .toArray();
+      const [sets, compExercises] = await Promise.all([
+        db.sets
+          .where('sessionId').equals(s.id)
+          .filter((sl) => sl.rpeLogged !== undefined)
+          .toArray(),
+        db.exercises
+          .where('sessionId').equals(s.id)
+          .filter((e) => e.exerciseType === 'COMPETITION')
+          .sortBy('order'),
+      ]);
       const avgRpe = sets.length > 0
         ? (sets.reduce((acc, sl) => acc + (sl.rpeLogged ?? 0), 0) / sets.length).toFixed(1)
         : '—';
       const totalVol = sets.reduce((sum, sl) => sum + sl.loadKg * sl.reps, 0);
       const volStr = totalVol > 0 ? `${Math.round(totalVol / 1000 * 10) / 10}t` : '—';
-      return `  ${s.scheduledDate} | ${s.primaryLift.padEnd(9)} | ${s.sessionType.padEnd(14)} | RPE ${avgRpe} | vol ${volStr} | ${sets.length} sets`;
+      const liftLabel = (s.secondaryLifts && s.secondaryLifts.length > 0)
+        ? `${s.primaryLift}+${s.secondaryLifts.join('+')}`
+        : s.primaryLift;
+      const compNames = compExercises.map((e) => e.name).join(', ');
+      const compTail = compNames ? ` | comp: ${compNames}` : '';
+      return `  ${s.scheduledDate} | ${liftLabel.padEnd(16)} | ${s.sessionType.padEnd(14)} | RPE ${avgRpe} | vol ${volStr} | ${sets.length} sets${compTail}`;
     }));
     sections.push(`# RECENT TRAINING (last ${last21.length})\n${summaries.join('\n')}`);
   }

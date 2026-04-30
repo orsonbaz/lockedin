@@ -214,6 +214,15 @@ function CheckInInner() {
   const [autoFilled,      setAutoFilled]      = useState<HRVSource | null>(null);
   const [liftExposures,    setLiftExposures]    = useState<LiftExposure[]>([]);
   const [preferredPrimary, setPreferredPrimary] = useState<'SQUAT' | 'BENCH' | 'DEADLIFT' | null>(null);
+  /**
+   * Explicit override for the secondary comp lift:
+   *   'AUTO'  — let the engine / LLM auto-pick (default)
+   *   'NONE'  — primary lift only, no secondary comp
+   *   <lift>  — pin this lift as the secondary
+   * Reset to 'AUTO' when the primary changes so stale picks don't survive.
+   */
+  const [preferredSecondary, setPreferredSecondary] =
+    useState<'AUTO' | 'NONE' | 'SQUAT' | 'BENCH' | 'DEADLIFT'>('AUTO');
   const [sbdMode,          setSbdMode]          = useState(false);
 
   // ── HRV tooltip ─────────────────────────────────────────────────────────
@@ -522,6 +531,7 @@ function CheckInInner() {
             baseline: generated,
             readinessScore,
             preferredPrimary: preferredPrimary as Lift | undefined,
+            preferredSecondary: sbdMode ? 'AUTO' : preferredSecondary,
           }).catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
             console.error('[check-in] session-author crashed:', msg);
@@ -540,6 +550,7 @@ function CheckInInner() {
           await db.sessions.update(session.id, {
             readinessScore,
             primaryLift:      generated.primaryLift,
+            secondaryLifts:   generated.secondaryLifts ?? [],
             sessionType:      generated.sessionType,
             coachNote:        generated.coachNote,
             aiModifications:  JSON.stringify(generated.modifications),
@@ -592,6 +603,9 @@ function CheckInInner() {
     router,
     modality,
     nextHref,
+    preferredPrimary,
+    preferredSecondary,
+    sbdMode,
   ]);
 
   // ── Skip ───────────────────────────────────────────────────────────────
@@ -770,7 +784,10 @@ function CheckInInner() {
                   <button
                     key={lift}
                     type="button"
-                    onClick={() => setPreferredPrimary(lift)}
+                    onClick={() => {
+                      setPreferredPrimary(lift);
+                      setPreferredSecondary('AUTO');
+                    }}
                     className="rounded-xl p-3 text-center transition-all active:scale-[0.97]"
                     style={{
                       backgroundColor: on ? `${ACCENT}18` : 'rgba(255,255,255,0.02)',
@@ -823,7 +840,7 @@ function CheckInInner() {
               </div>
             </button>
 
-            {/* Pairing preview — updates live */}
+            {/* Pairing preview + secondary picker */}
             {sbdMode && preferredPrimary ? (
               <p className="text-xs text-center" style={{ color: MUTED }}>
                 {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
@@ -836,16 +853,48 @@ function CheckInInner() {
                 <span style={{ color: TEXT }}>secondary</span>
               </p>
             ) : preferredPrimary ? (
-              <p className="text-xs text-center" style={{ color: MUTED }}>
-                {preferredPrimary === 'SQUAT' ? 'Squat' : preferredPrimary === 'BENCH' ? 'Bench' : 'Deadlift'}{' '}
-                <span style={{ color: TEXT }}>primary</span>
-                {' · '}
-                {(() => {
-                  const sec = getExpectedSecondary(preferredPrimary, liftExposures);
-                  return sec === 'SQUAT' ? 'Squat' : sec === 'BENCH' ? 'Bench' : 'Deadlift';
-                })()}{' '}
-                <span style={{ color: TEXT }}>secondary</span>
-              </p>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-widest" style={{ color: MUTED }}>
+                  Secondary comp lift
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(() => {
+                    const others = (['SQUAT', 'BENCH', 'DEADLIFT'] as const)
+                      .filter((l) => l !== preferredPrimary);
+                    const auto = getExpectedSecondary(preferredPrimary, liftExposures);
+                    const opts: Array<{ key: typeof preferredSecondary; label: string; sub?: string }> = [
+                      { key: 'AUTO', label: 'Auto',  sub: auto === 'SQUAT' ? '→ Squat' : auto === 'BENCH' ? '→ Bench' : '→ Deadlift' },
+                      { key: 'NONE', label: 'None',  sub: 'primary only' },
+                      ...others.map((l) => ({
+                        key:   l,
+                        label: l === 'SQUAT' ? '+ Squat' : l === 'BENCH' ? '+ Bench' : '+ Deadlift',
+                      })),
+                    ];
+                    return opts.map((o) => {
+                      const on = preferredSecondary === o.key;
+                      return (
+                        <button
+                          key={o.key}
+                          type="button"
+                          onClick={() => setPreferredSecondary(o.key)}
+                          className="rounded-xl p-3 text-center transition-all active:scale-[0.97]"
+                          style={{
+                            backgroundColor: on ? `${ACCENT}18` : 'rgba(255,255,255,0.02)',
+                            border: `1px solid ${on ? ACCENT : C.border}`,
+                          }}
+                        >
+                          <p className="text-sm font-bold leading-tight" style={{ color: on ? ACCENT : TEXT }}>
+                            {o.label}
+                          </p>
+                          {o.sub && (
+                            <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>{o.sub}</p>
+                          )}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
             ) : (
               <p className="text-xs" style={{ color: MUTED }}>
                 Tap a lift above — we&apos;ll pair it with secondary work automatically.

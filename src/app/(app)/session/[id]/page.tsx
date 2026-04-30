@@ -760,6 +760,28 @@ export default function SessionPage({
     void ensureNotificationPermission();
   }, []);
 
+  const handleResetToday = useCallback(async () => {
+    const ok = window.confirm(
+      'Reset today\'s session? This wipes today\'s exercises, readiness, and bodyweight log, then sends you back to check-in. Logged sets are protected — completed sessions can\'t be reset.',
+    );
+    if (!ok) return;
+    try {
+      const { resetTodaySession } = await import('@/lib/engine/reset-session');
+      const result = await resetTodaySession(today());
+      if (result.status === 'reset') {
+        toast('Today reset — let\'s redo check-in.', { duration: 2500 });
+        router.push('/checkin');
+      } else if (result.status === 'session-completed') {
+        toast.error('Session already completed — can\'t reset.', { duration: 3000 });
+      } else {
+        toast.error('No session found for today.', { duration: 3000 });
+      }
+    } catch (err) {
+      console.error('[session] reset failed:', err);
+      toast.error('Couldn\'t reset — try again.', { duration: 3000 });
+    }
+  }, [router]);
+
   const finishSession = useCallback(async () => {
     if (saving) return;
     setSaving(true);
@@ -1278,6 +1300,25 @@ export default function SessionPage({
           >
             Start Session
           </button>
+
+          {/* Reset today's session — wipes exercises, readiness, bodyweight,
+              and routes back to /checkin. Only available when this is today's
+              session and the athlete hasn't started logging sets. */}
+          {session?.scheduledDate === today() && setLogs.length === 0 && (
+            <button
+              type="button"
+              onClick={handleResetToday}
+              className="w-full py-3 rounded-xl text-sm font-semibold tracking-wide transition-all duration-150 active:scale-[0.98] mt-3"
+              style={{
+                backgroundColor: 'transparent',
+                color: C.muted,
+                border: `1px solid ${C.dim}`,
+              }}
+              aria-label="Reset today and redo check-in"
+            >
+              Reset & redo check-in
+            </button>
+          )}
         </div>
 
         {/* ── Swap Modal ────────────────────────────────────────────────── */}

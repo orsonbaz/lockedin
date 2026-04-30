@@ -251,6 +251,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     await db.sessions.update(session.id, {
       readinessScore,
       primaryLift:     generated.primaryLift,
+      secondaryLifts:  generated.secondaryLifts ?? [],
       sessionType:     generated.sessionType,
       coachNote:       generated.coachNote,
       aiModifications: JSON.stringify(generated.modifications),

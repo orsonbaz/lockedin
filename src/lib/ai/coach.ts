@@ -264,17 +264,31 @@ export async function buildSystemPrompt(
   if (last14.length > 0) {
     const summaries = await Promise.all(
       last14.map(async (s) => {
-        const sets = await db.sets
-          .where('sessionId')
-          .equals(s.id)
-          .filter((sl) => sl.rpeLogged !== undefined)
-          .toArray();
+        const [sets, compExercises] = await Promise.all([
+          db.sets
+            .where('sessionId')
+            .equals(s.id)
+            .filter((sl) => sl.rpeLogged !== undefined)
+            .toArray(),
+          db.exercises
+            .where('sessionId').equals(s.id)
+            .filter((e) => e.exerciseType === 'COMPETITION')
+            .sortBy('order'),
+        ]);
         const avgRpe = sets.length > 0
           ? (sets.reduce((acc, sl) => acc + (sl.rpeLogged ?? 0), 0) / sets.length).toFixed(1)
           : '—';
         const totalVol = sets.reduce((sum, sl) => sum + sl.loadKg * sl.reps, 0);
         const volStr = totalVol > 1000 ? `${(totalVol / 1000).toFixed(1)}t` : `${Math.round(totalVol)}kg`;
-        return `${s.scheduledDate} ${s.primaryLift} (${s.sessionType}): avg RPE ${avgRpe}, volume ${volStr}, ${sets.length} sets`;
+        // Surface ALL comp lifts performed, not just primaryLift. Without
+        // this the chat coach reads bench-primary/deadlift-secondary
+        // sessions as "BENCH only" and misses the secondary exposure.
+        const liftLabel = (s.secondaryLifts && s.secondaryLifts.length > 0)
+          ? `${s.primaryLift} + ${s.secondaryLifts.join(' + ')}`
+          : s.primaryLift;
+        const compNames = compExercises.map((e) => e.name).join(', ');
+        const compTail = compNames ? ` [comp: ${compNames}]` : '';
+        return `${s.scheduledDate} ${liftLabel} (${s.sessionType})${compTail}: avg RPE ${avgRpe}, volume ${volStr}, ${sets.length} sets`;
       }),
     );
     sessionHistory = `Recent completed sessions (newest first):\n${summaries.map((s) => `  - ${s}`).join('\n')}`;
@@ -329,6 +343,7 @@ Available actions:
 - [ACTION:REQUEST_FORM_CHECK|lift=SQUAT] — Open the camera for a quick video form check (lift: SQUAT/BENCH/DEADLIFT/UPPER/LOWER/FULL)
 - [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
 - [ACTION:REGENERATE_SESSION|reason=...] — LAST RESORT, almost never the right tool. Delegates to a separate AI pass that runs on its own context and frequently fails or returns no changes. Prefer direct tags (UPDATE_REPS / SET_RPE_TARGET / ADJUST_SET_LOAD / ADD_EXERCISE / REMOVE_EXERCISE / SWAP_EXERCISE) — even for open-ended "remake today" / "rebuild" / "regenerate" requests. YOU have the memories, profile, readiness, and goals; YOU decide what changes are warranted; emit those changes as direct tags.
+- [ACTION:RESET_TODAY|reason=...] — Wipe today's session, readiness, and bodyweight log so the athlete can redo their check-in from scratch (e.g. they want to switch primary lift, picked the wrong secondary, or readiness was logged with bad data). Different from REGENERATE_SESSION: this discards readiness too and routes the athlete back to /checkin. Refuses to run if today's session is already COMPLETED.
 
 Rules:
 - IF THE ATHLETE ASKS YOU TO CHANGE / SWAP / ADD / REMOVE / ADJUST / SKIP / ABBREVIATE / LOG / REGENERATE anything, you MUST emit the matching ACTION tag — without it, nothing happens. Always pair "Yes I'll do X" with the tag for X.
