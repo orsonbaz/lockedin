@@ -32,6 +32,7 @@ import type { ChatMessage as DBChatMessage }                from '@/lib/db/types
 import {
   buildSystemPrompt,
   sendMessage,
+  sendMessageBuffered,
   type ChatMessage,
 } from '@/lib/ai/coach';
 import { parseActions, executeAction, type CoachAction, type ActionResult } from '@/lib/ai/coach-actions';
@@ -414,8 +415,14 @@ function CoachInner() {
       { role: 'user', content: userText },     // guaranteed last
     ];
 
-    // Stream response (increased token limit for richer responses)
+    // Stream response, falling back to a non-streaming fetch if streaming
+    // fails. Streaming is brittle on Vercel + iOS Safari (gateway idle
+    // cuts, mid-stream disconnects); non-stream is bounded only by the
+    // function maxDuration and is much more reliable. The user sees the
+    // streaming animation when it works, otherwise gets the full response
+    // in one drop after a short delay.
     let fullResponse = '';
+    let streamErr: Error | null = null;
     try {
       const gen = sendMessage(context, geminiKey, 4096);
       for await (const token of gen) {
@@ -424,15 +431,27 @@ function CoachInner() {
         setStreamingText(fullResponse);
       }
     } catch (err) {
-      const msg  = err instanceof Error ? err.message : String(err);
-      console.error('[coach] generation error:', msg);
-      if (/api.?key|unauthoriz|401|API_KEY_INVALID|invalid.*key/i.test(msg)) {
-        fullResponse = 'Gemini rejected the API key — update it in Settings → AI Coach.';
-      } else if (/fetch|network|connect|ECONNREFUSED/i.test(msg)) {
-        fullResponse = 'Connection failed. Check your internet and try again.';
-      } else if (!fullResponse) {
-        // Show the actual error to help diagnose — truncated for readability
-        fullResponse = `Something went wrong: ${msg.slice(0, 300)}`;
+      streamErr = err instanceof Error ? err : new Error(String(err));
+      console.warn('[coach] streaming failed, retrying non-streamed:', streamErr.message);
+    }
+
+    if (streamErr && !fullResponse && !abortRef.current) {
+      // Auto-retry once with the non-streaming endpoint.
+      try {
+        fullResponse = await sendMessageBuffered(context, geminiKey, 4096);
+        if (fullResponse) setStreamingText(fullResponse);
+      } catch (err) {
+        const finalErr = err instanceof Error ? err : new Error(String(err));
+        const original = streamErr.message.slice(0, 160);
+        const retry    = finalErr.message.slice(0, 160);
+        console.error('[coach] non-streaming retry also failed:', finalErr.message);
+        if (/api.?key|unauthoriz|401|API_KEY_INVALID|invalid.*key/i.test(finalErr.message)) {
+          fullResponse = 'Gemini rejected the API key — update it in Settings → AI Coach.';
+        } else if (/RESOURCE_EXHAUSTED|quota|429/i.test(finalErr.message)) {
+          fullResponse = 'Hit the Gemini free-tier quota — wait a minute and try again.';
+        } else {
+          fullResponse = `Coach is unreachable. Streaming attempt: ${original}. Buffered retry: ${retry}.`;
+        }
       }
     }
 

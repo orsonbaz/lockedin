@@ -565,3 +565,42 @@ export async function* sendMessage(
 
   yield* geminiStream(trimmedGeminiKey, messages, maxTokens);
 }
+
+/**
+ * Non-streaming variant of `sendMessage`. Returns the full response text in
+ * a single fetch — bypasses Vercel's stream-idle gateway timeout entirely
+ * and avoids any iOS Safari fetch-stream quirks. Used as an automatic
+ * fallback when the streaming path fails (network, gateway, mid-stream
+ * disconnect, etc.). Slower-feeling UX (no token-by-token reveal) but
+ * vastly more reliable.
+ */
+export async function sendMessageBuffered(
+  messages:      ChatMessage[],
+  geminiApiKey?: string,
+  maxTokens      = 2048,
+): Promise<string> {
+  const trimmedGeminiKey = geminiApiKey?.trim();
+  if (!trimmedGeminiKey) {
+    throw new Error('Gemini API key is required. Add one in Settings → AI Coach.');
+  }
+
+  const res = await fetch('/api/chat', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      apiKey:    trimmedGeminiKey,
+      maxTokens,
+      stream:    false,
+      messages,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`Gemini API error (${res.status})${errBody ? ` — ${errBody.slice(0, 300)}` : ''}`);
+  }
+
+  const payload = await res.json().catch(() => ({})) as { text?: string; error?: string };
+  if (payload.error) throw new Error(payload.error);
+  return payload.text ?? '';
+}
