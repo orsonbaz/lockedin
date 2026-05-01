@@ -73,6 +73,16 @@ export interface SessionInput {
    * 3–4 weeks, not as an everyday session.
    */
   forceSBD?: boolean;
+  /**
+   * Athlete's explicit secondary-comp choice from check-in:
+   *   'AUTO'      — let the engine pick (default; equivalent to undefined)
+   *   'NONE'      — primary lift only, no secondary comp work
+   *   'SQUAT' | 'BENCH' | 'DEADLIFT' — pin this lift as the secondary
+   * Ignored when `forceSBD` is true (SBD always has two secondaries).
+   * Falls through to the auto-pick when the request is invalid (e.g. pinning
+   * the same lift as the primary).
+   */
+  preferredSecondary?: 'AUTO' | 'NONE' | 'SQUAT' | 'BENCH' | 'DEADLIFT';
 }
 
 export interface GeneratedExercise {
@@ -130,6 +140,21 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const weekInBlockVal     = input.weekWithinBlock ?? 1;
   const totalBlockWeeksVal = block.weekEnd - block.weekStart + 1;
 
+  // Resolve the athlete's secondary-comp preference into a concrete override.
+  // `forceSBD` wins (full-SBD rehearsals require two secondaries by definition).
+  const applySecondaryPreference = (primary: Lift, autoPick: Lift[]): Lift[] => {
+    if (input.forceSBD) return autoPick;
+    const pref = input.preferredSecondary;
+    if (!pref || pref === 'AUTO') return autoPick;
+    if (pref === 'NONE') return [];
+    // Pinning a specific lift — only honor if it's a comp lift different
+    // from the primary; otherwise fall through to the auto pick.
+    if (pref === primary) return autoPick;
+    if (primary !== 'SQUAT' && primary !== 'BENCH' && primary !== 'DEADLIFT') return autoPick;
+    if (block.blockType === 'REALIZATION' || block.blockType === 'DELOAD') return [];
+    return [pref];
+  };
+
   const selection = (() => {
     // Resolve primary via forcePrimary → adaptive → cold-start rotation.
     const resolvePrimary = (): Lift => {
@@ -156,17 +181,18 @@ export function generateSession(input: SessionInput): GeneratedSession {
     }
 
     if (input.forcePrimary) {
+      const auto = pickSecondary(
+        input.forcePrimary, input.recentLiftExposures, profile,
+        readinessScore, block.blockType, weekInBlockVal, totalBlockWeeksVal,
+      );
       return {
         primary:   input.forcePrimary,
-        secondary: pickSecondary(
-          input.forcePrimary, input.recentLiftExposures, profile,
-          readinessScore, block.blockType, weekInBlockVal, totalBlockWeeksVal,
-        ),
+        secondary: applySecondaryPreference(input.forcePrimary, auto),
       };
     }
 
     if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
-      return selectAdaptivePrimary({
+      const adaptive = selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
         profile,
         readinessScore,
@@ -174,15 +200,20 @@ export function generateSession(input: SessionInput): GeneratedSession {
         weekInBlock:     weekInBlockVal,
         totalBlockWeeks: totalBlockWeeksVal,
       });
+      return {
+        primary:   adaptive.primary,
+        secondary: applySecondaryPreference(adaptive.primary, adaptive.secondary),
+      };
     }
 
     const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+    const auto = pickSecondary(
+      primary, [], profile, readinessScore, block.blockType,
+      weekInBlockVal, totalBlockWeeksVal,
+    );
     return {
       primary,
-      secondary: pickSecondary(
-        primary, [], profile, readinessScore, block.blockType,
-        weekInBlockVal, totalBlockWeeksVal,
-      ),
+      secondary: applySecondaryPreference(primary, auto),
     };
   })();
   const primaryLift = selection.primary;

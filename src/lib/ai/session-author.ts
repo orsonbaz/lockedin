@@ -273,6 +273,8 @@ Respect the Non-Negotiables: a horizontal push every session (or note its delibe
 
 Respect the discipline mix: if the athlete trains HYBRID or has a secondary discipline, that secondary should appear in accessory slots — not just powerlifting accessories. A primary-powerlifting / secondary-streetlift athlete gets streetlift work (weighted pull-ups, dips, muscle-ups, ring work) layered into the session, not omitted in favour of more powerlifting accessories.
 
+Accessory continuity: progressive overload only happens when the athlete repeats the same accessory long enough to load it. Default to KEEPING the accessories the athlete has been running on this lift's day — same names, same rep ranges, with small load progressions when warranted. Rotate an accessory ONLY when (a) a memory directs you to, (b) the athlete is stalled or hitting it at RPE > target consistently, (c) the block phase changes and the old accessory no longer serves the new aim, or (d) the athlete has run this same accessory >6 weeks and is plateauing. Novelty for novelty's sake is anti-progress. When in doubt, repeat.
+
 Output a complete session as a single JSON object — no markdown fences, no prose outside the object:
 
 {

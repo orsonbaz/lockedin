@@ -486,6 +486,11 @@ function CheckInInner() {
             // Honor the athlete's lift preference and session format.
             ...(preferredPrimary ? { forcePrimary: preferredPrimary as Lift } : {}),
             ...(sbdMode ? { forceSBD: true } : {}),
+            // sbdMode wins over preferredSecondary (SBD has 2 secondaries by
+            // definition); otherwise pass the athlete's pick — including
+            // 'NONE', so the rule-engine baseline doesn't sneak a secondary
+            // back in for the LLM to inherit.
+            ...(sbdMode ? {} : { preferredSecondary }),
           });
 
           // 4a. Post-generation review — swap primary lift on bench/squat/DL drought,
@@ -504,6 +509,7 @@ function CheckInInner() {
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
               forcePrimary: forced as Lift,
+              ...(sbdMode ? {} : { preferredSecondary }),
             });
           }
           const finalReview = reviewSessionPure({

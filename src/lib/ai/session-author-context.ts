@@ -166,7 +166,7 @@ ${memLines.join('\n')}`);
     .slice(0, 21);
   if (last21.length > 0) {
     const summaries = await Promise.all(last21.map(async (s) => {
-      const [sets, compExercises] = await Promise.all([
+      const [sets, compExercises, accExercises] = await Promise.all([
         db.sets
           .where('sessionId').equals(s.id)
           .filter((sl) => sl.rpeLogged !== undefined)
@@ -174,6 +174,10 @@ ${memLines.join('\n')}`);
         db.exercises
           .where('sessionId').equals(s.id)
           .filter((e) => e.exerciseType === 'COMPETITION')
+          .sortBy('order'),
+        db.exercises
+          .where('sessionId').equals(s.id)
+          .filter((e) => e.exerciseType === 'ACCESSORY' || e.exerciseType === 'VARIATION')
           .sortBy('order'),
       ]);
       const avgRpe = sets.length > 0
@@ -186,9 +190,13 @@ ${memLines.join('\n')}`);
         : s.primaryLift;
       const compNames = compExercises.map((e) => e.name).join(', ');
       const compTail = compNames ? ` | comp: ${compNames}` : '';
-      return `  ${s.scheduledDate} | ${liftLabel.padEnd(16)} | ${s.sessionType.padEnd(14)} | RPE ${avgRpe} | vol ${volStr} | ${sets.length} sets${compTail}`;
+      const accNames = accExercises.map((e) => e.name).join(', ');
+      const accTail = accNames ? ` | acc: ${accNames}` : '';
+      return `  ${s.scheduledDate} | ${liftLabel.padEnd(16)} | ${s.sessionType.padEnd(14)} | RPE ${avgRpe} | vol ${volStr} | ${sets.length} sets${compTail}${accTail}`;
     }));
-    sections.push(`# RECENT TRAINING (last ${last21.length})\n${summaries.join('\n')}`);
+    sections.push(`# RECENT TRAINING (last ${last21.length})
+The 'acc:' list is the accessory + variation lineup actually run in each session. Use it to decide which accessories to repeat today (default behaviour) versus rotate (only with cause — see system prompt).
+${summaries.join('\n')}`);
   }
 
   // ── 6. Rule-engine baseline (informational only) ──────────────────────────

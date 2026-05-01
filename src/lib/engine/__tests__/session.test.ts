@@ -236,6 +236,75 @@ describe('generateSession — adaptive primary-lift selection', () => {
   // sessions only happen via REALIZATION/DELOAD (handled in their own
   // describe blocks). Test deleted; original intent ("low readiness should
   // not surface a second comp lift") is no longer applicable.
+
+  describe('preferredSecondary override', () => {
+    const block = makeBlock('ACCUMULATION');
+    const exposures = [
+      { lift: 'SQUAT' as const,    daysSince: 2, weekCount: 1 },
+      { lift: 'BENCH' as const,    daysSince: 5, weekCount: 0 },
+      { lift: 'DEADLIFT' as const, daysSince: 6, weekCount: 0 },
+    ];
+
+    it("'NONE' produces no secondary comp lift on a bench-primary session", () => {
+      const out = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 2, readinessScore: 80,
+        sessionNumber: 2, recentLiftExposures: exposures,
+        forcePrimary: 'BENCH', preferredSecondary: 'NONE',
+      });
+      expect(out.primaryLift).toBe('BENCH');
+      expect(out.secondaryLifts ?? []).toEqual([]);
+    });
+
+    it("'NONE' also strips the auto-paired BENCH off a squat or deadlift primary", () => {
+      const sq = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 1, readinessScore: 80,
+        sessionNumber: 1, forcePrimary: 'SQUAT', preferredSecondary: 'NONE',
+      });
+      expect(sq.secondaryLifts ?? []).toEqual([]);
+      const dl = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 4, readinessScore: 80,
+        sessionNumber: 3, forcePrimary: 'DEADLIFT', preferredSecondary: 'NONE',
+      });
+      expect(dl.secondaryLifts ?? []).toEqual([]);
+    });
+
+    it("'AUTO' / undefined keeps the legacy auto-pick behaviour", () => {
+      const out = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 2, readinessScore: 80,
+        sessionNumber: 2, recentLiftExposures: exposures,
+        forcePrimary: 'BENCH', preferredSecondary: 'AUTO',
+      });
+      expect((out.secondaryLifts ?? []).length).toBe(1);
+    });
+
+    it('pinning a specific lift overrides the auto pick', () => {
+      const out = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 2, readinessScore: 80,
+        sessionNumber: 2, recentLiftExposures: exposures,
+        forcePrimary: 'BENCH', preferredSecondary: 'SQUAT',
+      });
+      expect(out.secondaryLifts).toEqual(['SQUAT']);
+    });
+
+    it('pinning the same lift as primary falls through to the auto pick', () => {
+      const out = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 2, readinessScore: 80,
+        sessionNumber: 2, recentLiftExposures: exposures,
+        forcePrimary: 'BENCH', preferredSecondary: 'BENCH',
+      });
+      expect((out.secondaryLifts ?? []).length).toBe(1);
+      expect(out.secondaryLifts?.[0]).not.toBe('BENCH');
+    });
+
+    it('forceSBD wins over preferredSecondary=NONE', () => {
+      const out = generateSession({
+        profile: baseProfile, block, weekDayOfWeek: 6, readinessScore: 80,
+        sessionNumber: 1, recentLiftExposures: exposures,
+        forceSBD: true, preferredSecondary: 'NONE',
+      });
+      expect((out.secondaryLifts ?? []).length).toBe(2);
+    });
+  });
 });
 
 describe('generateSession — primary lift rotation', () => {
