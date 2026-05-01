@@ -16,6 +16,7 @@ import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 import { unpackReviewIssues } from '@/lib/engine/session-review';
+import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import {
   summariseSessionRpeState,
   formatSessionRpeStateForPrompt,
@@ -37,6 +38,7 @@ const SECTION_CAPS = {
   session:    700,
   liveSession: 500,
   history:    1200,
+  exposure:   400,
   weakPoints: 400,
   nutrition:  200,
   schedule:   400,
@@ -60,6 +62,16 @@ interface PromptSection {
 function capText(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1).trimEnd() + '…';
+}
+
+/** Returns YYYY-MM-DD for `n` days before today (local). */
+function isoDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function renderSection(section: PromptSection, cap: number): string {
@@ -294,6 +306,50 @@ export async function buildSystemPrompt(
     sessionHistory = `Recent completed sessions (newest first):\n${summaries.map((s) => `  - ${s}`).join('\n')}`;
   }
 
+  // ── Recent lift exposure summary ──────────────────────────────────────────
+  // Per-comp-lift recency tags (FRESH / RECOVERED / OVERDUE / STACKED) so the
+  // coach can pick session shape per the recent-exposure protocol in
+  // STRUCTURE_KNOWLEDGE without re-deriving from session history every time.
+  const exposures = await loadRecentLiftExposures(today());
+  let liftExposure = '';
+  if (exposures.length > 0) {
+    // Compute trailing-7d completed-set tonnage per primary lift, looking only
+    // at sessions whose primary matches the lift in question (same window the
+    // exposure detector uses).
+    const recentForExposure = await db.sessions
+      .filter((s) => s.status === 'COMPLETED' && s.scheduledDate >= isoDaysAgo(7))
+      .toArray();
+
+    const lines = await Promise.all(
+      exposures.map(async (e) => {
+        const matched = recentForExposure.filter((s) => s.primaryLift === e.lift);
+        let totalVolKg = 0;
+        for (const s of matched) {
+          const sets = await db.sets.where('sessionId').equals(s.id).toArray();
+          for (const sl of sets) totalVolKg += sl.loadKg * sl.reps;
+        }
+        const volStr = totalVolKg > 1000
+          ? `${(totalVolKg / 1000).toFixed(1)}t`
+          : `${Math.round(totalVolKg)}kg`;
+        const days = Number.isFinite(e.daysSince) ? `${e.daysSince}d` : 'never';
+
+        // Recency tag — drives session-shape decisions in STRUCTURE_KNOWLEDGE.
+        // STACKED  = hit ≥3× this week (cap intensity, no top single).
+        // OVERDUE  = ≥5d since primary AND ≤1 weekly count.
+        // FRESH    = primary within last 2d.
+        // RECOVERED = 2-4d ago, normal cadence.
+        let tag = 'RECOVERED';
+        if (!Number.isFinite(e.daysSince)) tag = 'OVERDUE';
+        else if (e.weekCount >= 3) tag = 'STACKED';
+        else if (e.daysSince >= 5 && e.weekCount <= 1) tag = 'OVERDUE';
+        else if (e.daysSince <= 2) tag = 'FRESH';
+
+        return `${e.lift}: ${days} since primary, ${e.weekCount}× this week, ${volStr} 7d → ${tag}`;
+      }),
+    );
+    liftExposure = `Per-lift recency (use to shape today's session per the recent-exposure protocol):\n${lines.map((l) => `  - ${l}`).join('\n')}`;
+  }
+
   // ── Bodyweight trend ──────────────────────────────────────────────────────
   const recentBw = await db.bodyweight.orderBy('date').reverse().limit(7).toArray();
   let bwTrend = '';
@@ -420,7 +476,7 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
   const sections: PromptSection[] = [
     {
       name: 'role',
-      content: 'You are the Lockedin AI coach — an elite strength coach. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor. Operate from the Coaching Intelligence Framework and the wider knowledge base — synthesise across the philosophies they encode rather than quoting individual coaches. Match the athlete\'s primary discipline and training goal. Lean on RPE / bar-speed autoregulation, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
+      content: 'You are the Lockedin AI coach — an elite strength coach. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor. Operate from the Coaching Intelligence Framework and the wider knowledge base — synthesise across the philosophies they encode rather than quoting individual coaches. Match the athlete\'s primary discipline and training goal. Lean on RPE autoregulation, readiness signals, recent-exposure awareness, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
     },
     {
       name: 'profile',
@@ -488,6 +544,7 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
     { name: 'session',     heading: "Today's Session",       content: sessionInfo },
     { name: 'liveSession', heading: 'Live Session Feedback', content: liveSessionInfo },
     { name: 'history',     heading: 'Training History',      content: sessionHistory },
+    { name: 'exposure',    heading: 'Recent Lift Exposure',  content: liftExposure },
     { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
     { name: 'nutrition', heading: 'Nutrition Target Today', content: nutritionBody },
     { name: 'wearables', heading: 'Wearable Signals (last 7d)', content: wearablesBody },

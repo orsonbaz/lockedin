@@ -160,7 +160,7 @@ export const EXERCISE_KNOWLEDGE = `
   - Sticking point mid-range: Tempo squat (4-1-0) 3×5 @ RPE 7, 1×/wk. Front squat 3×5 @ RPE 7 on a second squat day.
   - Forward lean: Front squat or SSB 4×6 @ RPE 7 for 6+ weeks; heel-elevated paused squat if ankle mobility is the cause.
   - Knee cave: Banded pause squat 3×5 @ RPE 7, 1×/wk; adductor machine 3×12; single-leg press 3×10 per leg.
-  - Bar speed drop > 15% between reps: Volume is done; move to backoffs or end the working sets (Stanek).
+  - Form breakdown rep-to-rep within a set: knees cave, hips shoot, depth shortens — volume is done. Move to backoffs or end the working sets, regardless of what reps remain on the card.
 
 ### Bench Press
 - Setup: Arch (natural thoracic extension, NOT lumbar). Shoulder blades retracted and depressed ("in your back pockets").
@@ -617,15 +617,17 @@ Mental rehearsal is a skill; skills are practiced year-round, not peaking-week o
 - Meet week: Only warm-up room reps get commands — on the platform itself, the command is live.
 
 ### Attempt-Selection Decision Tree
-Call your second attempt based on how the opener moved, not your training log.
-- Opener flew (speed ≥ floor, RPE ≤ 7): aggressive 2nd — jump 5-7% for a comfortable heavy.
-- Opener was grindy (RPE 8.5+, bar speed off): conservative 2nd — jump 2.5-4%. Bank the total.
+Call your second attempt based on how the opener *moved and felt*, not your training log.
+- Opener flew (RPE ≤ 7, no grind, hit position cleanly): aggressive 2nd — jump 5–7% for a
+  comfortable heavy.
+- Opener was grindy (RPE 8.5+, position broke, set ground out): conservative 2nd — jump 2.5–4%.
+  Bank the total.
 - Opener missed: repeat at the same load on 2nd. Do not jump on a miss unless a technical fix is
   obvious (e.g. uneven rack, wrong command cadence).
-- Second flew: aggressive 3rd — PR attempt (+2-3%).
-- Second was grindy: small PR or opener-of-next-meet on 3rd (+1-1.5%).
+- Second flew: aggressive 3rd — PR attempt (+2–3%).
+- Second was grindy: small PR or opener-of-next-meet on 3rd (+1–1.5%).
 - Second missed: take the missed weight again on 3rd; don't chase PRs off a miss. If you missed
-  the 2nd to bomb the lift, take a conservative 3rd (opener +2.5kg) just to board.
+  the 2nd to bomb the lift, take a conservative 3rd (opener +2.5 kg) just to board.
 
 ### Meet Day — Hour-by-Hour Timeline
 Built for a 2-hour weigh-in; shift the meal plan back by 20h for a 24-hour weigh-in.
@@ -656,7 +658,8 @@ Built for a 2-hour weigh-in; shift the meal plan back by 20h for a 24-hour weigh
 - Reps at warmup loads: 60% × 5, 70% × 3, 80% × 2, 87% × 1, opener × 1 (or just set-up rehearsal
   at opener load — no rep).
 - Never take the opener in the warmup room. Set-up rehearsal only.
-- If the bar moves slow at 80% in warmups → drop opener 2.5-5 kg. Trust the signal.
+- If 80 % feels grindy or RPE comes back ≥ 7.5 in warmups → drop opener 2.5–5 kg. Trust the signal.
+  An opener that feels like an RPE 8 in the back room becomes a missed 2nd attempt under nerves.
 `;
 
 // ── Injury Prevention ─────────────────────────────────────────────────────────
@@ -737,56 +740,66 @@ export const PROGRAMMING_KNOWLEDGE = `
 - 6 days/week: PPL-PPL or DUP. Only for advanced lifters with excellent recovery. High injury risk.
 `;
 
-// ── Velocity-Based Training ───────────────────────────────────────────────────
+// ── Deep RPE / Load Management ────────────────────────────────────────────────
+// Replaces the old bar-speed-heavy VBT_KNOWLEDGE. The app does not capture bar
+// velocity, so leaning on RPE depth is the actionable substitute. References
+// to bar speed have been removed across the knowledge base — coaches that
+// historically used velocity (Stanek, RTS) are surfaced through RPE-equivalent
+// signals: RPE drift, sandbagging detection, calibration-max protocols.
 
-export const VBT_KNOWLEDGE = `
-## Velocity-Based Training (VBT)
-Bar speed is the coach's lie-detector. RPE tells you how hard it felt; velocity tells you how hard
-it actually was. When they diverge, speed is usually right. Joe Stanek builds his peaking blocks
-around speed cutoffs; modern RTS uses VBT as the primary autoregulation signal alongside RPE.
+export const RPE_DEEP_KNOWLEDGE = `
+## RPE Deep — Calibration, Drift, and Honest Auto-Regulation
 
-### Speed floors per lift (mean concentric velocity, m/s)
-- **Squat — low-bar competition**
-  - Opener-equivalent single: ≥ 0.40 m/s. Anything slower for an opener is a red flag on meet day.
-  - Heavy triple / double peaking: 0.30–0.40 m/s.
-  - 1RM attempts: 0.20–0.25 m/s — below 0.20 you either grind it or miss.
-- **Bench press — competition grip, paused**
-  - Opener-equivalent single: ≥ 0.30 m/s.
-  - Heavy triple / double: 0.20–0.30 m/s.
-  - 1RM attempts: 0.12–0.17 m/s. Below 0.12 = miss territory.
-- **Deadlift — conventional or sumo, off the floor**
-  - Opener single: ≥ 0.50 m/s (deadlift is the fastest comp lift).
-  - Heavy doubles: 0.40–0.50 m/s.
-  - 1RM attempts: 0.30–0.35 m/s.
+### RPE → e1RM (worked from the prescribeLoad table)
+- RPE 10 = 100 % of 1RM at 1 rep. Each rep below RPE 10 ≈ 4 % drop at 1 rep.
+- RPE 8 single ≈ 92 % 1RM. RPE 8 triple ≈ 84 %. RPE 8 set-of-5 ≈ 79 %.
+- RPE 9 single ≈ 96 %. RPE 9 triple ≈ 89 %. RPE 9 set-of-5 ≈ 83 %.
+- These numbers are population averages; calibrate per-athlete after 4–6 weeks of clean logs.
 
-### When to bail a top set
-- Bar speed on rep 1 of a top set below the lift's 1RM floor → bail the set and go lighter.
-  Don't grind it — you'll take more fatigue than stimulus.
-- RPE on target but speed is off → CNS fatigue. Cut the rest of the working sets by 30-50%.
-- RPE low but speed is slow → technical breakdown (bracing, bar path). Fix position before loading.
+### RPE Drift = the most actionable signal you have
+- *Same load, +1 RPE over 2 sessions* = recovery debt accruing. Action: deload that lift only,
+  not the whole program. One week at -10 % load, normal volume, then resume.
+- *Same load, RPE flat over 4 weeks but no rep progression* = stimulus has gone stale. Action:
+  rotate the variation slot (pin → pause → comp), not the comp lift itself.
+- *RPE *under* target consistently with rep progression* = max is set too low. Action: bump the
+  stored max 2.5–5 kg, do not reward the undershoot by adding more sets.
 
-### Measuring without a sensor
-You do not need a Beast / Flex / RepOne to use VBT. Phone slow-mo is enough:
-1. Film from the side at 120 fps (240 on newer iPhones).
-2. In playback, count frames from the moment the bar leaves the chest / hole / floor to lockout.
-3. (Frames ÷ fps) = seconds. Divide the rep distance by that to get m/s.
-4. Track top-set velocity over the block — the number you care about is the trend, not the absolute.
+### Half-RPE discipline
+- 8.5 vs 9 is a real distinction. RPE 9 = "1 left in the tank, certain." RPE 8.5 = "maybe 2,
+  maybe 1 — would not bet either way." Coach the athlete to log half-points, especially on
+  grinder-vs-fast-bar reps.
+- A set logged 8.5 that the next set confirms was actually 9.5 is a calibration miss, not a
+  cheat. Use it as data: this athlete's RPE skews low at intent, recalibrate.
 
-### VBT + RPE + fatigue percents
-When velocity drops more than ~15% on the next rep of the same set, the set is done — that's
-Stanek's "bar-speed-informed backoff." Combine with Tuchscherer fatigue percents to set backoff
-loads:
-- Top single RPE 8 → back-off triples at 2–4% less load per rep below the top.
-  Example: top single = 200 kg at 0.25 m/s. Backoff triples at ~185 kg, aiming for ~0.30 m/s.
-- If velocity is off on set 1 of the backoffs, cut load 5% and move on — don't chase the number.
+### Calibration drift signs (when to demand a calibration max)
+- Logged RPE 8 reps that miss → max is overestimated by ≥ 5 %.
+- Logged RPE 8 reps that move like RPE 6 → max is underestimated by ≥ 5 %.
+- Three sessions with > 1.0 RPE deviation from prescribed → schedule a calibration single
+  (top single @ RPE 8) before continuing the block. Reset stored max from that single.
 
-### What VBT changes about programming
-- Accumulation: target a speed range per set. Stop when you drop below it, even if RPE target
-  not yet hit. Volume earned, not prescribed.
-- Intensification: speed gates the next load increase. Hit the velocity target at load L twice
-  before moving to L+2.5 kg.
-- Realization: opener rehearsal = speed check. If the opener moves slower than 0.40/0.30/0.50
-  m/s two weeks out, lower the opener or extend the block.
+### RPE on accessories
+- Stays 1–2 points lighter than comp lifts. RPE 7–8 on RDL when comp DL is RPE 8–9.
+- Accessories should never steal recovery from the priority lift the next session.
+- AMRAP-style accessories ("AMRAP at this load until RPE 9") are fine on lat pulldowns, hip
+  thrusts, leg press — never on barbell rows that share spinal-erector cost with deadlift day.
+
+### Sandbagging detection (Stanek)
+- Logged RPE undersells e1RM by ≥ 5 % across two sessions = chronic undershoot.
+- Action: force 2.5 kg jumps until logged RPE matches target, even if the athlete protests.
+- The athlete's "this felt like a 7" + the e1RM math saying "that was an RPE 6" = the math wins.
+
+### Overshooting cure (overshooter phenotype)
+- Logged RPE overshoots target by ≥ 1 across two sessions = chronic overshoot.
+- Action: reduce stored max 5 %, prescribe ascending sets (1@70 % → 1@80 % → 1@target RPE)
+  instead of straight sets so the early sets feed the brain "I have something left."
+- Praise the *under-shoot* explicitly when it appears — it's the correction, not a failure.
+
+### When RPE breaks down (the limits)
+- Singles at RPE ≤ 7 are nearly impossible to feel — coach uses load + readiness here, not RPE.
+- RPE on bodyweight calisthenics is unreliable below 5 reps; use rep quality (no kip, full
+  ROM, no shake) as the proxy.
+- Sets > 12 reps drift RPE upward as cardiovascular fatigue dominates muscular fatigue.
+  Cap RPE-prescribed work at sets of 10 unless the goal is conditioning, not strength.
 `;
 
 // ── Hybrid PL + Street Lift + Calisthenics Programming ────────────────────────
@@ -980,11 +993,16 @@ philosophies when making recommendations — the athlete should feel the lineage
 - RPE autoregulation is the spine: set prescriptions are RPE-targeted, load adjusts to the day.
 - Fatigue percents: once a top set hits target RPE, back-offs drop ~2–4% per rep below top for 3–6 sets.
   Example: top single RPE 8 → 4 back-off triples at ~6–8% below.
+- Stress Index — composite of session RPE × volume tracked weekly. The trend matters more than any
+  single number; rising Stress Index against flat or declining performance = recovery debt accruing.
+- Dynamic load management: prescribe a load *range* gated by RPE rather than a fixed kg. Let the day's
+  RPE pick the load inside the range — that's the autoregulation in practice.
 - Specificity grows through the block: accumulation is broad, peaking is comp-stance, comp-grip,
   comp-tempo, comp-commands only.
 - Volume is measured in quality reps at target RPE, not blind tonnage. Ditch junk sets.
-- Weak-point analysis is diagnostic: bar speed drop + RPE creep at a specific joint angle identifies the
-  limiting link. Address with targeted variations, not random accessories.
+- Weak-point analysis is diagnostic: RPE creep at the same load over 2–3 sessions on the same lift
+  surfaces the limiting link. Rx targeted variation (paused / pin / deficit at the failure position),
+  not random accessory.
 - Tonnage caps: when a lifter stalls despite hitting numbers, cut weekly working sets by 20–30% for a
   mini-block before adding back.
 
@@ -997,18 +1015,27 @@ philosophies when making recommendations — the athlete should feel the lineage
   Pause work gets its own session, not just competition week.
 - Spinal erector fatigue is the silent killer of peaking. Alternate heavy squat and heavy pull days;
   never stack them same-day in peaking.
-- Bar speed drops of ≥15% on a top single → back off, don't grind.
+- Don't add training elements to add them — every set defends its existence against "what does this
+  drive?" Cut anything that can't answer.
+- Communication is part of the program. Athletes who feel heard execute. Build trust by explaining
+  every block transition's *why*.
 
 ### Joe Stanek
 - Block periodization rigor: explicit accumulation → intensification → realization transitions. No
-  aimless "I'll just train hard" blocks.
-- Intensity ramps are earned: hit target RPE and bar speed at load L before advancing to L+2.5kg.
-- Bar-speed-informed backoffs: on comp lifts, cap working sets when mean velocity drops below a
-  lift-specific floor (roughly 0.25 m/s squat, 0.15 m/s bench, 0.30 m/s deadlift for peaking).
-- Command practice from week 1 of peaking — "squat," "rack," "start," "press," "down," — not just
-  meet week.
-- Sandbagging kills peaks. If the athlete chronically undersells RPE, film sets and force 2.5 kg jumps
-  until RPE self-calibrates.
+  aimless "I'll just train hard" blocks. Name the block, name the *one* adaptation it must produce.
+- Earned ramps — "intensity is a privilege": load advances only when the prior load was hit at or
+  below target RPE for ≥2 sessions. If RPE drifted up at the same load, repeat the load before
+  promoting.
+- Top-single + back-off pattern: top single at target RPE, then 3–5 back-off triples ~6–8% below
+  for the working volume. The top single is the diagnostic; the back-offs are the dose.
+- Microcycle-level evaluation: the smallest unit of evidence is the week, not the workout. Evaluate
+  at week boundaries, not within-week — one rough session does not invalidate the block.
+- Tonnage matters in development — measure weekly working tonnage at prescribed RPE, not just heavy
+  singles. A "low-volume" block is volume *concentrated*, not volume *abandoned*.
+- Command practice from week 1 of peaking — "squat," "rack," "start," "press," "down" — not just
+  meet week. Pause at every comp-stance set, internalise the cue sequence so meet day is reflex.
+- Sandbagging kills peaks. If logged RPE undersells e1RM by ≥5% across two sessions, force 2.5 kg
+  jumps until RPE self-calibrates.
 
 ### Marcellus "Millz" Wallace
 - High weekly exposures to all three comp lifts. Aim for 2–4 squat, 3–4 bench, 2–3 deadlift sessions
@@ -1021,16 +1048,23 @@ philosophies when making recommendations — the athlete should feel the lineage
 - Volume distribution beats volume magnitude: 4×8 bench 4x/week crushes 8×8 once a week.
 
 ### Sean Noriega
+- Long intro-block bias: keep the microcycle the same for as long as it drives adaptation. Change
+  the variable that's underperforming, not the whole template.
+- Frequency *before* volume: when progress stalls, redistribute existing volume across more sessions
+  before adding new sets. Spacing is a programming variable, not a side effect.
 - Low-volume, high-quality philosophy: fewer working sets with higher RPE accuracy outperform junk
   volume for most intermediates.
-- Pause variants are the standard, not the exception. Paused squats / benches / deadlifts teach control
-  under load and expose weaknesses early.
-- Mental rehearsal as training: visualize the comp lift, setup, breath, cue sequence before every
-  top set. Technique is a skill; skills are rehearsed.
-- Readiness-driven session modification: when the body says no, take the L and hit prescribed RPE on
-  lighter work rather than forcing the programmed load.
-- Quality bar speed > quantity tonnage. If speed is off on the opener-equivalent single, the day is a
-  technical session, not a PR attempt.
+- Pause variants are the *default* expression of the comp lift outside meet prep — they expose
+  positional weakness before it shows up under heavy loads.
+- Mental rehearsal as training: setup → breath → cue sequence visualised before every top set.
+  Technique is a skill; skills are rehearsed.
+- Readiness-driven modality switch: low readiness ≠ skip. Same RPE target on lighter / fewer / pause
+  work — the day still earns its place.
+- RPE honesty over PR ambition: if the opener-equivalent single feels like RPE 9 instead of the
+  prescribed 7, the day is a technical session, not a PR attempt — drop top-end load, keep the
+  volume target.
+- Scheduling is non-negotiable: spacing between heavy squat and heavy pull days protects spinal
+  erectors. A 4-day microcycle that respects spacing beats a 5-day one that doesn't.
 
 ### Boris Sheiko
 - The foundation of Sheiko methodology: all three competition lifts trained in almost every session.
@@ -1112,8 +1146,17 @@ philosophies when making recommendations — the athlete should feel the lineage
 - Core stability is the multiplier, not an afterthought. A weak anterior core leaks force. Pallof
   press, ab wheel, and heavy loaded carries should be programmed with the same intent as comp lifts.
 
+### PowerliftingNow ecosystem (consensus thread across modern elite coaches)
+- Better execution beats better programming. A coach earns their fee primarily by enforcing
+  execution — bracing, RPE honesty, position rehearsal — not by inventing template novelty.
+- High frequency + RPE autoregulation + proactive deloads (every 4–6 wk) + command practice
+  in-block + technique primacy under fatigue are the shared spine of the modern raw scene. If a
+  recommendation contradicts ALL of these, it had better come with a specific reason.
+- Sustainable adherence at 90 % of optimal beats theoretical optimal abandoned at week 4.
+- The training log is the most valuable data source — review it every week, before any plan change.
+
 ### Cross-cutting consensus
-- Autoregulate via RPE and bar speed, not ego.
+- Autoregulate via RPE and readiness, not ego. Honest RPE > heavy load.
 - Specificity dominates novelty: you get strong at what you practice.
 - Comp lifts are skills, not just strength tests — rehearse every rep like meet day.
 - Adherence > optimization. A B+ program run for 12 weeks beats an A+ program abandoned after 3.
@@ -1331,6 +1374,393 @@ Pause frequency: 1 session per week per lift during accumulation and intensifica
 from the variation slot 2-3 weeks out from a meet — switch to competition-tempo sets.
 `;
 
+// ── Session / Set-Rep / Microcycle / Macrocycle Structure ────────────────────
+// User-facing the most: when an athlete asks "what should today look like" or
+// "how should I structure my week," the coach needs callable templates, not
+// derivations from first principles every time. Recent-exposure awareness is
+// the operating principle — session shape is a function of (a) days since
+// last primary, (b) weekly count of primary, (c) modality of last session.
+
+export const STRUCTURE_KNOWLEDGE = `
+## Structure — Session, Set/Rep, Microcycle, Macrocycle
+
+### Session Shape Lookup (lift × phase × recency)
+Use these as opinionated defaults, then adjust by readiness and athlete history.
+
+**SQUAT day**
+- ACCUMULATION, ≥3 days since last squat: comp squat 4×6 @ RPE 7 → pause squat 3×5 @ RPE 7 →
+  RDL 3×8 → split squat 2×10 → erector accessory 2×10. Spinal load HIGH.
+- ACCUMULATION, <2 days since last squat (overlap): skip the comp slot — this is a leg
+  accessory / hypertrophy day. Front squat 3×8 @ RPE 7, single-leg work, no posterior-chain heavy.
+- INTENSIFICATION, primary today: top set 3 @ RPE 8 → 3×3 backoffs ~6 % below → RDL 3×6 →
+  one quad accessory. Cut volume vs. accumulation, keep specificity high.
+- REALIZATION, primary today: top single @ RPE 8 → 3×2 backoffs ~6 % below → no spinal accessories.
+  Hip thrust or leg press only.
+- DELOAD: comp squat 3×3 @ RPE 6 → one accessory at RPE 5–6. Done in 35 min. Should feel easy.
+
+**BENCH day**
+- ACCUMULATION, ≥2× already this week: keep volume but cap intensity — comp bench 5×3 @ RPE 7,
+  no top single, finish with rows + face pulls + tricep iso.
+- ACCUMULATION, primary bench day: comp bench 4×6 @ RPE 7.5 → pause bench or close-grip 3×5 →
+  row 4×6 → face pulls 3×15 → one tricep accessory.
+- INTENSIFICATION: top set 3 @ RPE 8 → 3×3 backoffs ~5 % below → spoto press 3×4 → row + face pulls.
+- REALIZATION: top single @ RPE 8 → 2×2 backoffs ~5 % below → row 3×5 → face pulls. Skip tricep iso.
+- DELOAD: comp bench 3×3 @ RPE 6 → row 3×8 → face pulls. Done in 30 min.
+
+**DEADLIFT day**
+- ACCUMULATION, ≥4 days since last DL: comp DL 4×4 @ RPE 7.5 → one floor variation (deficit OR
+  pause OR block) 3×3 → barbell row 4×6 → hip thrust 3×8. NO second floor pull. Spinal load HIGH.
+- ACCUMULATION, <3 days since last DL: pull is *not* primary today — light tonnage at RPE 6,
+  3×5, then move to back/glute accessories.
+- INTENSIFICATION: top single @ RPE 8 → 3×2 backoffs ~7 % below → no second floor pull → row +
+  hip thrust + lat pulldown.
+- REALIZATION: top single @ RPE 8.5 → 1–2× backoff doubles ~7 % below → finish. No accessories
+  beyond glute / lat support.
+- DELOAD: 60 % triple work, 3 sets, RPE 6. Done.
+
+**RECOVERY / low-readiness day** (readiness < 50 OR HRV deviation < −15 %)
+- One comp lift @ RPE 6, 3 sets at the prescribed reps. Pattern-paired accessory at RPE 5–6.
+  Finish in 35 min. The day still earns its place — same RPE target on lighter / fewer / pause
+  work (Noriega's modality switch).
+
+### Set / Rep Structure Guide
+
+**Straight sets** (4×6, 5×5)
+- Default for accumulation. Predictable fatigue, easy RPE calibration, clear progressive overload.
+- Use when the athlete's RPE-honesty is established and the load is comfortably below grinding.
+
+**Ascending sets** (1@70 % → 1@80 % → 1@target RPE)
+- Default for *overshooter* phenotype — channels the drive into earned load without front-loading
+  fatigue.
+- Also useful when the athlete has never taken a heavy single at this block's load — gives them
+  three rehearsal opportunities to dial the brace before the working set.
+
+**Top-set + back-offs** (1× top @ RPE 8 → 3–5× back-off ~5–8 % below)
+- Intensification block default, especially for comp lifts. The Stanek / RTS pattern.
+- Top set is the diagnostic; back-offs are the dose. If top set comes in heavier than RPE 8,
+  back-offs scale down with it automatically (use the actual top, not the prescribed top).
+
+**Cluster sets** (3×3 with 20–30 s intra-set rest)
+- Realization / peaking weeks only. When grind has to be eliminated but high-intensity exposure
+  must continue.
+- Useful for athletes who can't tolerate 5×3 straight at peaking intensity but need the load exposure.
+
+**RPE-stop sets** ("AMRAP at this load until RPE 9")
+- Hypertrophy / development work on accessories — *never* on comp lifts.
+- Lat pulldown, hip thrust, leg press, dumbbell work. Anti-fragile to small RPE miscalibration.
+
+**Reps × phenotype × bottleneck** (extends bottleneckToReps)
+- NEURAL bottleneck: 2–4 reps. Lower for realization, upper for accumulation.
+- BALANCED: 4–6 reps.
+- HYPERTROPHY bottleneck: 6–10 reps.
+- Within those, lower end during intensification / realization, upper end during accumulation.
+
+**Set count × volume target × responder** (extends responderMultiplier)
+- HIGH responder, accumulation: 5–7 working sets per lift / session.
+- STANDARD responder, accumulation: 4–5.
+- LOW responder, accumulation: 3–4.
+- Scale down 30–40 % for intensification, 50–60 % for realization, 60–70 % for deload.
+
+### Microcycle Templates (sample week shapes)
+
+**3-day (full-body)** — for time-constrained athletes or beginners
+- Mon: Squat primary + bench secondary + light DL hinge
+- Wed: Bench primary + squat secondary (light) + row
+- Fri: Deadlift primary + bench secondary (light) + accessory
+- Each lift gets ≥ 1 quality exposure / week. Recovery is generous.
+
+**4-day (S/B/D split + upper)** — most popular intermediate template
+- Mon: Squat day
+- Tue: Bench day
+- Thu: Deadlift day
+- Sat: Upper repeat (light bench + OHP + arms / shoulders / face pulls)
+- Bench gets 2 exposures (heavy Tue + light Sat), squat & DL get 1. Spinal-load spacing is clean.
+
+**5-day (DUP / high-frequency)** — advanced; recovery is non-negotiable
+- Mon: Squat heavy
+- Tue: Bench heavy
+- Wed: Pull / DL secondary + skill / GPP
+- Thu: Squat light + bench accessory
+- Sat: DL heavy + bench secondary
+- Squat 2×, bench 2×, DL 2× per week. Only run on athletes with established RPE honesty AND
+  HIGH-responder profile AND 7+ hours of consistent sleep.
+
+### Spinal-Load Cap Per Microcycle
+≤ 3 high-spinal-load sessions per 7-day window. Comp deadlift, deficit DL, comp squat, pause
+squat, good morning all count as HIGH spinal load. RDL counts as MEDIUM. Hip thrust, leg press,
+belt squat are LOW. If the engine is about to schedule a 4th HIGH-spinal session in 7 days,
+flag and propose swapping one to a LOW alternative.
+
+### Macrocycle Architecture (the 16-week canonical block)
+
+Phase progression (variable by athlete; this is the canonical):
+1. **Accumulation** (4 wk). Volume builds. Intensity moderate (65–75 %). RPE 6–8.
+2. **Intensification** (4 wk). Volume eases ~20 %. Intensity rises (78–88 %). RPE 7.5–9.
+3. **Realization / Peaking** (2–4 wk). Volume drops sharply. Intensity peaks (88–100 %). RPE 8–9.5.
+4. **Deload** (1 wk). Both fall.
+
+Within each block:
+- **Week 1** = ramp-in. Reach 80–90 % of the block's planned weekly tonnage.
+- **Weeks 2–3** = stimulus. Full prescribed volume + intensity.
+- **Final week** = consolidate, not push. Hit the prescription cleanly. Set up the phase transition.
+
+### Phase-Transition Rules (no re-baselining)
+- **Never re-test 1RM at a phase boundary.** Promote based on the *last week's logged RPE* on
+  comp-stance work. If the last week was on-target at load L, the new block uses L + 2.5 kg as
+  starting load.
+- Test maxes only at: end of realization (i.e., the meet), or after 8+ weeks of layoff, or as
+  a calibration single when RPE drift indicates the stored max is wrong by ≥ 5 %.
+
+### Recent-Exposure Protocol (operating principle)
+When generating or modifying a session, read recentLiftExposures FIRST, then choose session shape:
+1. **Days since last primary** — < 2 = no overlap; redirect to a different primary or accessory day.
+2. **Trailing-7d count of this primary** — already at 3 + this week → cap intensity, no top single.
+3. **Modality of last session** — last DL was a heavy comp pull → today's DL is at most a
+   variation or light comp work, never another heavy comp pull.
+4. **Spinal-load budget** — never stack two HIGH spinal-load sessions inside 48 h.
+5. **Meet < 14 days** — overrides #2 only: comp lifts get extra exposure even at higher weekly
+   counts, because peaking specificity dominates fatigue management in the final 2 weeks.
+`;
+
+// ── Diagnostic Playbook (failure-point → cause → Rx) ──────────────────────────
+
+export const DIAGNOSTIC_PLAYBOOK_KNOWLEDGE = `
+## Diagnostic Playbook — When the Athlete is Stuck
+
+When an athlete reports a stuck lift or an issue surfaces in the weak-points detector
+(RPE_CREEP, MISSED_REPS, LOAD_PLATEAU, LIFT_IMBALANCE, VOLUME_DROP), use this playbook to map
+the failure point to a likely cause and a dosed prescription. Always check bracing / setup
+quality FIRST — many "weak points" are actually positional leaks, not muscular weakness.
+
+### Bench Press
+- **Fail at chest height (off-the-chest)**: weak pecs / front delts, OR not creating chest pop
+  off the bottom. Rx: Spoto press 4×4 @ RPE 7 1×/wk + long-pause bench (3 sec) 3×3 @ RPE 8
+  1×/wk for 4–6 wk. Add incline DB press 3×8 for pec mass.
+- **Fail mid-ROM (3–6 inches up)**: front delts, OR bar path drift forward. Rx: confirm bar
+  comes straight up off chest first (film it), then add DB shoulder press 3×8 + larsen press
+  3×4 for upper-pec/delt strength.
+- **Fail at lockout (last 1/3)**: triceps, OR loss of leg drive late. Rx: pin press at sticking
+  height 3×3 @ RPE 7.5 + close-grip bench 4×6 @ RPE 7 1×/wk + tricep direct 4×8 (pushdowns or
+  skullcrushers) 2×/wk. Confirm leg drive is held through the rep — film from feet.
+
+### Squat
+- **Fail in the hole / first 4 inches up**: glutes & hamstrings (posterior chain) OR
+  bracing collapse. Rx: pause squat 4×4 @ RPE 7 1×/wk + heavy RDL 4×6 @ RPE 7 + ab wheel
+  rollouts 3×8 daily. Check brace at the bottom — if pelvis tucks, brace is failing, not
+  glutes.
+- **Fail mid-ROM (between hole and lockout)**: quads, OR forward lean breaking position.
+  Rx: front squat 3×5 @ RPE 7 on a second squat day + tempo squat (4-1-0) 3×5. If forward
+  lean is the cause, address ankle dorsiflexion before adding load.
+- **Fail near lockout / "stuck halfway"**: upper-back stiffness or quad endurance. Rx:
+  high-bar squat 3×5 @ RPE 7 (forces upright) + heavy walkouts at 110 % squat max
+  3×30 sec for upper-back tolerance.
+
+### Deadlift
+- **Fail off the floor**: leg drive + lat tension. Bar should NOT lift before hips drop into
+  the bar. Rx: deficit DL (1–2") 4×3 @ RPE 7 1×/wk + heavy rows 4×6 + paused DL 2" off floor
+  3×2 @ RPE 7.5. Confirm lats engaged at setup (cue: "bend the bar around your shins").
+- **Fail at the knee**: upper back rounding, lat tension lost mid-pull. Rx: paused DL at knee
+  3×2 @ RPE 7 + heavy barbell rows 4×5 @ RPE 8 + chest-supported row to remove momentum.
+- **Fail at lockout**: glute lockout strength, OR grip giving up at the top. Rx: heavy hip
+  thrust 4×6 @ RPE 7 + block pull (2–4") 3×3 @ RPE 8 1×/wk. If grip is the limiter, learn
+  hook grip and add static holds @ 110 % DL × 20 sec ×3.
+
+### Tightness vs Muscular Sticking
+Many sticking points are *bracing* failures, not strength deficits. Diagnose by checking
+pre-set quality:
+- If the brace was incomplete (chest breath, no 360° pressure, belt loose), the sticking
+  point is a *position* failure — fix bracing, not the muscle. Re-test the load with proper
+  setup before prescribing accessories.
+- If the brace was clean and the rep still failed at a specific point, *then* it's muscular.
+  Pursue the dosed Rx above.
+
+### Reading Weak-Point Detector Output
+- **RPE_CREEP** on a comp lift = recovery debt OR stored max is too high. Diagnose by
+  checking trailing-2-wk readiness; if readiness was solid, the max is wrong — drop 5 %
+  and re-test.
+- **MISSED_REPS** repeating across 2 sessions = max is too high OR overshooter phenotype
+  not adjusted. Drop 5 % load + recalibrate RPE expectations.
+- **LOAD_PLATEAU** ≥ 3 weeks = stimulus has gone stale. Rotate the variation slot, do not
+  add load — adding load to a stalled lift just deepens the plateau.
+- **LIFT_IMBALANCE** = relative-strength outlier. Audit weekly frequency on the lagging
+  lift; usually under-frequencied. Add an exposure before adding accessories.
+- **VOLUME_DROP** ≥ 25 % vs 4-wk average = athlete is sandbagging the program OR adherence
+  has slipped. Check in on life context before reducing prescribed volume — often the
+  program is fine and the athlete just needs scheduling support.
+`;
+
+// ── Modern Fatigue Management ─────────────────────────────────────────────────
+
+export const FATIGUE_MANAGEMENT_KNOWLEDGE = `
+## Modern Fatigue Management — Beyond MEV/MAV/MRV
+
+### Stress Index (Tuchscherer)
+- Weekly Σ(set RPE × reps × intensity %). The number itself is athlete-specific; the *trend*
+  is universal.
+- Stress Index rising while comp-lift e1RM is flat or declining = recovery debt, not
+  productive overreach. Action: deload week or volume cut 20–30 %.
+- Stress Index flat while e1RM is rising = sweet spot. Hold the prescription.
+
+### Volume-First Deload Taper (peaking, modern consensus)
+Volume drives more fatigue than intensity. Cut volume first, intensity trails by ~1 week.
+
+**4-week peaking taper (elite athletes):**
+- Wk -4: Overreach. Volume up ~30–50 % vs. normal week. Intensity normal.
+- Wk -3: Cut volume 30–40 %. Intensity stays high (close to comp).
+- Wk -2: Cut both. Volume already low; intensity comes off ~5–10 %.
+- Wk -1 (meet week): Light technical only. Comp lifts only. Top single ≤ 70 % at RPE 6.
+  Heaviest work earlier in week, then full rest the 48 h before meet day.
+
+**3-week taper (intermediate):** Same shape, compress -4 wk into -3 wk (overreach + first cut
+combined).
+
+**2-week taper (novice or athlete with low fatigue accumulation):** Wk -2 = volume cut, wk -1
+= light technical. Skip the overreach phase.
+
+### Reactive vs Proactive Deloads
+- **Proactive**: every 4–6 wk regardless of how the athlete feels. Prevents accumulation faster
+  than the athlete can detect it.
+- **Reactive**: triggered by ANY of —
+  - 7-day average readiness < 50
+  - HRV deviation < −15 % for 3+ consecutive days
+  - RPE creep + same load on a comp lift across 2 sessions
+  - Stress Index trending up while comp-lift e1RM is flat
+  - Athlete reports two consecutive nights of < 6 h sleep
+- *Any one* trigger fires a deload — don't wait for two. The cost of an unneeded deload is
+  small; the cost of a missed one is a stalled block.
+
+### Tonnage Cap Rule (when stuck despite hitting numbers)
+- When volume × frequency × intensity all check the prescription but no e1RM progress for
+  2–3 wk: cut weekly working sets by 20–30 % for one mini-block (1 wk), then add load back.
+- Counterintuitive but standard: more volume on a stalled lift makes it worse. Volume already
+  exceeded what the athlete recovers from at this load.
+
+### Recovery-Debt Heuristic (mandatory deload)
+If 7-day average readiness < 50 *AND* HRV deviation < −15 % for 3 consecutive days, mandate
+a deload week regardless of what phase the program is in. No negotiation. Skipping this
+costs more than the 7 days you'd save.
+
+### Sleep / Stress Integration
+- Sleep < 6 h → cut today's volume 30 %, drop RPE target 0.5.
+- Sleep < 5 h two nights running → recovery session only (RPE 6 max, half the volume).
+- High life-stress periods (work, travel, family): training is one stress bucket of many.
+  Reduce volume 20–30 % and maintain intensity. Adding volume to "cope" is the wrong direction.
+
+### What Doesn't Work
+- "Pushing through" extended fatigue accumulation. The athlete will come back stronger from
+  a 5-day deload than from another week of grinding through.
+- Assuming a single bad readiness day is significant. Trends matter. One score does not.
+- Equating soreness with productive training. DOMS is mostly novelty / eccentric load, not
+  a "good workout" indicator.
+`;
+
+// ── Peaking Templates (concrete, callable) ────────────────────────────────────
+
+export const PEAKING_TEMPLATE_KNOWLEDGE = `
+## Peaking Templates — Concrete Day-by-Day
+
+The existing meet-prep section is high-level. These are callable templates. Pick by athlete
+class; the principles apply across all of them.
+
+### 4-Week Peak (Elite — competitive total at platform)
+- Wk -4 (overreach): comp lifts at 85–88 % for triples, RPE 8. ~50 % more working volume than
+  baseline week. All accessories present.
+- Wk -3: comp lifts at 88–92 % for doubles, RPE 8. Volume cut 35 %. Drop secondary accessories
+  (keep face pulls, rows, hip thrust; drop tricep iso, leg press, lat pulldown).
+- Wk -2: comp lifts at 91–95 % for singles, RPE 8.5. Volume cut another 25 %. Comp-stance/grip
+  only. Command practice every comp single. One technical session per lift, that's it.
+- Wk -1 (meet week): Mon = openers as singles @ RPE 7. Tue = optional light bench openers @
+  RPE 6. Wed–Fri = rest (light walk, mobility OK). Sat = meet day.
+
+### 3-Week Peak (Intermediate)
+- Wk -3 (overreach): 80–85 % for triples, RPE 7.5. Volume up ~20–30 %.
+- Wk -2: 88–92 % for singles + doubles, RPE 8. Volume cut 30 %. Accessory minimization begins.
+- Wk -1: openers Mon, light Tue, full rest Wed–Fri.
+
+### 2-Week Peak (Novice / first meet)
+- Wk -2: comp-stance singles at 88–92 %, RPE 8. Volume cut 25 %.
+- Wk -1: openers Mon, full rest Tue–Fri (or 1 light technical session).
+
+### Attempt Selection (precise)
+- **Opener**: 91–93 % of best recent comp single. Not training max. Should hit on the worst
+  day with full meet adrenaline. Math: if last comp single was 200 kg × 1 @ RPE 8, opener is
+  186–188 kg.
+- **2nd**: ≈ current 1RM (RPE 9 at home). If opener flew, jump 5–7 %; if grindy, jump 2.5–4 %.
+- **3rd**: +2.5–7.5 kg above 2nd, conditional on how the 2nd went. Math: 2nd flew at RPE 8
+  → +5 kg PR call; 2nd grindy at RPE 9 → +1–2.5 kg or repeat.
+
+### Weigh-In Protocols by Format
+**24-hour weigh-in, conservative cut (1.5–3 %)**
+- 14d out: high water (8–10 L), high sodium (5–7 g/d). Body adapts: aldosterone drops.
+- 4d out: drop sodium to 2 g/d. Water stays at 6–8 L.
+- 1d out: water to 0.5–1 L, finish eating 4–6 h before weigh-in.
+- Post weigh-in: 1–1.5 L electrolyte drink (Pedialyte + sodium) over 2 h, then slow
+  carb-load with rice / potatoes / salt. Aim 80–90 % of lost weight back in 16 h.
+
+**2-hour weigh-in**
+- Maximum 1–1.5 % water cut. Anything more, you can't refill in time.
+- Skip sodium manipulation. Sip electrolytes, eat familiar foods, don't experiment.
+
+### Mental Rehearsal Cadence
+- Wk -2 onward: visualisation 3×/day, ≤ 2 min each. Setup → breath → cue → drive.
+  Always successful in the visualisation. Failed reps in the head become failed reps on the platform.
+- Meet day: warm-up room rehearsal of every comp single — even at low warmup loads. Same
+  setup ritual, same breath, same cue.
+`;
+
+// ── Alternative Methodologies (lineage-aware sidebar) ────────────────────────
+
+export const ALT_METHODOLOGY_KNOWLEDGE = `
+## Alternative Methodologies — Lineage Context
+
+The Lockedin coach defaults to RPE-driven block periodization. Athletes coming from other
+backgrounds may reference these systems. Speak fluently to them, then explain why the
+default fits their phenotype + goal — or recommend the alternative when it genuinely fits.
+
+### Conjugate / Westside Barbell
+- **Max Effort + Dynamic Effort + Repeated Effort.** ME work is at or above 90 % 1RM, rotated
+  every 1–3 weeks across a stable of variations to manage fatigue and skill. DE work is speed
+  retention at submaximal load (50–60 % + bands).
+- **Modern raw adaptations**: pure Westside has high carryover when geared (bands + chains),
+  but raw lifters tend to need more comp-specific work than conjugate's ME-rotation provides.
+  Treat ME as a *variation* slot, not the primary lift, in raw programs.
+- **When to recommend**: athlete is bored, plateaued, or temperamentally suited to "every
+  session is heavy." Not a great fit for adherence-first or HYPERTROPHY-bottlenecked athletes.
+
+### 5/3/1 (Wendler)
+- **Percentage-based, low decision burden.** 4-week waves: 65/75/85 +reps, 70/80/90 +reps,
+  75/85/95 +1, deload. Add 2.5–5 kg per cycle.
+- **Strengths**: dead simple, sustainable, great adherence, perfect for athletes managing
+  competing priorities (life, sport, age).
+- **Ceiling**: intermediates plateau eventually because volume is fixed and AMRAPs are the
+  only autoregulation. Move to RPE block periodization when 5/3/1 stalls.
+
+### DUP (Daily Undulating Periodization)
+- **Same week, different rep ranges.** Mon = heavy 3s, Wed = moderate 5s, Fri = light 8s.
+- **Evidence base**: solid for strength + hypertrophy. Slightly better than linear progression
+  for trained athletes per most meta-analyses.
+- **When to use**: athletes who get bored on linear blocks, athletes with limited weekly
+  schedules who need each session to do multiple things, athletes pursuing strength and
+  hypertrophy simultaneously.
+
+### Bulgarian Method
+- **Daily max work in a small handful of lifts.** Almost never appropriate for raw powerlifting;
+  fatigue management is incompatible with full-time work and adherence.
+- Mention only if athlete asks. Redirect to RPE-block with high frequency as the safer cousin.
+
+### Sheiko (revisited)
+- **All comp lifts, every session, submaximal intensity.** Volume through frequency, not
+  per-session excess. Most sessions cap at 80 % 1RM.
+- **When to recommend**: high-frequency tolerant athletes, athletes peaking for a meet who
+  thrive on technique repetition under fatigue, athletes who hate variation.
+
+### Choosing Between Them (decision tree)
+- **Adherence concerns / time-constrained**: 5/3/1.
+- **HIGH responder + high frequency tolerance**: Sheiko or RPE high-frequency block.
+- **NEURAL bottleneck + ME-rotation appetite**: Conjugate as a variation framework.
+- **Default for everyone else**: RPE-driven block periodization (the Lockedin default).
+`;
+
 // ── Assembler ─────────────────────────────────────────────────────────────────
 
 /**
@@ -1344,11 +1774,14 @@ export function getFullKnowledge(): string {
     COACHING_FRAMEWORK_KNOWLEDGE,
     COACH_PRINCIPLES_KNOWLEDGE,
     RPE_KNOWLEDGE,
-    VBT_KNOWLEDGE,
+    RPE_DEEP_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
+    STRUCTURE_KNOWLEDGE,
+    FATIGUE_MANAGEMENT_KNOWLEDGE,
     BREATHING_BRACING_KNOWLEDGE,
     ADVANCED_TECHNIQUE_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
+    DIAGNOSTIC_PLAYBOOK_KNOWLEDGE,
     SESSION_DESIGN_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
     STREET_LIFT_KNOWLEDGE,
@@ -1356,8 +1789,10 @@ export function getFullKnowledge(): string {
     NUTRITION_KNOWLEDGE,
     RECOVERY_KNOWLEDGE,
     MEET_PREP_KNOWLEDGE,
+    PEAKING_TEMPLATE_KNOWLEDGE,
     INJURY_KNOWLEDGE,
     PROGRAMMING_KNOWLEDGE,
+    ALT_METHODOLOGY_KNOWLEDGE,
   ].join('\n');
 }
 
@@ -1366,11 +1801,42 @@ function hasAny(t: string, keywords: readonly string[]): boolean {
   return keywords.some((k) => t.includes(k));
 }
 
-const KW_RPE           = ['rpe', 'rir', 'load', 'intensity'] as const;
-const KW_PERIODIZATION = ['periodiz', 'block', 'program', 'volume', 'mrv', 'mev', 'mav', 'dup'] as const;
+/** Counts how many keywords match (used as the section's score). */
+function countMatches(t: string, keywords: readonly string[]): number {
+  let n = 0;
+  for (const k of keywords) if (t.includes(k)) n += 1;
+  return n;
+}
+
+const KW_RPE           = [
+  'rpe', 'rir', 'load', 'intensity', 'half rpe', 'rpe drift', 'rpe creep',
+  'sandbag', 'overshoot', 'undershoot', 'calibrat', 'e1rm',
+] as const;
+const KW_PERIODIZATION = [
+  'periodiz', 'block', 'program', 'volume', 'mrv', 'mev', 'mav', 'dup',
+] as const;
+const KW_STRUCTURE     = [
+  'session structur', 'session design', 'set scheme', 'rep scheme',
+  'sets and reps', 'how many sets', 'how many reps', 'cluster',
+  'top set', 'top-set', 'back off', 'back-off', 'backoff', 'amrap',
+  'straight set', 'ascending', 'descending',
+  'microcycle', 'macrocycle', 'mesocycle',
+  'week structure', 'training week', 'split', 'template',
+  'recent exposure', 'days since', 'how often', 'frequency',
+  'phase transition', 'phase boundary',
+] as const;
+const KW_FATIGUE_MGMT  = [
+  'fatigue', 'overreach', 'taper', 'stress index', 'deload',
+  'recovery debt', 'tonnage cap', 'volume-first', 'volume first',
+] as const;
 const KW_EXERCISE      = [
   'exercis', 'squat', 'bench', 'deadlift', 'technique', 'cue', 'weak',
   'accessory', 'rdl', 'row', 'press', 'hinge',
+] as const;
+const KW_DIAGNOSTIC    = [
+  'stuck', 'sticking', 'fail', 'miss', 'weak point', 'weakness',
+  'diagnos', 'why is', 'why am i', 'plateau', 'plateaued', 'stalled',
+  'rpe creep', 'rpe_creep', 'load_plateau', 'lift_imbalance',
 ] as const;
 const KW_SESSION_DESIGN = [
   'session design', 'session layout', 'too many', 'redundant', 'duplicate',
@@ -1398,25 +1864,29 @@ const KW_NUTRITION     = [
   'maintenance', 'caffein', 'creatine', 'intra-workout', 'intra workout',
   'fast', 'fasted', 'eat', 'fueling', 'glycogen',
 ] as const;
-const KW_RECOVERY      = ['recover', 'sleep', 'stress', 'hrv', 'sore', 'fatigue', 'rest', 'deload'] as const;
-const KW_MEET          = ['meet', 'compet', 'peak', 'attempt', 'opener', 'weigh-in', 'weigh in', 'command'] as const;
+const KW_RECOVERY      = ['recover', 'sleep', 'stress', 'hrv', 'sore', 'rest'] as const;
+const KW_MEET          = [
+  'meet', 'compet', 'peak', 'attempt', 'opener', 'weigh-in', 'weigh in',
+  'command', 'taper', 'final week', 'second attempt', 'third attempt',
+] as const;
 const KW_INJURY        = [
   'injur', 'pain', 'hurt', 'shoulder', 'knee', 'back pain', 'lower back',
   'hip', 'elbow', 'wrist', 'tendin', 'strain',
 ] as const;
 const KW_PROGRAMMING   = [
-  'adjust', 'max', 'swap', 'modif', 'chang', 'frequency', 'responder',
-  'overreach', 'phenotype', 'abbreviat',
+  'adjust', 'max', 'swap', 'modif', 'chang', 'responder',
+  'phenotype', 'abbreviat',
 ] as const;
 const KW_COACH         = [
   'tuchscherer', 'tuscher', 'rts ', 'reactive training',
   'joey flex', 'joeyflex',
-  'joe stanek', 'stanek',
+  'joe stanek', 'stanek', '1repmethods',
   'marcellus', 'millz', 'wallace',
-  'noriega', 'sean noriega',
+  'noriega', 'sean noriega', 'hamstringpapi',
   'sheiko', 'boris sheiko',
   'bryce lewis', 'tsa ', 'strength athlete',
   'greg nuckols', 'stronger by science', 'nuckols',
+  'powerliftingnow', 'powerlifting now',
   'ben pollack', 'pollack',
   'chris duffin', 'duffin', 'kabuki',
   'autoregul', 'specificity', 'adherence',
@@ -1433,64 +1903,130 @@ const KW_ADVANCED_TECH = [
   'sumo', 'conventional', 'stance', 'pause', 'paused rep',
   'hook grip', 'mixed grip', 'spread the floor',
 ] as const;
-const KW_VBT           = [
-  'bar speed', 'bar-speed', 'velocity', 'm/s', 'vbt', 'tempo',
-  'grind', 'grinder', 'speed drop', 'fast bar', 'slow bar',
-] as const;
 const KW_HYBRID        = [
-  'hybrid', 'mix', 'combine', 'split', 'template', 'day-by-day',
+  'hybrid', 'mix', 'combine', 'split',
   'street-lift', 'street lift', 'weighted pull', 'weighted dip',
   'calisthenic', 'fatigue stacking', 'stacking',
   'upper body', 'lower body', 'push pull', 'push-pull',
+] as const;
+const KW_ALT_METHOD    = [
+  'conjugate', 'westside', 'dynamic effort', 'max effort',
+  '5/3/1', 'wendler', 'bulgarian',
+  'undulat', 'linear progression',
 ] as const;
 // Framework keywords — meta-layer about how to coach (mindset, decision-making,
 // athlete patterns, voice). Distinct from KW_COACH which is named philosophies.
 const KW_FRAMEWORK     = [
   'mindset', 'how do you', 'how should i', 'how should we', 'why do you',
-  'overshoot', 'undershoot', 'inconsistent responder', 'plateau', 'plateaued', 'stalled',
+  'inconsistent responder',
   'first principles', 'reason', 'reasoning',
   'voice', 'tone',
   'long-term', 'long term', 'sustain', 'invariant', 'non-negotiable', 'non negotiable',
   'autonomy', 'pushback', 'push back', 'disagree',
   'lever', 'progression mechanism', 'progressive overload',
-  'time-to-peak', 'time to peak', 'phase transition',
+  'time-to-peak', 'time to peak',
 ] as const;
 
+// ── Section catalog (single source of truth for retrieval) ───────────────────
+//
+// Each entry pairs the section text with its keyword bag and a soft per-section
+// budget. Topic retrieval scores each section by keyword-match count, sorts by
+// score, then assembles within a 6 KB total budget. Per-section soft caps stop
+// any one section from starving the others when it scores highest.
+
+interface KbSection {
+  readonly content: string;
+  readonly keywords: readonly string[];
+  readonly softCap: number;
+  /** Bonus added to score; used to pin universally useful sections. */
+  readonly priorityBonus?: number;
+}
+
+const SECTION_CATALOG: readonly KbSection[] = [
+  // Framework is pinned (priority bonus); always leads the prompt regardless
+  // of keyword match.
+  { content: COACHING_FRAMEWORK_KNOWLEDGE,    keywords: KW_FRAMEWORK,      softCap: 1500, priorityBonus: 1000 },
+  { content: COACH_PRINCIPLES_KNOWLEDGE,      keywords: KW_COACH,          softCap: 1800 },
+  { content: RPE_KNOWLEDGE,                   keywords: KW_RPE,            softCap: 800  },
+  { content: RPE_DEEP_KNOWLEDGE,              keywords: KW_RPE,            softCap: 1200 },
+  { content: PERIODIZATION_KNOWLEDGE,         keywords: KW_PERIODIZATION,  softCap: 800  },
+  { content: STRUCTURE_KNOWLEDGE,             keywords: KW_STRUCTURE,      softCap: 2000 },
+  { content: FATIGUE_MANAGEMENT_KNOWLEDGE,    keywords: KW_FATIGUE_MGMT,   softCap: 1400 },
+  { content: BREATHING_BRACING_KNOWLEDGE,     keywords: KW_BREATHING,      softCap: 1200 },
+  { content: ADVANCED_TECHNIQUE_KNOWLEDGE,    keywords: KW_ADVANCED_TECH,  softCap: 1800 },
+  { content: EXERCISE_KNOWLEDGE,              keywords: KW_EXERCISE,       softCap: 1500 },
+  { content: DIAGNOSTIC_PLAYBOOK_KNOWLEDGE,   keywords: KW_DIAGNOSTIC,     softCap: 1500 },
+  { content: SESSION_DESIGN_KNOWLEDGE,        keywords: KW_SESSION_DESIGN, softCap: 1400 },
+  { content: CALISTHENICS_KNOWLEDGE,          keywords: KW_CALISTHENICS,   softCap: 1500 },
+  { content: STREET_LIFT_KNOWLEDGE,           keywords: KW_STREET_LIFT,    softCap: 1200 },
+  { content: HYBRID_PROGRAMMING_KNOWLEDGE,    keywords: KW_HYBRID,         softCap: 1500 },
+  { content: NUTRITION_KNOWLEDGE,             keywords: KW_NUTRITION,      softCap: 1800 },
+  { content: RECOVERY_KNOWLEDGE,              keywords: KW_RECOVERY,       softCap: 800  },
+  { content: MEET_PREP_KNOWLEDGE,             keywords: KW_MEET,           softCap: 1600 },
+  { content: PEAKING_TEMPLATE_KNOWLEDGE,      keywords: KW_MEET,           softCap: 1500 },
+  { content: INJURY_KNOWLEDGE,                keywords: KW_INJURY,         softCap: 800  },
+  { content: PROGRAMMING_KNOWLEDGE,           keywords: KW_PROGRAMMING,    softCap: 1000 },
+  { content: ALT_METHODOLOGY_KNOWLEDGE,       keywords: KW_ALT_METHOD,     softCap: 1000 },
+];
+
+const TOTAL_KNOWLEDGE_BUDGET = 6000;
+
 /**
- * Returns knowledge relevant to a specific topic. Keywords are matched
- * case-insensitively as substrings.
+ * Returns knowledge relevant to a specific topic.
+ *
+ * Algorithm:
+ * 1. Score each catalog section by keyword-match count + priority bonus.
+ * 2. Sort by score (descending), keeping framework pinned first.
+ * 3. Assemble within TOTAL_KNOWLEDGE_BUDGET. If a section's softCap would
+ *    exceed remaining budget, slice it. Skip sections with score 0 once the
+ *    framework + a fallback have been included.
+ *
+ * Keywords are matched case-insensitively as substrings (kept simple — no
+ * embeddings — to stay debuggable and zero-dependency).
  */
 export function getTopicKnowledge(topic: string): string {
   const t = topic.toLowerCase();
-  // Framework always leads — operating context for every response.
-  const sections: string[] = [COACHING_FRAMEWORK_KNOWLEDGE];
 
-  if (hasAny(t, KW_FRAMEWORK))      sections.push(COACHING_FRAMEWORK_KNOWLEDGE);
-  if (hasAny(t, KW_RPE))            sections.push(RPE_KNOWLEDGE);
-  if (hasAny(t, KW_VBT))            sections.push(VBT_KNOWLEDGE);
-  if (hasAny(t, KW_PERIODIZATION))  sections.push(PERIODIZATION_KNOWLEDGE);
-  if (hasAny(t, KW_BREATHING))      sections.push(BREATHING_BRACING_KNOWLEDGE);
-  if (hasAny(t, KW_ADVANCED_TECH))  sections.push(ADVANCED_TECHNIQUE_KNOWLEDGE);
-  if (hasAny(t, KW_EXERCISE))       sections.push(EXERCISE_KNOWLEDGE);
-  if (hasAny(t, KW_SESSION_DESIGN)) sections.push(SESSION_DESIGN_KNOWLEDGE);
-  if (hasAny(t, KW_CALISTHENICS))   sections.push(CALISTHENICS_KNOWLEDGE);
-  if (hasAny(t, KW_STREET_LIFT))    sections.push(STREET_LIFT_KNOWLEDGE);
-  if (hasAny(t, KW_HYBRID))         sections.push(HYBRID_PROGRAMMING_KNOWLEDGE);
-  if (hasAny(t, KW_NUTRITION))      sections.push(NUTRITION_KNOWLEDGE);
-  if (hasAny(t, KW_RECOVERY))       sections.push(RECOVERY_KNOWLEDGE);
-  if (hasAny(t, KW_MEET))           sections.push(MEET_PREP_KNOWLEDGE);
-  if (hasAny(t, KW_INJURY))         sections.push(INJURY_KNOWLEDGE);
-  if (hasAny(t, KW_PROGRAMMING))    sections.push(PROGRAMMING_KNOWLEDGE);
-  if (hasAny(t, KW_COACH))          sections.push(COACH_PRINCIPLES_KNOWLEDGE);
+  // Score every section.
+  const scored = SECTION_CATALOG.map((sec) => ({
+    sec,
+    score: countMatches(t, sec.keywords) + (sec.priorityBonus ?? 0),
+  }));
 
-  // De-duplicate while preserving order (framework + KW_FRAMEWORK collision).
-  const seen = new Set<string>();
-  const deduped = sections.filter((s) => (seen.has(s) ? false : (seen.add(s), true)));
+  // Sort descending by score; stable fallback preserves catalog order.
+  scored.sort((a, b) => b.score - a.score);
 
-  // If only the framework matched, add the universally useful domain sections.
-  if (deduped.length === 1) {
-    deduped.push(COACH_PRINCIPLES_KNOWLEDGE, BREATHING_BRACING_KNOWLEDGE, EXERCISE_KNOWLEDGE, SESSION_DESIGN_KNOWLEDGE, PROGRAMMING_KNOWLEDGE);
+  // If nothing matched beyond the pinned framework, fall back to a useful
+  // domain set so the coach isn't stranded with only the framework.
+  const keywordHits = scored.filter((s) => s.score > 0 && !s.sec.priorityBonus).length;
+  if (keywordHits === 0) {
+    // Promote universally useful sections to scored > 0 so they pass the gate.
+    const fallback = new Set<string>([
+      COACH_PRINCIPLES_KNOWLEDGE,
+      BREATHING_BRACING_KNOWLEDGE,
+      EXERCISE_KNOWLEDGE,
+      SESSION_DESIGN_KNOWLEDGE,
+      STRUCTURE_KNOWLEDGE,
+      PROGRAMMING_KNOWLEDGE,
+    ]);
+    for (const s of scored) if (fallback.has(s.sec.content)) s.score = Math.max(s.score, 1);
+    scored.sort((a, b) => b.score - a.score);
   }
 
-  return deduped.join('\n');
+  // Assemble within the global budget, soft-capping each section.
+  const out: string[] = [];
+  let remaining = TOTAL_KNOWLEDGE_BUDGET;
+  for (const { sec, score } of scored) {
+    if (score === 0) break;
+    if (remaining <= 0) break;
+    const take = Math.min(sec.softCap, remaining);
+    if (sec.content.length <= take) {
+      out.push(sec.content);
+      remaining -= sec.content.length;
+    } else {
+      out.push(sec.content.slice(0, take - 1).trimEnd() + '…');
+      remaining -= take;
+    }
+  }
+  return out.join('\n');
 }
