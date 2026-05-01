@@ -5,6 +5,23 @@
 
 import type { BlockType, Bottleneck, Responder, Sex } from '@/lib/db/types';
 
+// ── RPE Quantisation ───────────────────────────────────────────────────────────
+
+/**
+ * Snap any RPE value to the nearest 0.5 increment in the valid [5, 10] range.
+ *
+ * The RPE scale only has half-points (6, 6.5, 7, 7.5, …). Anywhere we add or
+ * subtract fractional offsets (overshoot history, readiness, LLM output)
+ * MUST end with this call — otherwise we leak 7.3 / 8.1 etc into the UI.
+ *
+ * Centralised here so any place that touches an rpeTarget can import a single
+ * function instead of re-implementing rounding.
+ */
+export function quantizeRpe(rpe: number): number {
+  const rounded = Math.round(rpe * 2) / 2;
+  return Math.max(5, Math.min(10, rounded));
+}
+
 // ── 1RM Estimation ─────────────────────────────────────────────────────────────
 
 /**

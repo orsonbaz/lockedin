@@ -13,6 +13,7 @@
 import { db, today } from '@/lib/db/database';
 import { getFullKnowledge } from './knowledge-base';
 import { retrieveRelevantMemories } from './memory';
+import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
 import type { AuthorInput } from './session-author';
 
 export async function buildAuthorContext(
@@ -158,6 +159,15 @@ ${memLines.join('\n')}`);
     rdLines.push(`14-day avg: ${avg}/100 | trend: ${trend} | scores (newest first): [${scores.join(', ')}]`);
   }
   sections.push(`# READINESS\n${rdLines.join('\n')}`);
+
+  // ── Per-lift recency (FRESH / RECOVERED / OVERDUE / STACKED) ─────────────
+  // Drives the recent-exposure protocol from STRUCTURE_KNOWLEDGE.
+  const exposures = await loadRecentLiftExposures(dateStr);
+  if (exposures.length > 0) {
+    sections.push(
+      `# PER-LIFT RECENCY (use with the recent-exposure protocol)\n${formatExposureLines(exposures).map((l) => `  ${l}`).join('\n')}`,
+    );
+  }
 
   // ── 5. Recent training (last 21 completed sessions) ──────────────────────
   const all = await db.sessions.filter((s) => s.status === 'COMPLETED').toArray();

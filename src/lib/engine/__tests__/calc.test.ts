@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   estimateMax,
   prescribeLoad,
+  quantizeRpe,
   roundLoad,
   readinessToVolumeMultiplier,
   readinessToRpeOffset,
@@ -135,6 +136,40 @@ describe('prescribeLoad — RTS table accuracy', () => {
     expect(at85).toBeGreaterThan(at8);
     expect(at85).toBeLessThan(at9);
     expect(at85).toBeCloseTo((at8 + at9) / 2, 1); // linear midpoint
+  });
+});
+
+// ── quantizeRpe ──────────────────────────────────────────────────────────────
+
+describe('quantizeRpe', () => {
+  it('snaps half-step inputs through unchanged', () => {
+    expect(quantizeRpe(7)).toBe(7);
+    expect(quantizeRpe(7.5)).toBe(7.5);
+    expect(quantizeRpe(8.5)).toBe(8.5);
+    expect(quantizeRpe(10)).toBe(10);
+    expect(quantizeRpe(5)).toBe(5);
+  });
+
+  it('rounds non-half-step values to the nearest 0.5', () => {
+    expect(quantizeRpe(7.3)).toBe(7.5);
+    expect(quantizeRpe(7.2)).toBe(7);
+    expect(quantizeRpe(8.1)).toBe(8);
+    expect(quantizeRpe(8.749)).toBe(8.5);
+    expect(quantizeRpe(8.751)).toBe(9);
+  });
+
+  it('clamps below 5 and above 10', () => {
+    expect(quantizeRpe(4.2)).toBe(5);
+    expect(quantizeRpe(0)).toBe(5);
+    expect(quantizeRpe(11)).toBe(10);
+    expect(quantizeRpe(15)).toBe(10);
+  });
+
+  it('handles float-arithmetic drift (overshoot offsets, additions)', () => {
+    // 7 + (-0.3) ≈ 6.7 → 6.5
+    expect(quantizeRpe(7 + -0.3)).toBe(6.5);
+    // 8 + 0.5000001 ≈ 8.5000001 → 8.5
+    expect(quantizeRpe(8 + 0.5000001)).toBe(8.5);
   });
 });
 

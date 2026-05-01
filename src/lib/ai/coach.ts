@@ -16,7 +16,7 @@ import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 import { unpackReviewIssues } from '@/lib/engine/session-review';
-import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
+import { loadRecentLiftExposures, recencyTagFor } from '@/lib/engine/lift-exposures';
 import {
   summariseSessionRpeState,
   formatSessionRpeStateForPrompt,
@@ -332,19 +332,10 @@ export async function buildSystemPrompt(
           ? `${(totalVolKg / 1000).toFixed(1)}t`
           : `${Math.round(totalVolKg)}kg`;
         const days = Number.isFinite(e.daysSince) ? `${e.daysSince}d` : 'never';
-
-        // Recency tag — drives session-shape decisions in STRUCTURE_KNOWLEDGE.
-        // STACKED  = hit ≥3× this week (cap intensity, no top single).
-        // OVERDUE  = ≥5d since primary AND ≤1 weekly count.
-        // FRESH    = primary within last 2d.
-        // RECOVERED = 2-4d ago, normal cadence.
-        let tag = 'RECOVERED';
-        if (!Number.isFinite(e.daysSince)) tag = 'OVERDUE';
-        else if (e.weekCount >= 3) tag = 'STACKED';
-        else if (e.daysSince >= 5 && e.weekCount <= 1) tag = 'OVERDUE';
-        else if (e.daysSince <= 2) tag = 'FRESH';
-
-        return `${e.lift}: ${days} since primary, ${e.weekCount}× this week, ${volStr} 7d → ${tag}`;
+        // Tag taxonomy lives next to the exposure data in lift-exposures.ts so
+        // the chat coach, the session author, and the session advisor all
+        // classify the same exposure the same way.
+        return `${e.lift}: ${days} since primary, ${e.weekCount}× this week, ${volStr} 7d → ${recencyTagFor(e)}`;
       }),
     );
     liftExposure = `Per-lift recency (use to shape today's session per the recent-exposure protocol):\n${lines.map((l) => `  - ${l}`).join('\n')}`;

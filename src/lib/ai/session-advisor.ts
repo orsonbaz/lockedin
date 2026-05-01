@@ -23,7 +23,8 @@ import { db, today }           from '@/lib/db/database';
 import { getFullKnowledge }     from './knowledge-base';
 import { retrieveRelevantMemories } from './memory';
 import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
-import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
+import { prescribeLoad, roundLoad, quantizeRpe } from '@/lib/engine/calc';
+import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
 import type { GeneratedSession, GeneratedExercise } from '@/lib/engine/session';
 import type { AthleteProfile, TrainingBlock } from '@/lib/db/types';
 
@@ -180,7 +181,8 @@ export function applyAdvisorModifications(
       case 'ADJUST_RPE': {
         const idx = exercises.findIndex((e) => e.name === mod.target);
         if (idx !== -1 && mod.value !== undefined) {
-          exercises[idx].rpeTarget = mod.value;
+          // LLMs reliably emit fractional RPE (7.3, 8.1) — snap to the half-step grid.
+          exercises[idx].rpeTarget = quantizeRpe(mod.value);
           recomputeLoad(exercises[idx]);
         }
         break;
@@ -212,7 +214,7 @@ export function applyAdvisorModifications(
             setStructure:    'STRAIGHT',
             sets:            mod.sets ?? 3,
             reps:            mod.reps ?? 10,
-            rpeTarget:       mod.rpe  ?? 7,
+            rpeTarget:       quantizeRpe(mod.rpe ?? 7),
             estimatedLoadKg: 0,
             order:           exercises.length + 1,
             notes:           mod.reason,
@@ -468,6 +470,17 @@ ${memLines.join('\n')}`);
   }
   sections.push(`# READINESS\n${rdLines.join('\n')}`);
 
+  // ── 3b. Per-lift recency (FRESH / RECOVERED / OVERDUE / STACKED) ─────────
+  // Drives the recent-exposure protocol from STRUCTURE_KNOWLEDGE: pick
+  // session shape as a function of days since last primary, weekly count,
+  // and the modality of the last session for that lift.
+  const exposures = await loadRecentLiftExposures(dateStr);
+  if (exposures.length > 0) {
+    sections.push(
+      `# PER-LIFT RECENCY (use with the recent-exposure protocol)\n${formatExposureLines(exposures).map((l) => `  ${l}`).join('\n')}`,
+    );
+  }
+
   // ── 4. Recent training (last 21 sessions) ────────────────────────────────
   const recentSessions = await db.sessions
     .filter((s) => s.status === 'COMPLETED')
@@ -479,19 +492,35 @@ ${memLines.join('\n')}`);
   if (last21.length > 0) {
     const summaries = await Promise.all(
       last21.map(async (s) => {
-        const sets = await db.sets
-          .where('sessionId').equals(s.id)
-          .filter((sl) => sl.rpeLogged !== undefined)
-          .toArray();
+        // Pull logged sets + actual exercise lineup so the advisor sees what
+        // accessories the athlete has been running. Without this, the advisor
+        // can't honour accessory continuity (the author's default behaviour).
+        const [sets, accExercises] = await Promise.all([
+          db.sets
+            .where('sessionId').equals(s.id)
+            .filter((sl) => sl.rpeLogged !== undefined)
+            .toArray(),
+          db.exercises
+            .where('sessionId').equals(s.id)
+            .filter((e) => e.exerciseType === 'ACCESSORY' || e.exerciseType === 'VARIATION')
+            .sortBy('order'),
+        ]);
         const avgRpe  = sets.length > 0
           ? (sets.reduce((a, sl) => a + (sl.rpeLogged ?? 0), 0) / sets.length).toFixed(1)
           : '—';
         const totalVol = sets.reduce((sum, sl) => sum + sl.loadKg * sl.reps, 0);
         const volStr   = totalVol > 0 ? `${Math.round(totalVol / 1000 * 10) / 10}t` : '—';
-        return `  ${s.scheduledDate} | ${s.primaryLift.padEnd(9)} | ${s.sessionType.padEnd(14)} | RPE avg ${avgRpe} | vol ${volStr} | ${sets.length} sets`;
+        const liftLabel = (s.secondaryLifts && s.secondaryLifts.length > 0)
+          ? `${s.primaryLift} + ${s.secondaryLifts.join(' + ')}`
+          : s.primaryLift;
+        const accNames = accExercises.map((e) => e.name).join(', ');
+        const accTail  = accNames ? ` | acc: ${accNames}` : '';
+        return `  ${s.scheduledDate} | ${liftLabel.padEnd(16)} | ${s.sessionType.padEnd(14)} | RPE avg ${avgRpe} | vol ${volStr} | ${sets.length} sets${accTail}`;
       }),
     );
-    sections.push(`# RECENT TRAINING (last ${last21.length} sessions)\n${summaries.join('\n')}`);
+    sections.push(`# RECENT TRAINING (last ${last21.length} sessions)
+The 'acc:' list is the accessory + variation lineup actually run in each session. Default to repeating accessories the athlete has been running on this lift's day; rotate ONLY when memory directs, when the athlete is stalling on the accessory, or when the block phase changes.
+${summaries.join('\n')}`);
   }
 
   // ── 5. Current week's sessions so far ────────────────────────────────────
@@ -600,6 +629,13 @@ Then check the Non-Negotiables — horizontal push every session (or noted absen
 The athlete's GOALS section and ATHLETE MEMORIES section are standing context the engine cannot see. Secondary disciplines (street lift, calisthenics, etc.), skill goals, free-text goal targets, and persisted memories from prior coach conversations are all part of the program — when there is room and readiness allows, include work that serves them. A "powerlifting primary, street-lift secondary" athlete should see street-lift work surface in their accessory slots, not just powerlifting accessories. Memories override engine defaults: if a memory says the athlete is returning from layoff, ramp loads back; if it says they want streetlifts integrated, integrate them.
 
 When a memory or readiness signal calls for lighter weights (layoff return, reintroductory week, joint flare-up), use ADJUST_LOAD directly with a kg value that reflects the cut — do not rely on RPE/rep changes alone to lower load. Compute the target weight from the athlete's max (e.g. "drop bench to 80% of 170 kg" → ADJUST_LOAD value 135). RPE and rep adjustments still apply load math, but ADJUST_LOAD is the unambiguous lever when you know the target weight.
+
+LEAN HEAVILY on these knowledge-base modules — they tell you which modifications are warranted:
+- STRUCTURE_KNOWLEDGE — read PER-LIFT RECENCY first. STACKED → cap intensity / drop the top single (use ADJUST_RPE down + ADJUST_LOAD); OVERDUE → make sure the primary lift is genuinely the primary; FRESH on the engine's primary → flag a swap with the OVERDUE lift. Also use this module to challenge redundant exercise patterns (e.g. four hinge movements, three close-grip-pattern accessories).
+- DIAGNOSTIC_PLAYBOOK_KNOWLEDGE — when the recent log shows RPE creep, missed reps, or a load plateau, this module gives you the targeted fix. Apply via ADD_EXERCISE / REPLACE_EXERCISE with concrete dosed Rx (sets × reps @ RPE, frequency).
+- FATIGUE_MANAGEMENT_KNOWLEDGE — if Stress Index is drifting up or readiness has been < 50 for several days, REDUCE the draft (cut volume first, then intensity). If 7-day avg readiness < 50 AND HRV deviation < −15 % for 3 consecutive days, force a deload-equivalent session.
+- PEAKING_TEMPLATE_KNOWLEDGE — when a meet is < 4 weeks out, this overrides the standard block intensity. The taper structure (overreach → cut volume → cut both → light technical) takes precedence.
+- RPE_DEEP_KNOWLEDGE — drives ADJUST_RPE calls. Every rpeTarget MUST be on the half-step grid (5, 5.5, 6, … 10). Fractional values (7.3, 8.1) are not valid — they will be quantised on apply.
 
 Hard invariants (only these — everything else is judgment):
 - Never remove a COMPETITION exercise.

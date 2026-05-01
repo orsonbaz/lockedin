@@ -20,7 +20,7 @@
  */
 
 import { db, today, newId } from '@/lib/db/database';
-import { prescribeLoad, roundLoad } from '@/lib/engine/calc';
+import { prescribeLoad, roundLoad, quantizeRpe } from '@/lib/engine/calc';
 import { EXERCISE_BY_ID, EXERCISE_LIBRARY } from '@/lib/exercises/index';
 import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
 import { addMemory, removeMemory, isValidMemoryKind, parseExpiry, describeExpiry } from './memory';
@@ -572,7 +572,7 @@ async function executeModifySession(params: Record<string, string>): Promise<Act
     const updates: Partial<SessionExercise> = {};
 
     if (rpeOffset !== 0) {
-      updates.rpeTarget = Math.max(5, Math.min(10, ex.rpeTarget + rpeOffset));
+      updates.rpeTarget = quantizeRpe(ex.rpeTarget + rpeOffset);
     }
 
     if (volumeMult !== 1 && volumeMult > 0) {
@@ -765,18 +765,19 @@ async function executeSetRpeTarget(params: Record<string, string>): Promise<Acti
     return { success: false, message: `Could not find "${params.name}" in today's session.` };
   }
 
-  // Recalculate load for new RPE
-  const updates: Partial<SessionExercise> = { rpeTarget: rpe };
+  // Recalculate load for new RPE — snap to half-step grid before write.
+  const quantizedRpe = quantizeRpe(rpe);
+  const updates: Partial<SessionExercise> = { rpeTarget: quantizedRpe };
   const profile = await db.profile.get('me');
   if (profile && target.exerciseType === 'COMPETITION') {
     const max = getMaxForLift(profile, liftAnchorForExercise(target, session.primaryLift));
-    updates.estimatedLoadKg = roundLoad(prescribeLoad(max, rpe, target.reps));
+    updates.estimatedLoadKg = roundLoad(prescribeLoad(max, quantizedRpe, target.reps));
   }
 
   await db.exercises.update(target.id, updates);
   await db.sessions.update(session.id, { status: 'MODIFIED' });
 
-  return { success: true, message: `Set RPE target for ${target.name} to ${rpe}.` };
+  return { success: true, message: `Set RPE target for ${target.name} to ${quantizedRpe}.` };
 }
 
 /**

@@ -65,3 +65,31 @@ export async function loadRecentLiftExposures(onDate: string): Promise<LiftExpos
     return { lift, daysSince, weekCount };
   });
 }
+
+/** Recency tag used by the recent-exposure protocol in STRUCTURE_KNOWLEDGE. */
+export type RecencyTag = 'FRESH' | 'RECOVERED' | 'OVERDUE' | 'STACKED';
+
+export function recencyTagFor(e: LiftExposure): RecencyTag {
+  if (!Number.isFinite(e.daysSince))                    return 'OVERDUE';
+  if (e.weekCount >= 3)                                 return 'STACKED';
+  if (e.daysSince >= 5 && e.weekCount <= 1)             return 'OVERDUE';
+  if (e.daysSince <= 2)                                 return 'FRESH';
+  return 'RECOVERED';
+}
+
+/**
+ * One line per comp lift summarising recency, weekly frequency, and the
+ * STRUCTURE_KNOWLEDGE recency tag. Shared between the chat coach, the
+ * session author, and the session advisor so all three speak the same
+ * recent-exposure language.
+ *
+ *   SQUAT: 3d since primary, 2× this week → RECOVERED
+ *   BENCH: never primary, 0× this week    → OVERDUE
+ *   DEADLIFT: 1d since primary, 1× this week → FRESH
+ */
+export function formatExposureLines(exposures: LiftExposure[]): string[] {
+  return exposures.map((e) => {
+    const days = Number.isFinite(e.daysSince) ? `${e.daysSince}d since primary` : 'never primary';
+    return `${e.lift}: ${days}, ${e.weekCount}× this week → ${recencyTagFor(e)}`;
+  });
+}

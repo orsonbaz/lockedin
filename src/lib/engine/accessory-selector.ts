@@ -15,7 +15,7 @@ import type { Lift, BlockType, RewardSystem } from '@/lib/db/types';
 import type { AthleteProfile }                from '@/lib/db/types';
 import type { LibraryExercise, MovementPattern } from '@/lib/exercises/types';
 import { EXERCISE_LIBRARY, EXERCISE_BY_ID }   from '@/lib/exercises/index';
-import { prescribeLoad, roundLoad }            from './calc';
+import { prescribeLoad, roundLoad, quantizeRpe } from './calc';
 import type { GeneratedExercise }              from './session';
 
 // ── Input / output ────────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ export function selectAccessories(input: AccessorySelectorInput): GeneratedExerc
   }
 
   // ── 6. Convert to GeneratedExercise ───────────────────────────────────────
-  const accRpe  = Math.max(5, Math.min(10, 7.5 + rpeOffset));
+  const accRpe  = quantizeRpe(7.5 + rpeOffset);
   // HIGH_VOLUME bumps each accessory by +1 set (was previously +1 slot — slot
   // count is now left for the AI session advisor to shape via principle).
   const baseAccSets = Math.max(1, Math.floor(3 * volMult));

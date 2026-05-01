@@ -25,6 +25,7 @@ import { db, today } from '@/lib/db/database';
 import { getFullKnowledge } from './knowledge-base';
 import { retrieveRelevantMemories } from './memory';
 import type { GeneratedSession, GeneratedExercise } from '@/lib/engine/session';
+import { quantizeRpe } from '@/lib/engine/calc';
 import type { AthleteProfile, TrainingBlock, Lift, SessionType } from '@/lib/db/types';
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -78,7 +79,10 @@ const AuthoredExerciseSchema = z.object({
   setStructure:    SetStructureEnum.default('STRAIGHT'),
   sets:            z.number().int().min(1).max(15),
   reps:            z.number().int().min(1).max(50),
-  rpeTarget:       z.number().min(5).max(10),
+  // multipleOf(0.5) rejects 7.3 / 8.1 etc. The LLM occasionally emits these
+  // even when the prompt says half-steps; defensive validation here means a
+  // bad value triggers the rule-engine fallback rather than leaking into the UI.
+  rpeTarget:       z.number().min(5).max(10).multipleOf(0.5),
   estimatedLoadKg: z.number().min(0).max(600),
   notes:           z.string().max(400).optional(),
   tempo:           z.string().max(20).optional(),
@@ -207,14 +211,16 @@ async function callAuthor(
   }
   const v = validated.data;
 
-  // Re-number order to keep persistence happy.
+  // Re-number order to keep persistence happy. Quantise rpeTarget defensively
+  // even though Zod multipleOf(0.5) already rejected non-half values — float
+  // arithmetic upstream can leave 7.499999... which multipleOf may accept.
   const exercises: GeneratedExercise[] = v.exercises.map((e, i) => ({
     name:            e.name,
     exerciseType:    e.exerciseType,
     setStructure:    e.setStructure,
     sets:            e.sets,
     reps:            e.reps,
-    rpeTarget:       e.rpeTarget,
+    rpeTarget:       quantizeRpe(e.rpeTarget),
     estimatedLoadKg: e.estimatedLoadKg,
     order:           i + 1,
     ...(e.notes ? { notes: e.notes } : {}),
@@ -274,6 +280,13 @@ Respect the Non-Negotiables: a horizontal push every session (or note its delibe
 Respect the discipline mix: if the athlete trains HYBRID or has a secondary discipline, that secondary should appear in accessory slots — not just powerlifting accessories. A primary-powerlifting / secondary-streetlift athlete gets streetlift work (weighted pull-ups, dips, muscle-ups, ring work) layered into the session, not omitted in favour of more powerlifting accessories.
 
 Accessory continuity: progressive overload only happens when the athlete repeats the same accessory long enough to load it. Default to KEEPING the accessories the athlete has been running on this lift's day — same names, same rep ranges, with small load progressions when warranted. Rotate an accessory ONLY when (a) a memory directs you to, (b) the athlete is stalled or hitting it at RPE > target consistently, (c) the block phase changes and the old accessory no longer serves the new aim, or (d) the athlete has run this same accessory >6 weeks and is plateauing. Novelty for novelty's sake is anti-progress. When in doubt, repeat.
+
+LEAN HEAVILY on these knowledge-base modules — they encode the protocols you are responsible for executing:
+- STRUCTURE_KNOWLEDGE — your primary reference. Session-shape templates by lift × phase × recency, set/rep structure rules (straight / ascending / top-set+backoff / cluster), microcycle templates, the recent-exposure protocol. Read the PER-LIFT RECENCY block (FRESH / RECOVERED / OVERDUE / STACKED) BEFORE picking session shape: STACKED → cap intensity, no top single; OVERDUE → primary today; FRESH → not the primary; RECOVERED → normal.
+- DIAGNOSTIC_PLAYBOOK_KNOWLEDGE — when recent training shows RPE_CREEP, LOAD_PLATEAU, MISSED_REPS, LIFT_IMBALANCE, or VOLUME_DROP, this maps the failure point to a dosed Rx (e.g. "fail off chest → Spoto press 4×4 @ RPE 7 1×/wk").
+- FATIGUE_MANAGEMENT_KNOWLEDGE — Stress Index drift, volume-first deload taper, recovery-debt heuristic. If readiness is low or HRV deviation is < −15 % for 3+ days, deload regardless of phase.
+- PEAKING_TEMPLATE_KNOWLEDGE — concrete day-by-day taper templates and attempt-selection math when a meet is within 4 weeks.
+- RPE_DEEP_KNOWLEDGE — RPE→e1RM mapping, drift signals, calibration-max protocol. Use it when recent RPE data is informing today's load. ALL prescribed rpeTarget values MUST be on the half-step grid (5, 5.5, 6, 6.5, … 10) — fractional values like 7.3 will be rejected.
 
 Output a complete session as a single JSON object — no markdown fences, no prose outside the object:
 

@@ -17,6 +17,7 @@ import type {
 import {
   prescribeLoad,
   roundLoad,
+  quantizeRpe,
   readinessToVolumeMultiplier,
   readinessToRpeOffset,
   blockToSets,
@@ -598,7 +599,7 @@ function buildSecondaryCompExercises(
 
   const maxKg = getLiftMax(lift, profile);
   const isIntensification = blockType === 'INTENSIFICATION';
-  const targetRpe  = clampRpe((isIntensification ? 7.5 : 7) + rpeOffset);
+  const targetRpe  = quantizeRpe((isIntensification ? 7.5 : 7) + rpeOffset);
   const targetReps = isIntensification ? 2 : 3;
   const targetSets = 3;
   const workLoad   = roundLoad(prescribeLoad(maxKg, targetRpe, targetReps));
@@ -697,7 +698,7 @@ function buildPrimaryExercises(
   const baseRpe = getBaseRpeForBlock(blockType, weekInBlock, totalBlockWeeks);
 
   // Apply overshooter flag, then readiness/history offset
-  const adjustedRpe = clampRpe(
+  const adjustedRpe = quantizeRpe(
     overshooterRpeAdjust(baseRpe, profile.overshooter) + rpeOffset,
   );
 
@@ -715,7 +716,7 @@ function buildPrimaryExercises(
     const isMeetWeek = totalBlockWeeks > 1 && weekInBlock >= totalBlockWeeks;
 
     if (isMeetWeek) {
-      const openerRpe  = clampRpe(7 + rpeOffset);
+      const openerRpe  = quantizeRpe(7 + rpeOffset);
       const openerLoad = roundLoad(prescribeLoad(maxKg, openerRpe, 1));
       return [
         {
@@ -754,7 +755,7 @@ function buildPrimaryExercises(
 
   // ── DELOAD ─────────────────────────────────────────────────────────────────
   if (blockType === 'DELOAD') {
-    const deloadRpe  = clampRpe(6 + rpeOffset);
+    const deloadRpe  = quantizeRpe(6 + rpeOffset);
     const deloadLoad = roundLoad(prescribeLoad(maxKg, deloadRpe, 5));
     return [
       {
@@ -796,7 +797,7 @@ function buildPrimaryExercises(
   // the first (intensity) day — per Stanek mini-peaks / Noriega DUP.
   const dupRpeAdj = isDupRepeat ? -0.5 : 0;
   const dupRepAdj = isDupRepeat ? 1    : 0;
-  const finalRpe  = clampRpe(adjustedRpe + dupRpeAdj);
+  const finalRpe  = quantizeRpe(adjustedRpe + dupRpeAdj);
   const finalReps = undulation.reps + dupRepAdj;
   const finalSets = undulation.sets;
 
@@ -807,7 +808,7 @@ function buildPrimaryExercises(
   // HEAVY_SINGLES: in INTENSIFICATION, add a top single before back-off sets
   // to give heavy-singles athletes the neural stimulus they crave.
   if (reward === 'HEAVY_SINGLES' && blockType === 'INTENSIFICATION') {
-    const topSingleRpe  = clampRpe(adjustedRpe + 0.5);
+    const topSingleRpe  = quantizeRpe(adjustedRpe + 0.5);
     const topSingleLoad = roundLoad(prescribeLoad(maxKg, topSingleRpe, 1));
     result.push({
       name:              compName,
@@ -840,7 +841,7 @@ function buildPrimaryExercises(
   // (e.g. pin press, block pull) so lockout / position strength keeps
   // developing during the strength phase.
   if (!sbdDay && variation !== null && (blockType === 'ACCUMULATION' || blockType === 'INTENSIFICATION')) {
-    const varRpe    = clampRpe(adjustedRpe - 0.5);
+    const varRpe    = quantizeRpe(adjustedRpe - 0.5);
     const varReps   = blockType === 'INTENSIFICATION'
       ? Math.max(2, baseReps - 1)
       : baseReps + 1;
@@ -1150,17 +1151,18 @@ function getRepsForBlock(
   }
 }
 
-/** Reduce prescribed RPE based on recent overshoot pattern. */
+/**
+ * Reduce prescribed RPE based on recent overshoot pattern. Quantised to 0.5
+ * increments — the offset itself respects the RPE scale, so adding it to a
+ * half-step base value preserves half-step output.
+ */
 function computeOvershootOffset(overshootHistory?: number): number {
   if (overshootHistory == null || overshootHistory <= 0) return 0;
-  // Each 1-RPE average overshoot → reduce by 0.5 (capped at −1.0)
-  return -Math.min(1.0, overshootHistory * 0.5);
-}
-
-/** Clamp RPE to the valid [5, 10] range and round to nearest 0.5. */
-function clampRpe(rpe: number): number {
-  const rounded = Math.round(rpe * 2) / 2;
-  return Math.max(5, Math.min(10, rounded));
+  // Each 1-RPE average overshoot → reduce by 0.5 (capped at −1.0). Round to
+  // the nearest 0.5 step so partial-RPE histories (e.g. 0.7) snap to a clean
+  // -0.5 instead of -0.35.
+  const raw = -Math.min(1.0, overshootHistory * 0.5);
+  return Math.round(raw * 2) / 2;
 }
 
 /**
