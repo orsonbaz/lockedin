@@ -248,12 +248,22 @@ export function generateSession(input: SessionInput): GeneratedSession {
 
   // ── 4. Build exercises ─────────────────────────────────────────────────────
   const isDupRepeat = detectDupRepeat(sessionNumber, profile.weeklyFrequency);
+  // appearanceIndex = the role this session plays for the primary lift this
+  // week (1=PRIMARY, 2=SECONDARY, 3=TERTIARY, 4+=QUATERNARY). Drives the
+  // multi-frequency RPE / reps / sets adjustments inside buildPrimaryExercises.
+  // When exposures are available we use them as the source of truth; otherwise
+  // fall back to the binary DUP signal (= 2 if repeat, else 1) so cold-start
+  // sessions and test fixtures get the same behaviour they always have.
+  const primaryExposure = input.recentLiftExposures?.find((e) => e.lift === primaryLift);
+  const appearanceIndex = primaryExposure
+    ? Math.max(1, primaryExposure.weekCount + 1)
+    : (isDupRepeat ? 2 : 1);
   // Full SBD (3 comp lifts) already fills the session — skip variation + accessories.
   // A regular 2-lift session (primary + one secondary) still gets variation + accessories.
   const sbdDay = secondaryLifts.length >= 2;
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlockVal, isDupRepeat,
-    sessionNumber, sbdDay, secondaryLifts.length === 1,
+    sessionNumber, sbdDay, secondaryLifts.length === 1, appearanceIndex,
   );
 
   // SBD day: rebuild all exercises in competition order (S→B→D) so the
@@ -647,6 +657,7 @@ function buildSessionExercises(
   sessionNumber = 1,
   sbdDay = false,
   hasSecondary = false,
+  appearanceIndex = isDupRepeat ? 2 : 1,
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
@@ -655,6 +666,7 @@ function buildSessionExercises(
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
     weekWithinBlock, totalBlockWeeks, isDupRepeat, reward, sbdDay,
+    appearanceIndex,
   );
   exercises.push(...primaryExercises);
 
@@ -693,6 +705,7 @@ function buildPrimaryExercises(
   isDupRepeat = false,
   reward: RewardSystem = 'CONSISTENCY',
   sbdDay = false,
+  appearanceIndex = isDupRepeat ? 2 : 1,
 ): GeneratedExercise[] {
   const maxKg   = getLiftMax(lift, profile);
   const baseRpe = getBaseRpeForBlock(blockType, weekInBlock, totalBlockWeeks);
@@ -792,14 +805,30 @@ function buildPrimaryExercises(
     ? undulateSetsReps(baseSets, baseReps, weekInBlock, totalBlockWeeks)
     : { sets: baseSets, reps: baseReps };
 
-  // DUP: second appearance of the same lift in a week is a volume day.
-  // Slightly lower RPE + one extra rep differentiates the stimulus from
-  // the first (intensity) day — per Stanek mini-peaks / Noriega DUP.
-  const dupRpeAdj = isDupRepeat ? -0.5 : 0;
-  const dupRepAdj = isDupRepeat ? 1    : 0;
-  const finalRpe  = quantizeRpe(adjustedRpe + dupRpeAdj);
-  const finalReps = undulation.reps + dupRepAdj;
-  const finalSets = undulation.sets;
+  // Multi-frequency role per appearance — see MULTI_FREQUENCY_KNOWLEDGE.
+  // Each role drops a tier vs the primary day:
+  //   1  PRIMARY:    full prescription (no adjustment).
+  //   2  SECONDARY:  variation/volume day, -0.5 RPE, +1 rep (Stanek/Noriega DUP).
+  //   3  TERTIARY:   skill day, -1.0 RPE, +1 rep, sets capped at 3.
+  //   4+ QUATERNARY: speed/skill, -1.5 RPE, base reps, sets capped at 2.
+  // Tertiary / quaternary scenarios only fire when recentLiftExposures show
+  // the lift has already been primary 2-3+ times this week. Cold-start /
+  // legacy callers without exposures hit index 1 or 2 only, so existing
+  // tests (which assert `2nd appearance reps = 1st reps + 1, RPE = 1st - 0.5`)
+  // pass unchanged.
+  const repeatAdj = (() => {
+    if (appearanceIndex >= 4) return { rpe: -1.5, rep:  0, setCap: 2 };
+    if (appearanceIndex === 3) return { rpe: -1.0, rep:  1, setCap: 3 };
+    if (appearanceIndex === 2) return { rpe: -0.5, rep:  1, setCap: Infinity };
+    return { rpe: 0, rep: 0, setCap: Infinity };
+  })();
+  const finalRpe  = quantizeRpe(adjustedRpe + repeatAdj.rpe);
+  const finalReps = undulation.reps + repeatAdj.rep;
+  const finalSets = Math.min(undulation.sets, repeatAdj.setCap);
+  // Tertiary / quaternary appearances skip the heavy-singles top set so the
+  // session genuinely respects its role — a top single on a 3rd-of-the-week
+  // bench day is the exact mistake MULTI_FREQUENCY_KNOWLEDGE warns against.
+  const skipTopSingle = appearanceIndex >= 3;
 
   const compLoad = roundLoad(prescribeLoad(maxKg, finalRpe, finalReps));
 
@@ -807,7 +836,9 @@ function buildPrimaryExercises(
 
   // HEAVY_SINGLES: in INTENSIFICATION, add a top single before back-off sets
   // to give heavy-singles athletes the neural stimulus they crave.
-  if (reward === 'HEAVY_SINGLES' && blockType === 'INTENSIFICATION') {
+  // Suppressed on TERTIARY / QUATERNARY appearances — those roles are skill /
+  // speed work, not a place for additional max-effort exposure.
+  if (reward === 'HEAVY_SINGLES' && blockType === 'INTENSIFICATION' && !skipTopSingle) {
     const topSingleRpe  = quantizeRpe(adjustedRpe + 0.5);
     const topSingleLoad = roundLoad(prescribeLoad(maxKg, topSingleRpe, 1));
     result.push({

@@ -78,18 +78,36 @@ export function recencyTagFor(e: LiftExposure): RecencyTag {
 }
 
 /**
- * One line per comp lift summarising recency, weekly frequency, and the
- * STRUCTURE_KNOWLEDGE recency tag. Shared between the chat coach, the
- * session author, and the session advisor so all three speak the same
- * recent-exposure language.
+ * Role the *next* appearance of this lift this week should play, per the
+ * MULTI_FREQUENCY_KNOWLEDGE module. Drives session shape: PRIMARY = comp +
+ * top-set, SECONDARY = variation -0.5 RPE, TERTIARY = skill/positional,
+ * QUATERNARY = speed/skip-candidate. The chat coach, session author, and
+ * session advisor all consume this so they pick the right role for today
+ * instead of cloning the primary day.
+ */
+export type AppearanceRole = 'PRIMARY' | 'SECONDARY' | 'TERTIARY' | 'QUATERNARY';
+
+export function nextAppearanceRoleFor(e: LiftExposure): AppearanceRole {
+  if (e.weekCount === 0) return 'PRIMARY';
+  if (e.weekCount === 1) return 'SECONDARY';
+  if (e.weekCount === 2) return 'TERTIARY';
+  return 'QUATERNARY';
+}
+
+/**
+ * One line per comp lift summarising recency, weekly frequency, the
+ * STRUCTURE_KNOWLEDGE recency tag, AND the role the next appearance of
+ * this lift should play (PRIMARY / SECONDARY / TERTIARY / QUATERNARY).
+ * Shared between the chat coach, session author, and session advisor so
+ * all three pick session shape from the same prediction.
  *
- *   SQUAT: 3d since primary, 2× this week → RECOVERED
- *   BENCH: never primary, 0× this week    → OVERDUE
- *   DEADLIFT: 1d since primary, 1× this week → FRESH
+ *   SQUAT: 3d since primary, 2× this week → RECOVERED (next = TERTIARY)
+ *   BENCH: never primary, 0× this week    → OVERDUE (next = PRIMARY)
+ *   DEADLIFT: 1d since primary, 1× this week → FRESH (next = SECONDARY)
  */
 export function formatExposureLines(exposures: LiftExposure[]): string[] {
   return exposures.map((e) => {
     const days = Number.isFinite(e.daysSince) ? `${e.daysSince}d since primary` : 'never primary';
-    return `${e.lift}: ${days}, ${e.weekCount}× this week → ${recencyTagFor(e)}`;
+    return `${e.lift}: ${days}, ${e.weekCount}× this week → ${recencyTagFor(e)} (next = ${nextAppearanceRoleFor(e)})`;
   });
 }

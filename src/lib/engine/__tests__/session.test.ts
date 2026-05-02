@@ -1053,6 +1053,107 @@ describe('generateSession — DUP second-occurrence volume day', () => {
   });
 });
 
+// ── Multi-frequency role per appearance (recentLiftExposures-driven) ─────────
+
+describe('generateSession — multi-frequency appearance roles', () => {
+  const block = makeBlock('ACCUMULATION');
+
+  // Baseline: SQUAT primary, no exposures (= PRIMARY appearance)
+  const primary = generateSession({
+    profile: baseProfile, block,
+    weekDayOfWeek: 1,
+    readinessScore: goodReadiness,
+    sessionNumber: 1,
+    forcePrimary: 'SQUAT',
+  });
+
+  // Exposures showing this is the SECONDARY appearance (1 prior squat day)
+  const secondary = generateSession({
+    profile: baseProfile, block,
+    weekDayOfWeek: 4,
+    readinessScore: goodReadiness,
+    sessionNumber: 4,
+    forcePrimary: 'SQUAT',
+    recentLiftExposures: [
+      { lift: 'SQUAT',    daysSince: 3, weekCount: 1 },
+      { lift: 'BENCH',    daysSince: 1, weekCount: 1 },
+      { lift: 'DEADLIFT', daysSince: 2, weekCount: 1 },
+    ],
+  });
+
+  // Exposures showing this is the TERTIARY appearance (2 prior squat days)
+  const tertiary = generateSession({
+    profile: baseProfile, block,
+    weekDayOfWeek: 6,
+    readinessScore: goodReadiness,
+    sessionNumber: 6,
+    forcePrimary: 'SQUAT',
+    recentLiftExposures: [
+      { lift: 'SQUAT',    daysSince: 1, weekCount: 2 },
+      { lift: 'BENCH',    daysSince: 1, weekCount: 1 },
+      { lift: 'DEADLIFT', daysSince: 2, weekCount: 1 },
+    ],
+  });
+
+  it('SECONDARY appearance prescribes -0.5 RPE vs PRIMARY (existing DUP behaviour)', () => {
+    expect(secondary.exercises[0].rpeTarget).toBeCloseTo(primary.exercises[0].rpeTarget - 0.5, 5);
+  });
+
+  it('TERTIARY appearance prescribes -1.0 RPE vs PRIMARY (deeper drop)', () => {
+    expect(tertiary.exercises[0].rpeTarget).toBeCloseTo(primary.exercises[0].rpeTarget - 1.0, 5);
+  });
+
+  it('TERTIARY appearance caps comp sets at 3 (skill day, not volume day)', () => {
+    expect(tertiary.exercises[0].sets).toBeLessThanOrEqual(3);
+  });
+
+  it('TERTIARY appearance has NO heavier top single in INTENSIFICATION + HEAVY_SINGLES', () => {
+    const intBlock = makeBlock('INTENSIFICATION');
+    const hsProfile = { ...baseProfile, rewardSystem: 'HEAVY_SINGLES' as const };
+    const tertiaryHS = generateSession({
+      profile: hsProfile, block: intBlock,
+      weekDayOfWeek: 6,
+      readinessScore: goodReadiness,
+      sessionNumber: 6,
+      forcePrimary: 'SQUAT',
+      recentLiftExposures: [
+        { lift: 'SQUAT',    daysSince: 1, weekCount: 2 },
+        { lift: 'BENCH',    daysSince: 1, weekCount: 1 },
+        { lift: 'DEADLIFT', daysSince: 2, weekCount: 1 },
+      ],
+    });
+    // No COMPETITION exercise prescribed at 1 set × 1 rep (the top-single shape).
+    const topSingle = tertiaryHS.exercises.find(
+      (e) => e.exerciseType === 'COMPETITION' && e.sets === 1 && e.reps === 1,
+    );
+    expect(topSingle).toBeUndefined();
+  });
+
+  it('QUATERNARY appearance prescribes -1.5 RPE vs PRIMARY and caps sets at 2', () => {
+    const quaternary = generateSession({
+      profile: baseProfile, block,
+      weekDayOfWeek: 7,
+      readinessScore: goodReadiness,
+      sessionNumber: 7,
+      forcePrimary: 'BENCH',
+      recentLiftExposures: [
+        { lift: 'SQUAT',    daysSince: 1, weekCount: 1 },
+        { lift: 'BENCH',    daysSince: 1, weekCount: 3 },
+        { lift: 'DEADLIFT', daysSince: 2, weekCount: 1 },
+      ],
+    });
+    const benchPrimary = generateSession({
+      profile: baseProfile, block,
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      forcePrimary: 'BENCH',
+    });
+    expect(quaternary.exercises[0].rpeTarget).toBeCloseTo(benchPrimary.exercises[0].rpeTarget - 1.5, 5);
+    expect(quaternary.exercises[0].sets).toBeLessThanOrEqual(2);
+  });
+});
+
 // ── Reward System wiring ──────────────────────────────────────────────────────
 
 describe('generateSession — rewardSystem', () => {

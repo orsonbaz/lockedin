@@ -1522,6 +1522,151 @@ When generating or modifying a session, read recentLiftExposures FIRST, then cho
    counts, because peaking specificity dominates fatigue management in the final 2 weeks.
 `;
 
+// ── Multi-Frequency Programming (per-lift role per appearance) ───────────────
+// When a comp lift trains 2-4×/week, each appearance must have a DISTINCT
+// purpose. Treating the second / third / fourth bench day as a clone of the
+// first multiplies fatigue without multiplying adaptation. This module is
+// what differentiates a high-frequency program from a low-frequency program
+// run twice. Bench typically gets the deepest treatment (3-4×/wk for most
+// intermediates per Joey Flex / Sheiko / TSA consensus); squat 2-3×/wk;
+// deadlift 1-2×/wk (occasionally 3 for advanced).
+
+export const MULTI_FREQUENCY_KNOWLEDGE = `
+## Multi-Frequency Programming — Distinct Roles per Appearance
+
+The single biggest amateur programming error in high-frequency training is
+running the same session three times. Frequency multiplies adaptation ONLY
+when each appearance has a distinct purpose, intensity profile, and exercise
+selection. Below are the four roles. Apply them in order: a lift's first
+appearance of the week is PRIMARY, second is SECONDARY, etc.
+
+### PRIMARY APPEARANCE (1st of the week)
+- **Purpose**: peak neural stimulus, the heaviest exposure of the week.
+  This is the day the program is *optimised around*.
+- **Intensity**: full block prescription. Accumulation = RPE 7-8 work sets.
+  Intensification = top single @ RPE 8-8.5 + back-offs at RPE 7-7.5.
+  Realisation = top single @ RPE 8.5-9 + 1-2 back-offs.
+- **Volume**: full block volume — the largest of the week's appearances.
+- **Exercise selection**: COMPETITION variant. Comp squat, comp bench,
+  comp deadlift. Not a variation — the primary day is for the lift itself.
+- **Position in the week**: mid-early, ~48 h after a low-cost or recovery
+  day. Tuesday for bench, Monday or Tuesday for squat, mid-week for DL.
+- **Recovery cost**: HIGH. Plan 48-72 h before the next appearance.
+
+### SECONDARY APPEARANCE (2nd of the week)
+- **Purpose**: volume stimulus + skill repetition under sub-max load.
+  This is where weekly tonnage actually accumulates.
+- **Intensity**: -0.5 to -1.0 RPE vs primary day (RPE 6.5-7.5). The athlete
+  should leave this session feeling worked, not gassed.
+- **Volume**: similar set count to primary, +1 rep per set
+  (DUP undulation: -0.5 RPE, +1 rep). Total tonnage often equals or exceeds
+  primary day's working tonnage despite the lower intensity.
+- **Exercise selection**: VARIATION of the comp lift, NOT another comp set.
+  Pause squat, pause/spoto bench, deficit/pause DL, close-grip bench.
+  The variation pulls a positional weakness into focus that the comp lift
+  doesn't address — that's the whole point of a second appearance.
+- **Position**: 48-72 h after primary. Spinal-load spacing rule applies:
+  if primary was a HIGH-spinal-load lift (squat / DL), don't stack the
+  secondary appearance against another HIGH lift's primary day.
+- **Recovery cost**: MEDIUM. 24-36 h before the next appearance is OK.
+
+### TERTIARY APPEARANCE (3rd of the week — mostly bench, sometimes squat for HIGH responders)
+- **Purpose**: skill maintenance + technique exposure without taxing recovery.
+  The point is grooving, not progress. If this session leaves the athlete
+  fatigued for the next primary, it has failed.
+- **Intensity**: -1.0 to -1.5 RPE vs primary (RPE 6-7). Cap loads at
+  ~75 % of e1RM. Top sets are absent — straight sets only.
+- **Volume**: LOW. 3 working sets is the cap. Higher rep counts (5-8) at
+  the lighter load are fine; low-rep heavy sets are not — they cost
+  recovery without adding stimulus the primary day didn't provide.
+- **Exercise selection**: SKILL or POSITIONAL variant.
+  - Bench tertiary: Spoto press at low RPE, larsen press, paused close-grip,
+    OHP-primary day with bench accessories, or high-rep DB bench.
+  - Squat tertiary (HIGH responder only): light high-bar 3×5 @ RPE 6,
+    pause squat at low RPE, narrow stance squat for hip drilling.
+  - Deadlift tertiary (advanced + HIGH responder): RDL or block-pull
+    technical work, never another floor pull.
+- **Position**: late in the week, ≥ 48 h before the next primary day.
+  For a Tuesday primary bench, the tertiary fits Friday or Saturday.
+- **Recovery cost**: LOW. Should not affect the next day's session.
+
+### QUATERNARY APPEARANCE (4th of the week — bench only, in HIGH responder / 5-6 day programs)
+- **Purpose**: speed-work or pattern frequency. Maintains the motor groove
+  and CNS practice without anything that recovery would resent.
+- **Intensity**: RPE 5-6 only. Compensatory acceleration on every rep —
+  the goal is bar speed, not load. Bench: 50-70 % 1RM on submaximal singles
+  or doubles.
+- **Volume**: 2-3 sets max. Speed-bench is best at 6-8 sets × 3 reps with
+  short rest (60-90 s) when the goal is dynamic effort; for skill-only
+  the 2-3 set, RPE-5 ceiling applies.
+- **Exercise selection**: speed bench (3-rep cluster sets at 65 % +
+  bands optional), incline DB press, push-ups for high-rep specificity.
+  Do NOT add tricep volume here — triceps are already cooked from days 1-3.
+- **Position**: any low-spinal-load slot late week. Sunday, or as the
+  "easy" session of an SBD week.
+- **Recovery cost**: NEAR-ZERO. This exists to keep frequency, not stimulus.
+
+### Cross-Cutting Rules
+- A lift appearing as SECONDARY in a multi-lift session (e.g. bench tagged
+  onto a squat-primary SBD day) counts as an appearance, with MEDIUM cost.
+  Don't program a "real" tertiary day the next day if the lift already
+  surfaced as a secondary on an SBD rehearsal.
+- When pulling forward / pushing back appearances in a meet-prep block,
+  preserve the role hierarchy — never demote primary to tertiary just to
+  fit a schedule. If schedule constraints conflict with role hierarchy,
+  drop the quaternary day first, then tertiary, then secondary. Primary
+  is the last to go.
+- Every appearance after primary must answer: "what is this driving that
+  the primary day doesn't already cover?" If you can't articulate the
+  answer in a sentence, the appearance is junk frequency.
+
+### Bench — Detailed 4×/Week Template (Joey Flex / TSA consensus)
+Primary intermediate frequency for bench. Each day has a distinct identity:
+- **Day 1 / Tue** (PRIMARY): comp bench, top set + 3-4 back-offs.
+  Top set RPE 8 in INTENSIFICATION. Pin press or close-grip as variation.
+  Row + face pulls + tricep iso. Highest fatigue session of the week.
+- **Day 2 / Thu** (SECONDARY): pause bench 4-5×3-5 @ RPE 7-7.5.
+  Eliminates the bounce, builds positional strength, dedicated session.
+  Lighter rows + face pulls (mandatory every bench day) + light tricep.
+- **Day 3 / Sat** (TERTIARY): OHP-primary day OR pin press / Spoto
+  3×3-4 @ RPE 7. Less than 30 min of bench-pattern volume. Skill keeps
+  the groove alive without compounding fatigue into next Tuesday.
+- **Day 4 / Sun** (QUATERNARY, optional): speed bench 6×3 @ 65 % with bands,
+  or high-rep DB bench 3×10. RPE 5-6 ceiling. Skip if Sunday is a rest
+  day for the rest of the program.
+
+### Squat — 2-3×/Week Template
+- **Day 1 / Mon** (PRIMARY): comp squat, top set + back-offs, full block volume.
+- **Day 2 / Thu/Fri** (SECONDARY): pause squat / front squat / SSB
+  4×4-6 @ RPE 7-7.5. NEVER another comp squat — the variation is the point.
+- **Day 3 / Sat** (TERTIARY, HIGH responder + DUP block only):
+  high-bar 3×5 @ RPE 6 OR light comp 3×3 @ RPE 6.5. Strict cap on
+  spinal-load budget; a tertiary squat session will compromise next
+  Monday's primary if it grinds.
+
+### Deadlift — 1-2×/Week Template
+- **Day 1** (PRIMARY): comp DL, top set + back-offs. Full prescription.
+- **Day 2** (SECONDARY, advanced only): deficit DL / pause DL / block pull
+  3×3-5 @ RPE 7. Variation — not another floor pull. Spinal-load rule
+  is hardest here: must be ≥ 72 h after primary, ≥ 48 h before primary.
+- Tertiary DL appearance is RARE and only for elite HIGH responders.
+  Most lifters get more out of an extra bench / accessory day than a
+  tertiary DL day, because grip + erector recovery dominates.
+
+### Reading PER-LIFT RECENCY in this Context
+The PER-LIFT RECENCY block in your context tells you the appearance role
+of TODAY's session for each lift, given how many times that lift has been
+primary this week:
+- weekCount = 0 → today's appearance would be PRIMARY (full prescription)
+- weekCount = 1 → today's appearance would be SECONDARY (variation, RPE -0.5/-1.0)
+- weekCount = 2 → today's appearance would be TERTIARY (skill, low fatigue)
+- weekCount ≥ 3 → today's appearance would be QUATERNARY (speed/skip)
+
+Multi-frequency goes wrong when an athlete trains a lift 3-4×/week but
+every session is "primary." That's not high-frequency — that's three
+overreaching sessions. Differentiate the role, or cut the frequency.
+`;
+
 // ── Diagnostic Playbook (failure-point → cause → Rx) ──────────────────────────
 
 export const DIAGNOSTIC_PLAYBOOK_KNOWLEDGE = `
@@ -1777,6 +1922,7 @@ export function getFullKnowledge(): string {
     RPE_DEEP_KNOWLEDGE,
     PERIODIZATION_KNOWLEDGE,
     STRUCTURE_KNOWLEDGE,
+    MULTI_FREQUENCY_KNOWLEDGE,
     FATIGUE_MANAGEMENT_KNOWLEDGE,
     BREATHING_BRACING_KNOWLEDGE,
     ADVANCED_TECHNIQUE_KNOWLEDGE,
@@ -1828,6 +1974,24 @@ const KW_STRUCTURE     = [
 const KW_FATIGUE_MGMT  = [
   'fatigue', 'overreach', 'taper', 'stress index', 'deload',
   'recovery debt', 'tonnage cap', 'volume-first', 'volume first',
+] as const;
+const KW_MULTI_FREQUENCY = [
+  'frequency', 'high frequency', 'high-frequency',
+  'second day', 'third day', 'fourth day',
+  'multiple times', 'twice a week', 'three times', '3x', '4x',
+  '3 times', '4 times', 'x/week', '×/week',
+  'primary day', 'secondary day', 'tertiary', 'quaternary',
+  'secondary', 'second', 'third', 'fourth',
+  'second appearance', 'third appearance', 'fourth appearance',
+  'dup', 'undulat',
+  'bench frequency', 'squat frequency', 'deadlift frequency',
+  'how often',
+  // Lift-name + day cues that almost always signal multi-frequency questions
+  'second bench', 'third bench', 'fourth bench',
+  'second squat', 'third squat',
+  'second deadlift',
+  'speed bench', 'speed work', 'dynamic effort',
+  'volume day', 'intensity day',
 ] as const;
 const KW_EXERCISE      = [
   'exercis', 'squat', 'bench', 'deadlift', 'technique', 'cue', 'weak',
@@ -1951,6 +2115,7 @@ const SECTION_CATALOG: readonly KbSection[] = [
   { content: RPE_DEEP_KNOWLEDGE,              keywords: KW_RPE,            softCap: 1200 },
   { content: PERIODIZATION_KNOWLEDGE,         keywords: KW_PERIODIZATION,  softCap: 800  },
   { content: STRUCTURE_KNOWLEDGE,             keywords: KW_STRUCTURE,      softCap: 2000 },
+  { content: MULTI_FREQUENCY_KNOWLEDGE,       keywords: KW_MULTI_FREQUENCY, softCap: 2000 },
   { content: FATIGUE_MANAGEMENT_KNOWLEDGE,    keywords: KW_FATIGUE_MGMT,   softCap: 1400 },
   { content: BREATHING_BRACING_KNOWLEDGE,     keywords: KW_BREATHING,      softCap: 1200 },
   { content: ADVANCED_TECHNIQUE_KNOWLEDGE,    keywords: KW_ADVANCED_TECH,  softCap: 1800 },
