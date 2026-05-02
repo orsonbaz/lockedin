@@ -82,6 +82,8 @@ export async function ensureNotificationPermission():
   }
 }
 
+const REST_TIMER_TAG = 'lockedin-rest-timer';
+
 /**
  * Fire a "rest is up" notification. Prefers the service worker registration
  * (so the notification persists in the OS tray and survives the tab being
@@ -97,7 +99,7 @@ export async function notifyRestComplete(exerciseName?: string): Promise<void> {
     body,
     icon:  '/icon-192.png',
     badge: '/icon-192.png',
-    tag:   'lockedin-rest-timer',
+    tag:   REST_TIMER_TAG,
     // renotify: true,  // not in TS lib but supported on Chrome
     silent: false,
   };
@@ -113,5 +115,58 @@ export async function notifyRestComplete(exerciseName?: string): Promise<void> {
     new window.Notification(title, opts);
   } catch {
     // Silent — notification is a non-critical UX nicety.
+  }
+}
+
+/**
+ * Schedule the "rest is up" notification to fire from the service worker at
+ * `endsAt`. This is the path that survives the tab being backgrounded —
+ * page-level setTimeout is suspended on iOS Safari and throttled on desktop
+ * Chrome, but the SW timer keeps running. Idempotent per tag: scheduling a
+ * new one supersedes the old.
+ *
+ * Both this and `notifyRestComplete` use the same notification `tag`, so
+ * if both fire (page foreground + SW background) the OS collapses them
+ * into one notification. No risk of duplicates.
+ */
+export async function scheduleRestNotification(
+  endsAt: number,
+  exerciseName?: string,
+): Promise<void> {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (window.Notification.permission !== 'granted') return;
+  if (!('serviceWorker' in navigator)) return;
+
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const target = reg.active ?? reg.waiting ?? reg.installing;
+    if (!target) return;
+    target.postMessage({
+      type:  'SCHEDULE_REST_NOTIFICATION',
+      tag:   REST_TIMER_TAG,
+      endsAt,
+      title: 'Rest complete — back to the bar',
+      body:  exerciseName ? `Next set: ${exerciseName}` : 'Time for your next set.',
+    });
+  } catch {
+    // Silent — backup path; page-level notifyRestComplete still fires
+    // when the tab is in foreground.
+  }
+}
+
+/**
+ * Cancel any pending SW-scheduled rest notification. Called whenever the
+ * timer is reset, the next set is logged before the previous timer expires,
+ * the exercise advances, or the session ends.
+ */
+export async function cancelScheduledRestNotification(): Promise<void> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const target = reg.active ?? reg.waiting ?? reg.installing;
+    if (!target) return;
+    target.postMessage({ type: 'CANCEL_REST_NOTIFICATION', tag: REST_TIMER_TAG });
+  } catch {
+    /* silent */
   }
 }

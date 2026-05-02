@@ -37,6 +37,8 @@ import {
   releaseWakeLock,
   ensureNotificationPermission,
   notifyRestComplete,
+  scheduleRestNotification,
+  cancelScheduledRestNotification,
 }                                                         from '@/lib/ui/rest-notify';
 import type { SetOutcome }                                from '@/lib/db/types';
 
@@ -431,6 +433,23 @@ export default function SessionPage({
     return () => { cancelled = true; };
   }, [restEndsAt, exercises, activeExIdx]);
 
+  // ── Background-safe notification scheduling ─────────────────────────────
+  // The page-level setTimeout above is suspended on iOS Safari (and heavily
+  // throttled on desktop Chrome) when the tab is backgrounded — that's why
+  // the rest-up notification never fired when the athlete tabbed away.
+  // Mirror restEndsAt to the service worker, which schedules its own backup
+  // setTimeout in a context that survives page suspension. Both fire with
+  // the same notification `tag` so the OS collapses duplicates.
+  useEffect(() => {
+    if (restEndsAt === null) {
+      void cancelScheduledRestNotification();
+      return;
+    }
+    void scheduleRestNotification(restEndsAt, exercises[activeExIdx]?.name);
+    // No teardown needed — when restEndsAt changes (or clears), the next
+    // run handles cancel/replace via the same tag in the SW.
+  }, [restEndsAt, exercises, activeExIdx]);
+
   // ── Wake lock + notifications during logging ───────────────────────────
   // Hold a screen wake lock while the athlete is actively logging so the
   // tab doesn't get suspended (which is what kills the rest timer).
@@ -752,8 +771,9 @@ export default function SessionPage({
     }
   }, [exercises]);
 
-  const startSession = useCallback(() => {
-    setSessionStartTime(new Date());
+  const startSession = useCallback((startIdx: number = 0) => {
+    setSessionStartTime((prev) => prev ?? new Date());
+    setActiveExIdx(Math.max(0, startIdx));
     setPageState('logging');
     // Best-effort: ask once for notification permission so the rest timer can
     // alert the athlete when the page is backgrounded. Silent if unsupported.
@@ -1164,17 +1184,32 @@ export default function SessionPage({
                 </p>
               </div>
             ) : (
-              exercises.map((ex, idx) => (
+              exercises.map((ex, idx) => {
+                // Tap-anywhere-on-card to jump straight into logging at this
+                // exercise. Nested buttons (reorder, swap) stopPropagation so
+                // they don't trigger the outer card click.
+                const cardTappable = !reorderMode;
+                return (
                 <div
                   key={ex.id}
-                  className="rounded-xl p-4 flex items-stretch gap-3"
+                  className={`rounded-xl p-4 flex items-stretch gap-3${cardTappable ? ' active:scale-[0.99] active:brightness-110 transition-all cursor-pointer' : ''}`}
                   style={{ backgroundColor: C.surface }}
+                  role={cardTappable ? 'button' : undefined}
+                  tabIndex={cardTappable ? 0 : undefined}
+                  onClick={cardTappable ? () => startSession(idx) : undefined}
+                  onKeyDown={cardTappable ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      startSession(idx);
+                    }
+                  } : undefined}
+                  aria-label={cardTappable ? `Start logging ${ex.name}` : undefined}
                 >
                   {reorderMode && (
                     <div className="flex flex-col gap-1 shrink-0 justify-center">
                       <button
                         type="button"
-                        onClick={() => void moveExercise(ex.id, -1)}
+                        onClick={(e) => { e.stopPropagation(); void moveExercise(ex.id, -1); }}
                         disabled={idx === 0}
                         className="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold active:scale-90 transition-transform disabled:opacity-30"
                         style={{ backgroundColor: C.dim, color: C.text }}
@@ -1184,7 +1219,7 @@ export default function SessionPage({
                       </button>
                       <button
                         type="button"
-                        onClick={() => void moveExercise(ex.id, 1)}
+                        onClick={(e) => { e.stopPropagation(); void moveExercise(ex.id, 1); }}
                         disabled={idx === exercises.length - 1}
                         className="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold active:scale-90 transition-transform disabled:opacity-30"
                         style={{ backgroundColor: C.dim, color: C.text }}
@@ -1204,7 +1239,7 @@ export default function SessionPage({
                         {!reorderMode && ex.libraryExerciseId && (
                           <button
                             type="button"
-                            onClick={() => openSwapModal(ex)}
+                            onClick={(e) => { e.stopPropagation(); openSwapModal(ex); }}
                             className="text-xs px-2 py-0.5 rounded-full transition-colors active:opacity-70"
                             style={{ backgroundColor: 'rgba(245,166,35,0.15)', color: C.gold }}
                           >
@@ -1240,7 +1275,8 @@ export default function SessionPage({
                     )}
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -1293,7 +1329,7 @@ export default function SessionPage({
           {/* Start Session CTA */}
           <button
             type="button"
-            onClick={startSession}
+            onClick={() => startSession(0)}
             disabled={exercises.length === 0}
             className="w-full py-5 rounded-2xl text-lg font-bold tracking-wide transition-all duration-150 active:scale-[0.98] disabled:opacity-40"
             style={{ backgroundColor: C.accent, color: C.text }}

@@ -11,7 +11,7 @@
  * Bump CACHE_NAME on each deploy to force cache refresh.
  */
 
-const CACHE_NAME  = 'lockedin-v5';
+const CACHE_NAME  = 'lockedin-v6';
 const OFFLINE_URL = '/offline';
 
 // Assets pre-cached on install so /offline is available immediately
@@ -22,10 +22,56 @@ const PRECACHE = [
   '/icon-512.png',
 ];
 
-// ── Message handler (SKIP_WAITING from client) ───────────────────────────────
+// ── Rest-timer notification scheduler ────────────────────────────────────────
+// The page-level setTimeout that drives the rest timer is suspended when the
+// tab is backgrounded (severely on iOS Safari, throttled on desktop Chrome).
+// To make sure the athlete still gets a notification when rest is up, the
+// page also asks the SW to schedule a backup notification at the absolute
+// expiry timestamp. SW timers are more resilient (the SW process keeps
+// running for some time after the page is hidden, and on Android Chrome /
+// installed PWAs they reliably fire). When BOTH the page and the SW fire,
+// the OS collapses them via the matching `tag`, so the athlete never sees
+// duplicates.
+const restTimers = new Map(); // tag → timeoutId
+
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+  const data = event.data;
+  if (data && data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+    return;
+  }
+  if (data && data.type === 'SCHEDULE_REST_NOTIFICATION') {
+    const tag    = data.tag || 'lockedin-rest-timer';
+    const endsAt = Number(data.endsAt) || 0;
+    const title  = String(data.title || 'Rest complete — back to the bar');
+    const body   = String(data.body  || 'Time for your next set.');
+    // Replace any prior schedule for the same tag — starting a new rest
+    // timer always supersedes whatever was queued.
+    if (restTimers.has(tag)) {
+      clearTimeout(restTimers.get(tag));
+      restTimers.delete(tag);
+    }
+    const delayMs = Math.max(0, endsAt - Date.now());
+    const timeoutId = setTimeout(() => {
+      restTimers.delete(tag);
+      self.registration.showNotification(title, {
+        body,
+        icon:  '/icon-192.png',
+        badge: '/icon-192.png',
+        tag,
+        silent: false,
+      }).catch(() => { /* silent — non-critical UX */ });
+    }, delayMs);
+    restTimers.set(tag, timeoutId);
+    return;
+  }
+  if (data && data.type === 'CANCEL_REST_NOTIFICATION') {
+    const tag = data.tag || 'lockedin-rest-timer';
+    if (restTimers.has(tag)) {
+      clearTimeout(restTimers.get(tag));
+      restTimers.delete(tag);
+    }
+    return;
   }
 });
 
