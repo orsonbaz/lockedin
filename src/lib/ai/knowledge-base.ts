@@ -1717,6 +1717,217 @@ The role tells you what KIND of session to design; load comes from the
 chosen exercise's own RPE prescription, not from a mechanical drop.
 `;
 
+// ── Remedial / Rehab — modern evidence, not "stretch what feels tight" ───────
+// Common complaints on the platform (tight hips, sore shoulder, achy patellar
+// tendon, "tight" hamstrings) have outdated default Rx baked into gym
+// folklore. This module encodes the modern evidence base so the coach
+// doesn't reflexively prescribe stretching when load + activation work is
+// what the literature actually supports. The dosed exercise prescriptions
+// are tight summaries of the entries in `src/lib/exercises/remedial-library.ts`
+// — the library is also queried directly so specific Rx blocks can be
+// injected into the prompt when an athlete surfaces a complaint.
+
+export const REMEDIAL_KNOWLEDGE = `
+## Remedial / Rehab — Modern Evidence-Based Defaults
+
+Most gym-default rehab advice is decades behind the evidence. The modern
+consensus across PT and sports-medicine literature flips several common
+defaults — coach from this synthesis, not from "stretch what feels tight."
+
+### Five Principles That Override the Old Defaults
+
+1. **"Tightness" is rarely a length problem.** A muscle that feels tight is
+   usually weak, inhibited, or overworking to compensate for a weak
+   neighbour. Default Rx: STRENGTHEN the muscle through full range; only
+   add stretching as a secondary input. The hip flexors are the canonical
+   case — see below.
+
+2. **Tendons want load, not rest.** Patellar / Achilles / elbow
+   tendinopathy responds to **Heavy Slow Resistance** (≈ 70 % 1RM,
+   tempo 3-1-3) BETTER than to pure eccentric protocols (HSR has higher
+   patient satisfaction at 6 mo + better collagen turnover; 2024 reviews).
+   For acute pain, **isometric holds** produce rapid analgesia (45 min
+   post-intervention; Rio et al. 2015). "Rest the tendon" actively
+   atrophies it.
+
+3. **Pain ≤ 3/10 during loading is acceptable** for chronic tendinopathy
+   and most chronic stiffness presentations. The catch: it must not
+   *worsen* 24 h later. If pain is sharp, neurological, or escalating,
+   STOP and refer.
+
+4. **Acute static stretching reduces strength** for ~60 minutes after
+   (Warneke & Lohmann 2024 systematic review). Use stretching POST-training
+   or on rest days, not as a warm-up. Mobility work that unlocks ROM
+   (T-spine extensions, banded ankle drills) is fine pre-training because
+   it's joint-level, not muscle-level static stretch.
+
+5. **Endurance > peak strength for joint resilience.** McGill's Big 3
+   (curl-up, side plank, bird dog) protect the back via *time-under-tension
+   endurance* of the trunk muscles, not heroic loaded core work.
+
+### Decision Framework — What Kind of Intervention?
+
+When an athlete surfaces a complaint, ask in order:
+1. Is there a red flag? (sharp / neurological / escalating pain;
+   unexplained weakness; bowel/bladder change; recent trauma) →
+   **REFER OUT.** Coach is not the right input.
+2. Is it a tendon? → ISOMETRIC for acute pain, then HEAVY SLOW
+   RESISTANCE. Not "rest." Not "stretch."
+3. Is it a "tight" sensation? → STRENGTHEN through range first,
+   activation work for the antagonist, mobility second. Stretching is
+   one input, not the answer.
+4. Is it acute (< 2 wk)? → Reduce load 30-50 %, modify exercise to a
+   pain-free variant, keep training around it. Stop pain-provoking
+   movements; do not stop training.
+5. Is it chronic / recurrent? → Ramp load. Tendons + joints adapt to
+   stimulus, atrophy from absence.
+
+### Tight Hip Flexors — Read This Before Prescribing Stretches
+
+The reflex of "stretch the psoas" misses what the evidence shows:
+- The iliopsoas can be both tight AND weak from prolonged sitting
+  (Cleveland Clinic; PMC 11546833).
+- Strengthening through 30-60° hip flexion produces > 60 % MVIC of
+  iliopsoas — strengthening WORKS where stretching is mostly passive.
+- "Tight hip flexors" often present alongside glute inhibition; the
+  hip flexor over-recruits because the glute under-fires. Strengthening
+  glutes resolves the hip-flexor "tightness" without ever stretching it.
+- Lunge-and-reach + standing band hip flexion hits the strengthening
+  side; couch stretch (with proper posterior pelvic tilt) hits the
+  length side. Combine, don't substitute.
+- Acute static stretching pre-training reduces strength briefly. Save
+  the couch stretch for after the session, not the warm-up.
+
+**Default Rx (in priority order):**
+1. Loaded dead bug 3×8 tempo 3-1-3, 4×/wk — anti-extension brace + hip
+   flexor dissociation.
+2. Standing band hip flexion 3×12, 3×/wk — strengthens through > 60°.
+3. Glute bridge slow eccentric 3×12, 3×/wk — addresses the inhibited
+   antagonist.
+4. Copenhagen plank short-lever 3×20s, 2×/wk — adductor + obliques.
+5. Couch stretch 2×60s, 4×/wk POST-training — supplemental, not primary.
+
+If after 4 weeks of consistent execution the athlete still reports
+tightness, refer to a sports physio for movement assessment.
+
+### Tendinopathy — Patellar / Achilles / Elbow
+
+**Acute (< 4 wk, reactive):**
+- Isometric holds at 70 % MVC, 5 × 45 s, 3×/wk — produces rapid
+  analgesia (Rio et al. 2015).
+- Reduce loading volume 40 %; do not stop training around the joint.
+
+**Chronic / Reactive-on-Degenerative (> 4 wk):**
+- Heavy Slow Resistance: 4×8, tempo 3-1-3 (6 s/rep total), at ~70 %
+  8RM, 3×/wk. Pain ≤ 3/10 acceptable; must not worsen 24 h later.
+- HSR > pure eccentric: better collagen turnover, equal pain
+  reduction, higher satisfaction at 6 mo (2024 meta-analyses).
+- 12-week timeline is realistic; quick fixes don't exist.
+
+**Specific protocols** (lib/exercises/remedial-library.ts has full dosing):
+- Patellar: Spanish squat isometric → leg extension HSR.
+- Achilles: HSR calf raise — bilateral → single-leg → loaded.
+- Lateral / medial elbow: wrist isometric → HSR wrist curls.
+
+### Shoulder Impingement / "Pinch on Bench"
+
+Reduced posterior tilt + reduced upward rotation are the classic
+scapular dyskinesis patterns (Ludewig, JOSPT review). Generic stretches
+miss this entirely; scapular control work is the leverage point.
+
+**Default Rx:**
+1. Banded face pull 3×15, 4×/wk — best single bang-for-buck movement;
+   trains rear delt + mid trap + lower trap + ER all together.
+2. Prone Y/T/W on incline 2×10 each, 3×/wk — lower trap activation.
+3. Serratus push-up plus 3×12, 3×/wk — upward rotation + protraction.
+4. Side-lying ER 3×15 light DB, tempo 3-0-3, 3×/wk — rotator cuff
+   endurance.
+
+**Programming modifications:**
+- Widen bench grip 1 finger; check for a flared elbow (> 75° to torso).
+- Add T-spine mobility (foam roller extensions) before bench session.
+- Don't stop benching unless every grip width is painful — load
+  through pain-free ROM, do NOT rest.
+
+### Low Back — Acute Stiffness or Pain
+
+McGill's framework dominates the evidence: trunk endurance, not
+maximum-effort core work. Continue training — 2 weeks of bedrest is
+worse than continuing modified training in nearly every controlled
+trial (Hayden et al. Cochrane reviews).
+
+**Default Rx (McGill Big 3):**
+1. Curl-up 3×5 with 10 s holds, 5×/wk.
+2. Side plank progression (knees down → full) 3×20 s each side, 5×/wk.
+3. Bird dog 3×8 with 2 s pauses, 5×/wk.
+
+**Programming during a flare:**
+- Drop comp deadlift load 30-50 %; substitute trap-bar or block-pull.
+- Comp squat: drop 20-30 %, slow tempo, no top single.
+- Hip hinge volume cut to RDL only (eccentric-dominant, lower spinal
+  cost than comp DL).
+- Hip thrust replaces good morning / sumo DL accessory work.
+- McKenzie press-ups for flexion-intolerant presentations (back pain
+  worse with bending forward); flexion-bias for extension-intolerant
+  presentations (back pain worse with arching). Match the pattern.
+
+### Tight Hamstrings — Eccentric Loading > Stretching
+
+Hamstring strain risk is most strongly tied to eccentric strength
+deficit (Askling, Aspetar). Nordic curls + RDLs add fascicle length
+AND strength — both correlate with reduced injury and "looser"
+self-reported hamstring feel.
+
+**Default Rx:**
+1. Nordic hamstring curl 3×5 eccentric (5-second lower), 2×/wk.
+2. RDL tempo 3×8 with 4-second eccentric, 2×/wk.
+3. Static hamstring stretching is NOT the first-line intervention;
+   include only as post-session supplement.
+
+3-phase eccentric protocol shows 92 % success rate at preventing
+re-injury 2 yrs post — magnitudes of effect that no stretching protocol
+matches.
+
+### Other Common Complaints (short Rx)
+
+- **Tight upper traps**: face pulls + Y/T/W lower-trap activation, NOT
+  trap stretches. Upper traps over-fire because lower traps + serratus
+  under-fire. Treat the under-firers.
+- **SI joint irritation**: McGill Big 3 + glute med strengthening
+  (side plank, copenhagen). Avoid manipulation seekers — load tolerance
+  resolves more than pops do.
+- **Plantar fasciopathy**: heavy slow calf raise WITH great toe extended
+  (towel under toe). Rathleff et al. 2015: superior to plantar-specific
+  stretching at 3 mo.
+- **Knee tracking / valgus**: ankle dorsiflexion mobility + glute med
+  strengthening (single-leg work, banded squats). Cueing alone fails.
+- **T-spine extension**: foam roller segmental extensions, NOT cervical
+  retractions. Bench arch + overhead position both depend on T-spine.
+
+### Red Flags — When to Refer Out (no exercise prescription)
+
+REFER if the athlete reports any of:
+- Pain that wakes them up at night, or that is worse at rest than with
+  movement.
+- Bowel / bladder change.
+- Numbness / tingling that radiates below the knee or below the elbow.
+- Unexplained loss of strength (couldn't extend knee, couldn't grip).
+- Recent trauma + persistent pain.
+- "10/10" pain at any time.
+- Anything that hasn't improved after 6 weeks of consistent loading work.
+
+Do not coach through these. Refer to a sports physio or sports doctor
+and pause loading on the affected joint until cleared.
+
+### What This Module Does NOT Cover
+
+This is a coaching-context module. It is not a replacement for
+diagnostic evaluation, manual therapy, or imaging when those are
+indicated. The default response to "I'm hurting" is always: ask the
+red-flag questions; if any fire, refer; otherwise apply the
+load-and-activation defaults above.
+`;
+
 // ── Diagnostic Playbook (failure-point → cause → Rx) ──────────────────────────
 
 export const DIAGNOSTIC_PLAYBOOK_KNOWLEDGE = `
@@ -1978,6 +2189,7 @@ export function getFullKnowledge(): string {
     ADVANCED_TECHNIQUE_KNOWLEDGE,
     EXERCISE_KNOWLEDGE,
     DIAGNOSTIC_PLAYBOOK_KNOWLEDGE,
+    REMEDIAL_KNOWLEDGE,
     SESSION_DESIGN_KNOWLEDGE,
     CALISTHENICS_KNOWLEDGE,
     STREET_LIFT_KNOWLEDGE,
@@ -2087,6 +2299,26 @@ const KW_INJURY        = [
   'injur', 'pain', 'hurt', 'shoulder', 'knee', 'back pain', 'lower back',
   'hip', 'elbow', 'wrist', 'tendin', 'strain',
 ] as const;
+const KW_REMEDIAL      = [
+  // Same complaint vocabulary as remedial-library.ts complaintFromText —
+  // keep these in sync when adding new complaints there.
+  'tight', 'stiff', 'sore', 'achy',
+  'rehab', 'remedial', 'mobility', 'mobilit',
+  'flexor', 'psoas', 'hamstring', 'pec',
+  'rotator cuff', 'impinge', 'pinch',
+  'tendin', 'jumper', 'tennis elbow', 'golfer elbow',
+  'plantar', 'achilles', 'patellar',
+  'glute weak', 'glute inhibit', 'not firing',
+  'knee cave', 'valgus', 'anterior knee', 'knee pain',
+  'si joint', 'sacroiliac',
+  'thoracic', 't-spine', 't spine',
+  'dorsiflex', 'ankle mob',
+  'mckenzie', 'mcgill', 'dead bug', 'bird dog',
+  'eccentric', 'isometric', 'heavy slow',
+  'stretch', 'stretching',
+  // Trigger phrases the athlete commonly types
+  'i have', 'feeling', 'felt',
+] as const;
 const KW_PROGRAMMING   = [
   'adjust', 'max', 'swap', 'modif', 'chang', 'responder',
   'phenotype', 'abbreviat',
@@ -2171,6 +2403,7 @@ const SECTION_CATALOG: readonly KbSection[] = [
   { content: ADVANCED_TECHNIQUE_KNOWLEDGE,    keywords: KW_ADVANCED_TECH,  softCap: 1800 },
   { content: EXERCISE_KNOWLEDGE,              keywords: KW_EXERCISE,       softCap: 1500 },
   { content: DIAGNOSTIC_PLAYBOOK_KNOWLEDGE,   keywords: KW_DIAGNOSTIC,     softCap: 1500 },
+  { content: REMEDIAL_KNOWLEDGE,              keywords: KW_REMEDIAL,       softCap: 2200 },
   { content: SESSION_DESIGN_KNOWLEDGE,        keywords: KW_SESSION_DESIGN, softCap: 1400 },
   { content: CALISTHENICS_KNOWLEDGE,          keywords: KW_CALISTHENICS,   softCap: 1500 },
   { content: STREET_LIFT_KNOWLEDGE,           keywords: KW_STREET_LIFT,    softCap: 1200 },

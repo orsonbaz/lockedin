@@ -18,6 +18,12 @@ import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 import { unpackReviewIssues } from '@/lib/engine/session-review';
 import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
 import {
+  complaintsFromText,
+  remediesFor,
+  renderRemedy,
+  type Complaint,
+} from '@/lib/exercises/remedial-library';
+import {
   summariseSessionRpeState,
   formatSessionRpeStateForPrompt,
   type SetFeedback,
@@ -40,6 +46,7 @@ const SECTION_CAPS = {
   history:    1200,
   exposure:   400,
   weakPoints: 400,
+  remedies:   1500,
   nutrition:  200,
   schedule:   400,
   wearables:  400,
@@ -342,6 +349,49 @@ export async function buildSystemPrompt(
     liftExposure = `Per-lift recency (use to shape today's session per the recent-exposure protocol):\n${lines.map((l) => `  - ${l}`).join('\n')}`;
   }
 
+  // ── Remedial Rx (when an injury / complaint surfaces) ─────────────────────
+  // Grounds the coach's response in dosed, evidence-based exercises from
+  // the remedial library — instead of defaulting to "stretch what feels
+  // tight," which is no longer best practice for hip flexors, hamstrings,
+  // tendons, or shoulders. Triggered by either:
+  //   (a) the user's latest message mentioning a complaint phrase, OR
+  //   (b) a stored AthleteMemory of kind='INJURY' whose content matches.
+  // The matched exercises (top 3 by evidence strength per complaint) get
+  // injected into a dedicated 'remedies' section. The coach prompt also
+  // already includes the prose REMEDIAL_KNOWLEDGE module via the KB
+  // retrieval — that explains the principles; this surfaces the specifics.
+  let remediesSection = '';
+  {
+    const detected = new Set<Complaint>();
+    if (userMessage) {
+      for (const c of complaintsFromText(userMessage)) detected.add(c);
+    }
+    // Also scan stored injury memories so the coach respects long-running
+    // complaints even when the athlete didn't re-mention them today.
+    const injuryMemories = await db.athleteMemory
+      .filter((m) => m.kind === 'INJURY')
+      .toArray();
+    for (const m of injuryMemories) {
+      for (const c of complaintsFromText(m.content)) detected.add(c);
+    }
+    if (detected.size > 0) {
+      const blocks: string[] = [];
+      for (const complaint of detected) {
+        const top3 = remediesFor(complaint).slice(0, 3);
+        if (top3.length === 0) continue;
+        blocks.push(
+          `### ${complaint.replace(/_/g, ' ')}\n${top3.map(renderRemedy).join('\n')}`,
+        );
+      }
+      if (blocks.length > 0) {
+        remediesSection = [
+          'Athlete-specific remedial Rx (drawn from the modern evidence base — use these BEFORE defaulting to stretching):',
+          ...blocks,
+        ].join('\n\n');
+      }
+    }
+  }
+
   // ── Bodyweight trend ──────────────────────────────────────────────────────
   const recentBw = await db.bodyweight.orderBy('date').reverse().limit(7).toArray();
   let bwTrend = '';
@@ -455,6 +505,7 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
     '- Be direct and confident. You are an expert coach, not a chatbot.',
     '- Run the Coach\'s First Questions before recommending: state, goal, history, what the body needs, primary purpose.',
     '- Reason from the Framework and the knowledge base — synthesise across philosophies. Do not quote individual coaches by name.',
+    '- For ANY injury / pain / "tight" / "stiff" complaint, use the REMEDIAL_KNOWLEDGE module + the "Remedial Exercise Rx" section. The modern evidence base is: tightness is rarely a length problem (strengthen the muscle through range first), tendons want HEAVY SLOW RESISTANCE not rest, isometrics for acute tendon pain, and acute static stretching pre-training reduces strength. Do NOT default to "do these stretches" — that is outdated advice for most complaints. Tight hip flexors specifically: dead bug + standing band hip flexion + glute bridge come BEFORE couch stretch; couch stretch is post-training only. Always screen for red flags first; refer out if any fire.',
     '- When discussing today or this-week sessions, READ the "Recent Lift Exposure" block. The "next = PRIMARY/SECONDARY/TERTIARY/QUATERNARY" tag tells you the role today\'s session should play. Differentiate via FOUR LEVERS (pick one, don\'t stack): variation, emphasis rotation, intent shift (Westside speed work), volume modulation. Do NOT reflexively drop RPE per appearance — Sheiko 3× bench keeps uniform intensity, Calgary 4× bench keeps top sets at 76-82 % across days. SECONDARY = variation slot at near-primary RPE; TERTIARY = volume cut + emphasis change, NOT auto -1.0 RPE; QUATERNARY = intent shift (speed work RPE 5-6 by design, OR skill-accessory, OR skip). Never prescribe a top single on a TERTIARY day.',
     '- Explain the WHY behind every recommendation.',
     '- When discussing nutrition, give specific numbers tailored to this athlete\'s weight and goals.',
@@ -538,6 +589,7 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
     { name: 'liveSession', heading: 'Live Session Feedback', content: liveSessionInfo },
     { name: 'history',     heading: 'Training History',      content: sessionHistory },
     { name: 'exposure',    heading: 'Recent Lift Exposure',  content: liftExposure },
+    { name: 'remedies',   heading: 'Remedial Exercise Rx (injury / complaint)', content: remediesSection },
     { name: 'weakPoints', heading: 'Recent Signals',     content: weakPointsBody },
     { name: 'nutrition', heading: 'Nutrition Target Today', content: nutritionBody },
     { name: 'wearables', heading: 'Wearable Signals (last 7d)', content: wearablesBody },
