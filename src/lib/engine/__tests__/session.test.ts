@@ -1162,6 +1162,60 @@ describe('generateSession — multi-frequency appearance roles', () => {
   });
 });
 
+// ── Secondary-appearance tracking (fatigue awareness) ────────────────────────
+
+describe('lift-exposures — secondary appearance tracking', () => {
+  // The scenario: bench-as-secondary yesterday + bench-primary today.
+  // weekCount alone misses this — secondaryCount + daysSinceAny capture it.
+
+  it('formatExposureLines surfaces secondary count when > 0', async () => {
+    const { formatExposureLines } = await import('../lift-exposures');
+    const lines = formatExposureLines([
+      { lift: 'BENCH', daysSince: 5, weekCount: 1, daysSinceAny: 1, secondaryCount: 1 },
+      { lift: 'SQUAT', daysSince: 3, weekCount: 1, daysSinceAny: 3, secondaryCount: 0 },
+      { lift: 'DEADLIFT', daysSince: 2, weekCount: 1 }, // legacy: optional fields default
+    ]);
+    // Mixed primary + secondary: shows both counts and "since last (primary X ago)"
+    expect(lines[0]).toContain('1d since last');
+    expect(lines[0]).toContain('primary 5d ago');
+    expect(lines[0]).toContain('1× primary + 1× secondary this week');
+    // Pure primary: simpler "since primary" form
+    expect(lines[1]).toContain('3d since primary');
+    expect(lines[1]).toContain('1× this week');
+    expect(lines[1]).not.toContain('secondary');
+    // Legacy / fallback: still works without new fields
+    expect(lines[2]).toContain('2d since primary');
+  });
+
+  it('recencyTagFor uses daysSinceAny so secondary yesterday → not FRESH-blocked', async () => {
+    const { recencyTagFor } = await import('../lift-exposures');
+    // weekCount=0, primary 5d ago, but secondary YESTERDAY → not OVERDUE; FRESH
+    expect(recencyTagFor({
+      lift: 'BENCH', daysSince: 5, weekCount: 0, daysSinceAny: 1, secondaryCount: 1,
+    })).toBe('FRESH');
+    // weekCount=1, primary today → still FRESH regardless of secondary
+    expect(recencyTagFor({
+      lift: 'BENCH', daysSince: 0, weekCount: 1, daysSinceAny: 0, secondaryCount: 0,
+    })).toBe('FRESH');
+    // No secondary signal → behaves as before (legacy fallback)
+    expect(recencyTagFor({
+      lift: 'BENCH', daysSince: 6, weekCount: 0,
+    })).toBe('OVERDUE');
+  });
+
+  it('recencyTagFor flags STACKED when total weekly exposure ≥ 4 (primary + secondary)', async () => {
+    const { recencyTagFor } = await import('../lift-exposures');
+    // 2 primary + 2 secondary = 4 total → STACKED
+    expect(recencyTagFor({
+      lift: 'BENCH', daysSince: 1, weekCount: 2, daysSinceAny: 0, secondaryCount: 2,
+    })).toBe('STACKED');
+    // 2 primary + 1 secondary = 3 total → NOT yet STACKED (only primary count gates the lower threshold)
+    expect(recencyTagFor({
+      lift: 'BENCH', daysSince: 1, weekCount: 2, daysSinceAny: 1, secondaryCount: 1,
+    })).not.toBe('STACKED');
+  });
+});
+
 // ── Reward System wiring ──────────────────────────────────────────────────────
 
 describe('generateSession — rewardSystem', () => {

@@ -16,7 +16,7 @@ import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
 import { buildWearablesSection } from '@/lib/engine/wearables/wearables-db';
 import { unpackReviewIssues } from '@/lib/engine/session-review';
-import { loadRecentLiftExposures, recencyTagFor } from '@/lib/engine/lift-exposures';
+import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
 import {
   summariseSessionRpeState,
   formatSessionRpeStateForPrompt,
@@ -307,21 +307,26 @@ export async function buildSystemPrompt(
   }
 
   // ── Recent lift exposure summary ──────────────────────────────────────────
-  // Per-comp-lift recency tags (FRESH / RECOVERED / OVERDUE / STACKED) so the
-  // coach can pick session shape per the recent-exposure protocol in
-  // STRUCTURE_KNOWLEDGE without re-deriving from session history every time.
+  // Per-comp-lift recency tags (FRESH / RECOVERED / OVERDUE / STACKED) +
+  // role prediction (PRIMARY/SECONDARY/TERTIARY/QUATERNARY) + 7d tonnage.
+  // Routes through formatExposureLines so the chat coach, session author,
+  // and session advisor all read identical exposure lines (same format,
+  // same secondary tracking, same role prediction). Chat coach is the only
+  // one that appends 7d tonnage — author/advisor see volume in their
+  // recent-sessions block instead.
   const exposures = await loadRecentLiftExposures(today());
   let liftExposure = '';
   if (exposures.length > 0) {
-    // Compute trailing-7d completed-set tonnage per primary lift, looking only
-    // at sessions whose primary matches the lift in question (same window the
-    // exposure detector uses).
+    const baseLines = formatExposureLines(exposures);
     const recentForExposure = await db.sessions
       .filter((s) => s.status === 'COMPLETED' && s.scheduledDate >= isoDaysAgo(7))
       .toArray();
 
     const lines = await Promise.all(
-      exposures.map(async (e) => {
+      baseLines.map(async (baseLine, i) => {
+        const e = exposures[i];
+        // Tonnage = total kg × reps across all sets in sessions where this
+        // lift was primary in the last 7 days. Loose proxy for weekly load.
         const matched = recentForExposure.filter((s) => s.primaryLift === e.lift);
         let totalVolKg = 0;
         for (const s of matched) {
@@ -331,11 +336,7 @@ export async function buildSystemPrompt(
         const volStr = totalVolKg > 1000
           ? `${(totalVolKg / 1000).toFixed(1)}t`
           : `${Math.round(totalVolKg)}kg`;
-        const days = Number.isFinite(e.daysSince) ? `${e.daysSince}d` : 'never';
-        // Tag taxonomy lives next to the exposure data in lift-exposures.ts so
-        // the chat coach, the session author, and the session advisor all
-        // classify the same exposure the same way.
-        return `${e.lift}: ${days} since primary, ${e.weekCount}× this week, ${volStr} 7d → ${recencyTagFor(e)}`;
+        return `${baseLine} | ${volStr} 7d`;
       }),
     );
     liftExposure = `Per-lift recency (use to shape today's session per the recent-exposure protocol):\n${lines.map((l) => `  - ${l}`).join('\n')}`;

@@ -56,13 +56,27 @@ export async function loadRecentLiftExposures(onDate: string): Promise<LiftExpos
   );
 
   return COMP_LIFTS.map<LiftExposure>((lift) => {
-    const matching = past.filter((s) => s.primaryLift === lift);
-    const last = matching[0];
-    const daysSince = last ? daysBetween(last.scheduledDate, onDate) : Infinity;
+    const wasPrimary   = (s: typeof past[number]) => s.primaryLift === lift;
+    const wasSecondary = (s: typeof past[number]) => (s.secondaryLifts ?? []).includes(lift);
+    const wasAny       = (s: typeof past[number]) => wasPrimary(s) || wasSecondary(s);
+
+    // Primary-only signal — drives role determination (PRIMARY / SECONDARY / ...).
+    const lastPrimary = past.find(wasPrimary);
+    const daysSince = lastPrimary ? daysBetween(lastPrimary.scheduledDate, onDate) : Infinity;
     const weekCount = past.filter(
-      (s) => s.primaryLift === lift && s.scheduledDate >= weekStart && s.scheduledDate < onDate,
+      (s) => wasPrimary(s) && s.scheduledDate >= weekStart && s.scheduledDate < onDate,
     ).length;
-    return { lift, daysSince, weekCount };
+
+    // Any-appearance signal — catches "bench-as-secondary yesterday" so the
+    // coach has full fatigue awareness regardless of whether the lift was
+    // the focus of those prior sessions.
+    const lastAny = past.find(wasAny);
+    const daysSinceAny = lastAny ? daysBetween(lastAny.scheduledDate, onDate) : Infinity;
+    const secondaryCount = past.filter(
+      (s) => wasSecondary(s) && s.scheduledDate >= weekStart && s.scheduledDate < onDate,
+    ).length;
+
+    return { lift, daysSince, weekCount, daysSinceAny, secondaryCount };
   });
 }
 
@@ -70,10 +84,19 @@ export async function loadRecentLiftExposures(onDate: string): Promise<LiftExpos
 export type RecencyTag = 'FRESH' | 'RECOVERED' | 'OVERDUE' | 'STACKED';
 
 export function recencyTagFor(e: LiftExposure): RecencyTag {
-  if (!Number.isFinite(e.daysSince))                    return 'OVERDUE';
-  if (e.weekCount >= 3)                                 return 'STACKED';
-  if (e.daysSince >= 5 && e.weekCount <= 1)             return 'OVERDUE';
-  if (e.daysSince <= 2)                                 return 'FRESH';
+  // FRESH / RECOVERED reflect fatigue, so they read from "any appearance"
+  // — a bench-as-secondary yesterday makes today's bench NOT FRESH even if
+  // the last bench-primary was 5 days ago. STACKED uses total weekly
+  // exposure (primary + secondary) so the lift is flagged once it has
+  // accumulated meaningful weekly volume regardless of role split.
+  const daysSinceAny   = e.daysSinceAny   ?? e.daysSince;
+  const secondaryCount = e.secondaryCount ?? 0;
+  const totalCount     = e.weekCount + secondaryCount;
+
+  if (!Number.isFinite(daysSinceAny))                   return 'OVERDUE';
+  if (e.weekCount >= 3 || totalCount >= 4)              return 'STACKED';
+  if (daysSinceAny >= 5 && totalCount <= 1)             return 'OVERDUE';
+  if (daysSinceAny <= 2)                                return 'FRESH';
   return 'RECOVERED';
 }
 
@@ -95,19 +118,42 @@ export function nextAppearanceRoleFor(e: LiftExposure): AppearanceRole {
 }
 
 /**
- * One line per comp lift summarising recency, weekly frequency, the
- * STRUCTURE_KNOWLEDGE recency tag, AND the role the next appearance of
- * this lift should play (PRIMARY / SECONDARY / TERTIARY / QUATERNARY).
- * Shared between the chat coach, session author, and session advisor so
- * all three pick session shape from the same prediction.
+ * One line per comp lift summarising recency, weekly frequency (primary +
+ * secondary appearances), the STRUCTURE_KNOWLEDGE recency tag, AND the
+ * role the next appearance of this lift should play (PRIMARY / SECONDARY /
+ * TERTIARY / QUATERNARY). Shared between the chat coach, session author,
+ * and session advisor.
  *
- *   SQUAT: 3d since primary, 2× this week → RECOVERED (next = TERTIARY)
- *   BENCH: never primary, 0× this week    → OVERDUE (next = PRIMARY)
- *   DEADLIFT: 1d since primary, 1× this week → FRESH (next = SECONDARY)
+ * Format adapts to whether secondary appearances exist:
+ *   - No secondary exposure: "SQUAT: 3d since primary, 1× this week → RECOVERED (next = SECONDARY)"
+ *   - Mixed primary + secondary: "BENCH: 1d since last (primary 5d ago), 1× primary + 1× secondary this week → FRESH (next = SECONDARY)"
+ *   - Secondary-only: "BENCH: 1d since last (never primary), 0× primary + 1× secondary this week → FRESH (next = PRIMARY)"
  */
 export function formatExposureLines(exposures: LiftExposure[]): string[] {
   return exposures.map((e) => {
-    const days = Number.isFinite(e.daysSince) ? `${e.daysSince}d since primary` : 'never primary';
-    return `${e.lift}: ${days}, ${e.weekCount}× this week → ${recencyTagFor(e)} (next = ${nextAppearanceRoleFor(e)})`;
+    const daysSinceAny   = e.daysSinceAny   ?? e.daysSince;
+    const secondaryCount = e.secondaryCount ?? 0;
+
+    // Recency phrase — show "since last" only when secondary appearances
+    // would otherwise hide; default to "since primary" when the two agree.
+    const fmtDays = (n: number) => (Number.isFinite(n) ? `${n}d` : 'never');
+    let recencyPhrase: string;
+    if (secondaryCount === 0 && daysSinceAny === e.daysSince) {
+      recencyPhrase = `${fmtDays(e.daysSince)} since primary`;
+    } else if (Number.isFinite(e.daysSince) && e.daysSince === daysSinceAny) {
+      recencyPhrase = `${fmtDays(daysSinceAny)} since last (primary day)`;
+    } else if (Number.isFinite(e.daysSince)) {
+      recencyPhrase = `${fmtDays(daysSinceAny)} since last (primary ${fmtDays(e.daysSince)} ago)`;
+    } else {
+      recencyPhrase = `${fmtDays(daysSinceAny)} since last (never primary)`;
+    }
+
+    // Count phrase — show secondary count only when it's > 0 so the noise
+    // floor stays low for athletes who don't run multi-lift sessions.
+    const countPhrase = secondaryCount > 0
+      ? `${e.weekCount}× primary + ${secondaryCount}× secondary this week`
+      : `${e.weekCount}× this week`;
+
+    return `${e.lift}: ${recencyPhrase}, ${countPhrase} → ${recencyTagFor(e)} (next = ${nextAppearanceRoleFor(e)})`;
   });
 }

@@ -32,10 +32,27 @@ import { selectAccessories } from './accessory-selector';
 /** Per-lift weekly / historical signal used by the adaptive selector. */
 export interface LiftExposure {
   lift: Lift;
-  /** Days since this lift was the primary of a (any-status) session. Infinity if never. */
+  /** Days since this lift was the *primary* of a completed session. Infinity if never. */
   daysSince: number;
-  /** Count of sessions this ISO week where this lift was primary. */
+  /** Count of completed sessions this ISO week where this lift was primary. */
   weekCount: number;
+  /**
+   * Days since this lift appeared in ANY completed session — as either the
+   * primary lift OR an entry in `secondaryLifts`. Always ≤ `daysSince`. The
+   * structural role of today's session (PRIMARY/SECONDARY/TERTIARY/...) is
+   * determined by primary appearances only (`weekCount`); this field is the
+   * separate FATIGUE signal that catches "bench-as-secondary yesterday +
+   * bench-primary today" situations the role tier would otherwise miss.
+   * Optional for backwards compatibility — defaults to `daysSince`.
+   */
+  daysSinceAny?: number;
+  /**
+   * Count of completed sessions this ISO week where this lift was a
+   * SECONDARY lift (in `secondaryLifts`, not `primaryLift`). Optional —
+   * defaults to 0. Surfaced to the coach so it can read total weekly
+   * exposure, not just primary-day count.
+   */
+  secondaryCount?: number;
 }
 
 export interface SessionInput {
