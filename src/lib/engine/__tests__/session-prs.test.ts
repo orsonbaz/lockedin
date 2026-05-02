@@ -129,6 +129,29 @@ describe('findSessionPRs', () => {
     expect(out.map((p) => p.exerciseName)).toEqual(['Squat', 'Bench']);
   });
 
+  it('uses RPE-aware e1RM when rpeLogged is present', () => {
+    const ex = makeEx('ex-1', 'Squat', { libraryExerciseId: 'competition_squat' });
+    // 5×140 @ RPE 8 → RTS table: 140 / 0.84 ≈ 166.7 (PR vs prior 165).
+    // Epley would give 140 × (1 + 5/30) ≈ 163.3 and miss the PR.
+    const sets = [makeSet('ex-1', 140, 5, { rpeLogged: 8 })];
+    const prior = new Map<string, number>([['lib:competition_squat', 165]]);
+    const out = findSessionPRs({
+      exercises: [ex], sets, priorBestByKey: prior,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].todayE1rm).toBeCloseTo(166.7, 1);
+  });
+
+  it('falls back to Epley when rpeLogged is absent', () => {
+    const ex = makeEx('ex-1', 'Squat', { libraryExerciseId: 'competition_squat' });
+    const sets = [makeSet('ex-1', 150, 5)]; // no RPE → Epley → 175
+    const out = findSessionPRs({
+      exercises: [ex], sets, priorBestByKey: new Map(),
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].todayE1rm).toBeCloseTo(175, 1);
+  });
+
   it('exerciseKey prefers libraryExerciseId over name', () => {
     expect(exerciseKey({ libraryExerciseId: 'competition_squat', name: 'Squat' }))
       .toBe('lib:competition_squat');

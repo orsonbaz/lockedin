@@ -10,8 +10,21 @@
  */
 
 import { db } from '@/lib/db/database';
-import { estimateMax } from '@/lib/engine/calc';
+import { estimateMax, estimateMaxFromRpe } from '@/lib/engine/calc';
 import type { SessionExercise, SetLog } from '@/lib/db/types';
+
+/**
+ * Prefer the RPE-aware RTS table when the set has a logged RPE; fall back to
+ * Epley otherwise. Keeps prior-best and today's-best on the same scale so PR
+ * deltas remain apples-to-apples.
+ */
+function setE1rm(s: Pick<SetLog, 'loadKg' | 'reps' | 'rpeLogged'>): number {
+  if (s.rpeLogged !== undefined) {
+    const fromRpe = estimateMaxFromRpe(s.loadKg, s.reps, s.rpeLogged);
+    if (fromRpe !== null && fromRpe > 0) return fromRpe;
+  }
+  return estimateMax(s.loadKg, s.reps);
+}
 
 export interface SessionPR {
   exerciseName: string;
@@ -58,7 +71,7 @@ export function findSessionPRs(input: {
     let todayE1rm = 0;
     let evidence: { loadKg: number; reps: number } | null = null;
     for (const s of exSets) {
-      const e1 = estimateMax(s.loadKg, s.reps);
+      const e1 = setE1rm(s);
       if (e1 > todayE1rm) {
         todayE1rm = e1;
         evidence = { loadKg: s.loadKg, reps: s.reps };
@@ -136,7 +149,7 @@ async function loadPriorBests(
     let best = 0;
     for (const s of priorSets) {
       if (s.outcome === 'MISS' || s.reps < 1 || s.loadKg <= 0) continue;
-      const e1 = estimateMax(s.loadKg, s.reps);
+      const e1 = setE1rm(s);
       if (e1 > best) best = e1;
     }
     result.set(key, best);
