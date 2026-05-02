@@ -1095,15 +1095,19 @@ describe('generateSession — multi-frequency appearance roles', () => {
     ],
   });
 
-  it('SECONDARY appearance prescribes -0.5 RPE vs PRIMARY (existing DUP behaviour)', () => {
+  it('SECONDARY appearance prescribes -0.5 RPE vs PRIMARY (Stanek / DUP convention)', () => {
     expect(secondary.exercises[0].rpeTarget).toBeCloseTo(primary.exercises[0].rpeTarget - 0.5, 5);
   });
 
-  it('TERTIARY appearance prescribes -1.0 RPE vs PRIMARY (deeper drop)', () => {
-    expect(tertiary.exercises[0].rpeTarget).toBeCloseTo(primary.exercises[0].rpeTarget - 1.0, 5);
+  it('TERTIARY appearance keeps RPE at -0.5 vs PRIMARY (matches Calgary 4× bench / Sheiko)', () => {
+    // Engine differentiates TERTIARY by VOLUME cut + skip top single, not by
+    // a deeper RPE drop. Calgary Barbell keeps top sets at 76-82% across the
+    // week's bench days; Sheiko keeps all 3 bench days submaximal at uniform
+    // intensity. A reflexive -1.0 RPE drop here would be unsupported.
+    expect(tertiary.exercises[0].rpeTarget).toBeCloseTo(primary.exercises[0].rpeTarget - 0.5, 5);
   });
 
-  it('TERTIARY appearance caps comp sets at 3 (skill day, not volume day)', () => {
+  it('TERTIARY appearance caps comp sets at 3 (volume cut, not intensity cut)', () => {
     expect(tertiary.exercises[0].sets).toBeLessThanOrEqual(3);
   });
 
@@ -1129,7 +1133,11 @@ describe('generateSession — multi-frequency appearance roles', () => {
     expect(topSingle).toBeUndefined();
   });
 
-  it('QUATERNARY appearance prescribes -1.5 RPE vs PRIMARY and caps sets at 2', () => {
+  it('QUATERNARY appearance prescribes -1.0 RPE vs PRIMARY and caps sets at 2', () => {
+    // The -1.0 drop here is the engine producing a low-cost shape that's
+    // safe whether the LLM elects Westside-style speed work (RPE 5-6 by
+    // intent) or a skill-accessory day (RPE 6-7). The intent-specific RPE
+    // gets dialled in by the LLM author; the engine just stays conservative.
     const quaternary = generateSession({
       profile: baseProfile, block,
       weekDayOfWeek: 7,
@@ -1149,7 +1157,7 @@ describe('generateSession — multi-frequency appearance roles', () => {
       sessionNumber: 1,
       forcePrimary: 'BENCH',
     });
-    expect(quaternary.exercises[0].rpeTarget).toBeCloseTo(benchPrimary.exercises[0].rpeTarget - 1.5, 5);
+    expect(quaternary.exercises[0].rpeTarget).toBeCloseTo(benchPrimary.exercises[0].rpeTarget - 1.0, 5);
     expect(quaternary.exercises[0].sets).toBeLessThanOrEqual(2);
   });
 });

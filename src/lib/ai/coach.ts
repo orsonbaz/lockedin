@@ -454,7 +454,7 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
     '- Be direct and confident. You are an expert coach, not a chatbot.',
     '- Run the Coach\'s First Questions before recommending: state, goal, history, what the body needs, primary purpose.',
     '- Reason from the Framework and the knowledge base — synthesise across philosophies. Do not quote individual coaches by name.',
-    '- When discussing today or this-week sessions, READ the "Recent Lift Exposure" block. The "next = PRIMARY/SECONDARY/TERTIARY/QUATERNARY" tag tells you the role today\'s session should play for each lift. SECONDARY ≠ clone of PRIMARY (variation slot, RPE -0.5/-1.0); TERTIARY = skill at RPE 6-7, low volume; QUATERNARY = speed-only RPE 5-6. Do not prescribe a top single on a TERTIARY day.',
+    '- When discussing today or this-week sessions, READ the "Recent Lift Exposure" block. The "next = PRIMARY/SECONDARY/TERTIARY/QUATERNARY" tag tells you the role today\'s session should play. Differentiate via FOUR LEVERS (pick one, don\'t stack): variation, emphasis rotation, intent shift (Westside speed work), volume modulation. Do NOT reflexively drop RPE per appearance — Sheiko 3× bench keeps uniform intensity, Calgary 4× bench keeps top sets at 76-82 % across days. SECONDARY = variation slot at near-primary RPE; TERTIARY = volume cut + emphasis change, NOT auto -1.0 RPE; QUATERNARY = intent shift (speed work RPE 5-6 by design, OR skill-accessory, OR skip). Never prescribe a top single on a TERTIARY day.',
     '- Explain the WHY behind every recommendation.',
     '- When discussing nutrition, give specific numbers tailored to this athlete\'s weight and goals.',
     '- Reference specific technique cues and common errors for exercises.',

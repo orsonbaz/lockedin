@@ -806,28 +806,41 @@ function buildPrimaryExercises(
     : { sets: baseSets, reps: baseReps };
 
   // Multi-frequency role per appearance — see MULTI_FREQUENCY_KNOWLEDGE.
-  // Each role drops a tier vs the primary day:
-  //   1  PRIMARY:    full prescription (no adjustment).
-  //   2  SECONDARY:  variation/volume day, -0.5 RPE, +1 rep (Stanek/Noriega DUP).
-  //   3  TERTIARY:   skill day, -1.0 RPE, +1 rep, sets capped at 3.
-  //   4+ QUATERNARY: speed/skill, -1.5 RPE, base reps, sets capped at 2.
-  // Tertiary / quaternary scenarios only fire when recentLiftExposures show
-  // the lift has already been primary 2-3+ times this week. Cold-start /
-  // legacy callers without exposures hit index 1 or 2 only, so existing
-  // tests (which assert `2nd appearance reps = 1st reps + 1, RPE = 1st - 0.5`)
-  // pass unchanged.
+  // Per elite practice (Sheiko 3×/wk bench at uniform intensity, Calgary
+  // Barbell 4×/wk bench with top sets at 76-82% across days, Westside DE
+  // differentiated by INTENT rather than RPE drop) the engine should NOT
+  // reflexively drop RPE per appearance. Differentiation comes from
+  // VARIATION slot, EMPHASIS rotation, INTENT shift — modelled in the LLM
+  // prompts, not the rule engine. The engine still cuts VOLUME and skips
+  // top singles on later appearances (well-supported across all sources)
+  // but holds RPE near the primary level on the tertiary day.
+  //
+  //   1  PRIMARY:    full prescription, no adjustment.
+  //   2  SECONDARY:  -0.5 RPE, +1 rep — DUP convention (Stanek/Noriega).
+  //                  Preserved verbatim so existing fixtures still pass.
+  //   3  TERTIARY:   -0.5 RPE, +1 rep, sets capped at 3, top single skipped.
+  //                  Volume drop > intensity drop. NOT -1.0 RPE — Calgary +
+  //                  Sheiko keep RPE on the third bench day.
+  //   4+ QUATERNARY: -1.0 RPE, base reps, sets capped at 2, top single
+  //                  skipped. The lower load HERE has elite support
+  //                  because Westside DE is a distinct intent (speed work
+  //                  at RPE 5-6) — but the LLM prompt is responsible for
+  //                  electing speed-vs-skill-accessory; the engine just
+  //                  produces a low-cost shape so neither path is wrong.
   const repeatAdj = (() => {
-    if (appearanceIndex >= 4) return { rpe: -1.5, rep:  0, setCap: 2 };
-    if (appearanceIndex === 3) return { rpe: -1.0, rep:  1, setCap: 3 };
+    if (appearanceIndex >= 4) return { rpe: -1.0, rep:  0, setCap: 2 };
+    if (appearanceIndex === 3) return { rpe: -0.5, rep:  1, setCap: 3 };
     if (appearanceIndex === 2) return { rpe: -0.5, rep:  1, setCap: Infinity };
     return { rpe: 0, rep: 0, setCap: Infinity };
   })();
   const finalRpe  = quantizeRpe(adjustedRpe + repeatAdj.rpe);
   const finalReps = undulation.reps + repeatAdj.rep;
   const finalSets = Math.min(undulation.sets, repeatAdj.setCap);
-  // Tertiary / quaternary appearances skip the heavy-singles top set so the
-  // session genuinely respects its role — a top single on a 3rd-of-the-week
-  // bench day is the exact mistake MULTI_FREQUENCY_KNOWLEDGE warns against.
+  // Tertiary / quaternary appearances skip the heavy-singles top set —
+  // well-supported across all sources (Sheiko caps intensity in any
+  // session at 90%, Calgary backs off after the top set, Westside DE has
+  // no max-effort component). The set cap above carries the volume-cut
+  // half of the role; this carries the no-PR half.
   const skipTopSingle = appearanceIndex >= 3;
 
   const compLoad = roundLoad(prescribeLoad(maxKg, finalRpe, finalReps));

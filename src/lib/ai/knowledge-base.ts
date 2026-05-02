@@ -1523,148 +1523,198 @@ When generating or modifying a session, read recentLiftExposures FIRST, then cho
 `;
 
 // ── Multi-Frequency Programming (per-lift role per appearance) ───────────────
-// When a comp lift trains 2-4×/week, each appearance must have a DISTINCT
-// purpose. Treating the second / third / fourth bench day as a clone of the
-// first multiplies fatigue without multiplying adaptation. This module is
-// what differentiates a high-frequency program from a low-frequency program
-// run twice. Bench typically gets the deepest treatment (3-4×/wk for most
-// intermediates per Joey Flex / Sheiko / TSA consensus); squat 2-3×/wk;
-// deadlift 1-2×/wk (occasionally 3 for advanced).
+// When a comp lift trains 2-4×/week, each appearance must have a distinct
+// purpose. The amateur error is cloning the primary day; the OTHER amateur
+// error (and the one this module just got corrected on) is mechanically
+// dropping RPE per appearance as if the role hierarchy were a load ladder.
+// Real elite practice differentiates by VARIATION SELECTION, EMPHASIS
+// ROTATION, and INTENT — not by reflexively making each successive day
+// lighter. Sources: Sheiko (PowerliftingToWin teardown), Westside
+// (Dynamic Effort method docs), Joe Stanek 4×/wk bench, Calgary Barbell
+// 16-week. See specifics below.
 
 export const MULTI_FREQUENCY_KNOWLEDGE = `
-## Multi-Frequency Programming — Distinct Roles per Appearance
+## Multi-Frequency Programming — How Elite Coaches Actually Differentiate
 
-The single biggest amateur programming error in high-frequency training is
-running the same session three times. Frequency multiplies adaptation ONLY
-when each appearance has a distinct purpose, intensity profile, and exercise
-selection. Below are the four roles. Apply them in order: a lift's first
-appearance of the week is PRIMARY, second is SECONDARY, etc.
+The amateur error is cloning the primary session three times.
+The OTHER amateur error is reflexively dropping RPE per appearance as if
+the role hierarchy were a load ladder. Real elite practice differentiates
+through FOUR levers — usually picking ONE per appearance, not stacking
+them all:
 
-### PRIMARY APPEARANCE (1st of the week)
-- **Purpose**: peak neural stimulus, the heaviest exposure of the week.
-  This is the day the program is *optimised around*.
-- **Intensity**: full block prescription. Accumulation = RPE 7-8 work sets.
-  Intensification = top single @ RPE 8-8.5 + back-offs at RPE 7-7.5.
-  Realisation = top single @ RPE 8.5-9 + 1-2 back-offs.
-- **Volume**: full block volume — the largest of the week's appearances.
-- **Exercise selection**: COMPETITION variant. Comp squat, comp bench,
-  comp deadlift. Not a variation — the primary day is for the lift itself.
-- **Position in the week**: mid-early, ~48 h after a low-cost or recovery
-  day. Tuesday for bench, Monday or Tuesday for squat, mid-week for DL.
-- **Recovery cost**: HIGH. Plan 48-72 h before the next appearance.
+  L1. **Variation selection** — change the exercise (pause / pin / deficit
+      / close-grip / front-squat) so a different positional weakness is
+      loaded. Sheiko, Stanek, TSA, Calgary Barbell all default to this.
+  L2. **Emphasis rotation** — keep the comp lift but change which lift the
+      session prioritises (squat-focused day, DL-focused day, bench-focused
+      day, accessory-heavy day). Calgary Barbell 16-week is built on this.
+  L3. **Intent shift** — change the training quality. Westside / Conjugate
+      Dynamic Effort = 50-60 % at maximal bar speed for rate-of-force
+      development. This is NOT "lighter day" — it's a different adaptation.
+  L4. **Volume / intensity modulation** — drop the load only when the
+      programme calls for it. Sheiko's 3× bench week stays at submaximal
+      intensity (avg <70 %) across ALL three sessions and uses VOLUME
+      ALLOCATION as the differentiator, not RPE drop.
 
-### SECONDARY APPEARANCE (2nd of the week)
-- **Purpose**: volume stimulus + skill repetition under sub-max load.
-  This is where weekly tonnage actually accumulates.
-- **Intensity**: -0.5 to -1.0 RPE vs primary day (RPE 6.5-7.5). The athlete
-  should leave this session feeling worked, not gassed.
-- **Volume**: similar set count to primary, +1 rep per set
-  (DUP undulation: -0.5 RPE, +1 rep). Total tonnage often equals or exceeds
-  primary day's working tonnage despite the lower intensity.
-- **Exercise selection**: VARIATION of the comp lift, NOT another comp set.
-  Pause squat, pause/spoto bench, deficit/pause DL, close-grip bench.
-  The variation pulls a positional weakness into focus that the comp lift
-  doesn't address — that's the whole point of a second appearance.
-- **Position**: 48-72 h after primary. Spinal-load spacing rule applies:
-  if primary was a HIGH-spinal-load lift (squat / DL), don't stack the
-  secondary appearance against another HIGH lift's primary day.
-- **Recovery cost**: MEDIUM. 24-36 h before the next appearance is OK.
+### What the elites actually do
 
-### TERTIARY APPEARANCE (3rd of the week — mostly bench, sometimes squat for HIGH responders)
-- **Purpose**: skill maintenance + technique exposure without taxing recovery.
-  The point is grooving, not progress. If this session leaves the athlete
-  fatigued for the next primary, it has failed.
-- **Intensity**: -1.0 to -1.5 RPE vs primary (RPE 6-7). Cap loads at
-  ~75 % of e1RM. Top sets are absent — straight sets only.
-- **Volume**: LOW. 3 working sets is the cap. Higher rep counts (5-8) at
-  the lighter load are fine; low-rep heavy sets are not — they cost
-  recovery without adding stimulus the primary day didn't provide.
-- **Exercise selection**: SKILL or POSITIONAL variant.
-  - Bench tertiary: Spoto press at low RPE, larsen press, paused close-grip,
-    OHP-primary day with bench accessories, or high-rep DB bench.
-  - Squat tertiary (HIGH responder only): light high-bar 3×5 @ RPE 6,
-    pause squat at low RPE, narrow stance squat for hip drilling.
-  - Deadlift tertiary (advanced + HIGH responder): RDL or block-pull
-    technical work, never another floor pull.
-- **Position**: late in the week, ≥ 48 h before the next primary day.
-  For a Tuesday primary bench, the tertiary fits Friday or Saturday.
-- **Recovery cost**: LOW. Should not affect the next day's session.
+**Sheiko (3× bench, ~1× squat, 1× DL):** "Submaximal weights — usually
+70-85 % of 1RM — for multiple sets, with average intensity under 70 %
+across all sessions." Differentiation is by EXERCISE SELECTION (variation
+slots) and VOLUME ALLOCATION between lifts. There is no "lighter bench
+day" in the Sheiko model — every bench day is moderate, the frequency
+itself is the stimulus.
 
-### QUATERNARY APPEARANCE (4th of the week — bench only, in HIGH responder / 5-6 day programs)
-- **Purpose**: speed-work or pattern frequency. Maintains the motor groove
-  and CNS practice without anything that recovery would resent.
-- **Intensity**: RPE 5-6 only. Compensatory acceleration on every rep —
-  the goal is bar speed, not load. Bench: 50-70 % 1RM on submaximal singles
-  or doubles.
-- **Volume**: 2-3 sets max. Speed-bench is best at 6-8 sets × 3 reps with
-  short rest (60-90 s) when the goal is dynamic effort; for skill-only
-  the 2-3 set, RPE-5 ceiling applies.
-- **Exercise selection**: speed bench (3-rep cluster sets at 65 % +
-  bands optional), incline DB press, push-ups for high-rep specificity.
-  Do NOT add tricep volume here — triceps are already cooked from days 1-3.
-- **Position**: any low-spinal-load slot late week. Sunday, or as the
-  "easy" session of an SBD week.
-- **Recovery cost**: NEAR-ZERO. This exists to keep frequency, not stimulus.
+**Westside / Conjugate (2× bench: 1 ME + 1 DE):** Max Effort = ≥ 90 % to
+near-failure on a rotating max lift. Dynamic Effort = 50-60 % at maximal
+bar speed for 9 × 3. The DE day is intent-differentiated, not RPE-low —
+the goal is rate of force development, not lighter pressing. Athletes who
+treat DE as "easier ME" derail the system. (Westside docs verbatim:
+"sub-maximal weights are used with maximal speed to increase the rate of
+force development… not to build absolute strength.")
+
+**Joe Stanek (4×/wk bench):** Frames the week as a "mini weekly peak" —
+the structure builds toward a single planned strongest day. Sessions are
+scheduled so the athlete is freshest on the peak day, not so each day is
+mechanically lighter than the last. Position in the week matters more
+than any reflexive RPE drop.
+
+**Calgary Barbell 16-week (4× bench, 3× squat, 3× DL):** "Each day
+prioritises a different movement pattern — squat-focused, DL-focused,
+variation day, accessory-heavy day." Differentiation is by EMPHASIS, not
+by stacking lighter loads. Top sets at 76-82 %, lighter back-off sets.
+Phase 4 is RPE-based singles. No "tertiary day at -1.0 RPE" anywhere.
+
+**Joey Flex / TSA:** Bench is a skill movement that benefits from 3-4×
+exposure. Pause work owns its own session. The principle is "what is this
+session DRIVING that the others don't?" — not a load ladder.
+
+### The Roles, Corrected
+
+The framework still names appearances PRIMARY / SECONDARY / TERTIARY /
+QUATERNARY for clarity, but each role is now defined by its
+**differentiation lever**, not by an automatic RPE drop.
+
+#### PRIMARY (1st appearance)
+- Lever: comp lift, full block prescription. The week is built around it.
+- Intensity: full block. Accumulation RPE 7-8; Intensification top set
+  RPE 8-8.5 + back-offs at -5 to -8 %; Realisation top single RPE 8.5-9.
+- Volume: full block volume.
+- Position: at high readiness, ≥ 48 h after a low-cost day.
+
+#### SECONDARY (2nd appearance)
+- Default lever: **VARIATION SLOT** (lever L1). Use a comp variation that
+  exposes a different positional weakness — pause / pin / deficit / paused
+  close-grip / front squat / SSB. NOT another comp set.
+- Intensity: typically RPE 7-7.5 on the variation. The Stanek / DUP -0.5
+  RPE / +1 rep convention holds when the second day's exercise is
+  similar enough to the comp lift that load comparison is meaningful;
+  if the variation is mechanically different (front squat vs back squat)
+  RPE is set on its own merits, not relative to the comp lift.
+- Volume: similar to primary, often +1 rep per set (DUP).
+- Position: 48-72 h after primary; respect spinal-load spacing.
+
+#### TERTIARY (3rd appearance — mostly bench)
+- Default lever: **EMPHASIS ROTATION** (lever L2) or **VARIATION** (L1) —
+  NOT an RPE drop. The Calgary model: the day prioritises a different
+  movement pattern (e.g. an OHP-led day with bench tagged on, or a
+  variation slot like Spoto / pin press). The session does not have to
+  be "lighter" — it has to be DIFFERENT.
+- Intensity: keep RPE 7-7.5 on the chosen exercise; drop volume instead.
+  ≤ 3 working sets is the cap. Top sets are absent — straight sets only.
+- Why no auto -1.0 RPE: Sheiko 3× bench keeps full intensity on all three
+  sessions; Calgary 4× bench keeps top sets at 76-82 % across days.
+  The literature does NOT support a reflexive RPE drop on the third
+  appearance — drop volume + change emphasis instead.
+- Position: ≥ 48 h before the next primary day.
+
+#### QUATERNARY (4th appearance — bench only, in 4×/wk programs)
+- Default lever: **INTENT SHIFT** (lever L3) — Westside-style speed work,
+  OR a high-rep accessory-emphasis day. Pick ONE intent per session.
+- Speed-work option: 50-60 % at maximal bar speed, 6-9 sets × 3 reps,
+  60-90 s rest, RPE 5-6 strictly (the cap exists because the goal is
+  RFD; grinding the load defeats the purpose, per Westside).
+- Skill-accessory option: high-rep DB bench, push-up variants, larsen
+  press 3×8 at RPE 6-7. Tricep volume capped — already cooked.
+- Skip-it option: if the athlete doesn't want speed work and triceps
+  are red-flagged, drop the day. A skipped quaternary beats a junk one.
+- Position: late week, low-spinal-load slot.
 
 ### Cross-Cutting Rules
-- A lift appearing as SECONDARY in a multi-lift session (e.g. bench tagged
-  onto a squat-primary SBD day) counts as an appearance, with MEDIUM cost.
-  Don't program a "real" tertiary day the next day if the lift already
-  surfaced as a secondary on an SBD rehearsal.
-- When pulling forward / pushing back appearances in a meet-prep block,
-  preserve the role hierarchy — never demote primary to tertiary just to
-  fit a schedule. If schedule constraints conflict with role hierarchy,
-  drop the quaternary day first, then tertiary, then secondary. Primary
-  is the last to go.
-- Every appearance after primary must answer: "what is this driving that
-  the primary day doesn't already cover?" If you can't articulate the
-  answer in a sentence, the appearance is junk frequency.
 
-### Bench — Detailed 4×/Week Template (Joey Flex / TSA consensus)
-Primary intermediate frequency for bench. Each day has a distinct identity:
+- **Pick the right lever per role**, don't stack all four. A SECONDARY
+  day that's already a variation slot doesn't also need an RPE drop AND
+  a set cut AND emphasis shift — that's three changes, not one.
+- **A lift appearing as SECONDARY in a multi-lift session** (e.g. bench
+  tagged onto a squat-primary SBD day) counts as an appearance with
+  MEDIUM cost. Don't program a "real" tertiary day the next day if the
+  lift already surfaced as a secondary on an SBD rehearsal.
+- **Sheiko-style athletes** (high frequency, all lifts every session,
+  moderate intensity throughout) will look "wrong" through the role-tier
+  lens — their sessions don't differentiate by load, they differentiate by
+  volume allocation. That's a feature, not a bug. If the athlete is on a
+  Sheiko-style program, lever L4 (volume-allocation differentiation) is
+  the only one that applies.
+- **Stanek "mini weekly peak"** — the week's *peak day* is whichever day
+  the athlete is scheduled to feel strongest. Sessions before the peak
+  day might actually be heavier in volume (overreach toward the peak)
+  rather than lighter. Don't reflexively call early-week appearances
+  "lighter" — read the structure.
+- **Every appearance must answer**: "what is this driving that the primary
+  day doesn't already cover?" If the answer is "nothing — it's just lower
+  RPE," the appearance is junk frequency. Cut it or change the lever.
+
+### Bench — 4×/Week, Stanek/Calgary-style (build to a peak day)
 - **Day 1 / Tue** (PRIMARY): comp bench, top set + 3-4 back-offs.
-  Top set RPE 8 in INTENSIFICATION. Pin press or close-grip as variation.
-  Row + face pulls + tricep iso. Highest fatigue session of the week.
-- **Day 2 / Thu** (SECONDARY): pause bench 4-5×3-5 @ RPE 7-7.5.
-  Eliminates the bounce, builds positional strength, dedicated session.
-  Lighter rows + face pulls (mandatory every bench day) + light tricep.
-- **Day 3 / Sat** (TERTIARY): OHP-primary day OR pin press / Spoto
-  3×3-4 @ RPE 7. Less than 30 min of bench-pattern volume. Skill keeps
-  the groove alive without compounding fatigue into next Tuesday.
-- **Day 4 / Sun** (QUATERNARY, optional): speed bench 6×3 @ 65 % with bands,
-  or high-rep DB bench 3×10. RPE 5-6 ceiling. Skip if Sunday is a rest
-  day for the rest of the program.
+  Intensification top set RPE 8 / Accumulation RPE 7.5. Row + face pulls
+  + tricep iso. Highest fatigue session of the week.
+- **Day 2 / Thu** (SECONDARY, lever L1): pause bench OR close-grip 4-5×3-5
+  at RPE 7-7.5. Variation owns this slot. Lighter rows + face pulls.
+- **Day 3 / Sat** (TERTIARY, lever L2): OHP-primary day with bench accessories,
+  OR pin press / Spoto 3×3-4 at RPE 7. Volume-cut to ≤3 sets, NOT
+  intensity-cut. Different emphasis, full skill exposure.
+- **Day 4 / Sun** (QUATERNARY, lever L3): EITHER speed bench 6-9×3 at
+  50-60 % at max bar speed (RPE 5-6 ceiling, that's the speed-work
+  prescription, not a generic "lighter day") OR skip if speed work
+  isn't on the table.
 
-### Squat — 2-3×/Week Template
-- **Day 1 / Mon** (PRIMARY): comp squat, top set + back-offs, full block volume.
-- **Day 2 / Thu/Fri** (SECONDARY): pause squat / front squat / SSB
-  4×4-6 @ RPE 7-7.5. NEVER another comp squat — the variation is the point.
-- **Day 3 / Sat** (TERTIARY, HIGH responder + DUP block only):
-  high-bar 3×5 @ RPE 6 OR light comp 3×3 @ RPE 6.5. Strict cap on
-  spinal-load budget; a tertiary squat session will compromise next
-  Monday's primary if it grinds.
+### Bench — 3×/Week Sheiko-style (no role tier; volume-allocation only)
+All three bench days at 70-85 % working intensity, 5-7 working sets each,
+exercise selection rotates between comp / pause / close-grip across the
+week. Differentiation lives entirely in **which day carries more total
+volume** and **which lift is paired with bench**, not in lighter loads.
 
-### Deadlift — 1-2×/Week Template
-- **Day 1** (PRIMARY): comp DL, top set + back-offs. Full prescription.
-- **Day 2** (SECONDARY, advanced only): deficit DL / pause DL / block pull
-  3×3-5 @ RPE 7. Variation — not another floor pull. Spinal-load rule
-  is hardest here: must be ≥ 72 h after primary, ≥ 48 h before primary.
-- Tertiary DL appearance is RARE and only for elite HIGH responders.
-  Most lifters get more out of an extra bench / accessory day than a
-  tertiary DL day, because grip + erector recovery dominates.
+### Squat — 2-3×/Week
+- **Day 1** (PRIMARY): comp squat, top set + back-offs, full block volume.
+- **Day 2** (SECONDARY, lever L1): pause squat / front squat / SSB
+  4×4-6 at RPE 7-7.5. Variation is the differentiator; if the variation
+  IS the back squat (e.g. tempo back squat) the +1 rep / -0.5 RPE DUP
+  convention applies.
+- **Day 3** (TERTIARY, advanced + HIGH responder): high-bar 3×5 at RPE 7,
+  OR a light comp-pattern session as posterior-chain GPP. Cap volume,
+  not intensity. Spinal-load budget is the binding constraint here.
+
+### Deadlift — 1-2×/Week
+- **Day 1** (PRIMARY): comp DL, top set + back-offs.
+- **Day 2** (SECONDARY, advanced only, lever L1): deficit DL / pause DL /
+  block pull 3×3-5 at RPE 7. Variation slot. ≥ 72 h after primary, ≥ 48 h
+  before next primary.
+- **Tertiary DL** is rare — most lifters get more out of an extra bench
+  day than a tertiary DL day. Grip + erector recovery dominates.
 
 ### Reading PER-LIFT RECENCY in this Context
-The PER-LIFT RECENCY block in your context tells you the appearance role
-of TODAY's session for each lift, given how many times that lift has been
-primary this week:
-- weekCount = 0 → today's appearance would be PRIMARY (full prescription)
-- weekCount = 1 → today's appearance would be SECONDARY (variation, RPE -0.5/-1.0)
-- weekCount = 2 → today's appearance would be TERTIARY (skill, low fatigue)
-- weekCount ≥ 3 → today's appearance would be QUATERNARY (speed/skip)
+The PER-LIFT RECENCY block predicts the role of today's appearance per
+lift (next = PRIMARY / SECONDARY / TERTIARY / QUATERNARY based on
+weekCount). The role is a SHAPE prediction, not a load prescription:
+- next = PRIMARY    → comp lift, full block prescription.
+- next = SECONDARY  → variation slot (lever L1) at near-primary RPE.
+- next = TERTIARY   → emphasis rotation (lever L2) or variation, with
+                      VOLUME cut (≤ 3 sets, no top single), NOT auto RPE drop.
+- next = QUATERNARY → intent shift (lever L3): speed work at RPE 5-6
+                      OR skill-accessory work OR skip the day.
 
-Multi-frequency goes wrong when an athlete trains a lift 3-4×/week but
-every session is "primary." That's not high-frequency — that's three
-overreaching sessions. Differentiate the role, or cut the frequency.
+The role tells you what KIND of session to design; load comes from the
+chosen exercise's own RPE prescription, not from a mechanical drop.
 `;
 
 // ── Diagnostic Playbook (failure-point → cause → Rx) ──────────────────────────
