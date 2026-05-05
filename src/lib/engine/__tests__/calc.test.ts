@@ -510,8 +510,10 @@ describe('estimateMaxFromRpe', () => {
     expect(estimateMaxFromRpe(100, 12, 8)).toBe(estimateMaxFromRpe(100, 10, 8));
   });
 
-  it('clamps RPE to 6–10 (below 6 treated as 6)', () => {
-    expect(estimateMaxFromRpe(100, 5, 4)).toBe(estimateMaxFromRpe(100, 5, 6));
+  it('returns null for sub-RPE-7 sets (too far from failure to extrapolate)', () => {
+    expect(estimateMaxFromRpe(100, 5, 6)).toBeNull();
+    expect(estimateMaxFromRpe(100, 5, 4)).toBeNull();
+    expect(estimateMaxFromRpe(100, 5, 6.5)).toBeNull();
   });
 });
 

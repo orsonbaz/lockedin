@@ -305,13 +305,18 @@ export function calcIpfPoints(total: number, bodyweightKg: number, sex: Sex): nu
  *
  * Returns `null` if the lookup falls outside the table range or would produce
  * a nonsensical value (e.g. zero divisor).
+ *
+ * RPE < 7 returns null: a set with 4+ reps in reserve is too far from failure
+ * for the table to extrapolate reliably — small RIR errors balloon into huge
+ * e1RM errors. Callers should fall back to Epley or skip the set.
  */
 export function estimateMaxFromRpe(
   loadKg: number,
   reps: number,
   rpe: number,
 ): number | null {
-  const clampedRpe  = Math.max(6, Math.min(10, rpe));
+  if (rpe < 7) return null;
+  const clampedRpe  = Math.max(7, Math.min(10, rpe));
   const clampedReps = Math.max(1, Math.min(10, reps));
 
   const rpeFloor = Math.floor(clampedRpe);
