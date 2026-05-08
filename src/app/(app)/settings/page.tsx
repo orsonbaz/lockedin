@@ -17,8 +17,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter }                         from 'next/navigation';
 import { toast }                             from 'sonner';
-import { ArrowLeft, TriangleAlert, Check, Download, Upload, RefreshCw }   from 'lucide-react';
-import { db, exportAll, importAll }           from '@/lib/db/database';
+import { ArrowLeft, TriangleAlert, Check, Download, Upload, RefreshCw, History }   from 'lucide-react';
+import { useLiveQuery }                       from 'dexie-react-hooks';
+import { db, today, exportAll, importAll }    from '@/lib/db/database';
 import { forceRefreshApp }                     from '@/components/lockedin/ServiceWorkerRegistration';
 import { ProfilePatchSchema }                 from '@/lib/db/schemas';
 import { SegmentedControl }                   from '@/components/lockedin/SegmentedControl';
@@ -99,6 +100,18 @@ export default function SettingsPage() {
   const [exporting,    setExporting]    = useState(false);
   const [importing,    setImporting]    = useState(false);
   const fileInputRef   = { current: null as HTMLInputElement | null };
+
+  // Stranded session count — past-dated sessions still SCHEDULED/MODIFIED
+  const strandedCount = useLiveQuery(async () => {
+    const todayStr = today();
+    return db.sessions
+      .filter(
+        (s) =>
+          (s.status === 'SCHEDULED' || s.status === 'MODIFIED') &&
+          s.scheduledDate < todayStr,
+      )
+      .count();
+  }, []);
 
   // Equipment profile
   const [hasBelt,          setHasBelt]          = useState(false);
@@ -628,6 +641,29 @@ export default function SettingsPage() {
         {/* ── 6. DATA ──────────────────────────────────────────────────── */}
         <SectionHeader title="Your Data" />
         <SettingsCard>
+          <Row>
+            <RowLabel
+              label="Recover stranded workouts"
+              sub={
+                strandedCount && strandedCount > 0
+                  ? `${strandedCount} past session${strandedCount === 1 ? '' : 's'} never marked complete`
+                  : 'Find sessions you logged but never ended'
+              }
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/recover')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95"
+              style={{
+                backgroundColor: strandedCount && strandedCount > 0 ? C.accent : C.surface,
+                border:          `1px solid ${strandedCount && strandedCount > 0 ? C.accent : C.border}`,
+                color:           strandedCount && strandedCount > 0 ? C.bg : C.text,
+              }}
+            >
+              <History size={15} />
+              {strandedCount && strandedCount > 0 ? `Review ${strandedCount}` : 'Open'}
+            </button>
+          </Row>
           <Row>
             <RowLabel label="Export Backup" sub="Download all training data as JSON" />
             <button
