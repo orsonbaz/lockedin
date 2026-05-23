@@ -28,6 +28,7 @@ import { suggestSwaps }                                   from '@/lib/exercises/
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
 import { listActiveInjuries }                              from '@/lib/injuries';
+import { getActiveArc }                                    from '@/lib/arcs';
 import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
 import { unpackReviewIssues }                             from '@/lib/engine/session-review';
 import { detectSessionPRs }                               from '@/lib/engine/session-prs';
@@ -704,9 +705,19 @@ export default function SessionPage({
     const profile = equipmentProfile;
     const avail = profile?.availableEquipment ?? ['BARBELL', 'DUMBBELL', 'BODYWEIGHT', 'CABLE', 'MACHINE'];
     const blockType = sessionBlock?.blockType ?? 'ACCUMULATION';
-    // v8: pull active injuries so the swap engine can filter contraindicated
-    // candidates and bias toward injury-friendly variants.
-    const activeInjuries = await listActiveInjuries();
+    // v8: pull active injuries + arc so the swap engine can filter
+    // contraindicated candidates and bias toward injury-friendly variants.
+    const [activeInjuries, activeArc] = await Promise.all([
+      listActiveInjuries(),
+      getActiveArc(),
+    ]);
+    const preferJointFriendly =
+      blockType === 'HEALTH_BASE' ||
+      activeInjuries.length > 0 ||
+      (activeArc?.priorities[0] === 'INJURY_HEALING' || activeArc?.priorities[0] === 'MOBILITY') ||
+      activeArc?.primaryGoal === 'LONGEVITY' ||
+      activeArc?.primaryGoal === 'MOBILITY_REBUILD' ||
+      activeArc?.primaryGoal === 'INJURY_REHAB';
     const candidates = suggestSwaps(libEx, {
       blockType,
       availableEquipment: avail,
@@ -716,6 +727,7 @@ export default function SessionPage({
       remainingSystemic:  180,
       remainingLocal:     220,
       activeInjuries,
+      preferJointFriendly,
     });
     setSwapCandidates(candidates);
     setSwapForExId(ex.id);

@@ -22,6 +22,7 @@ const SYSTEMIC_CAPS: Record<BlockType, number> = {
   DELOAD:           60,  // Recovery week — minimal load
   PIVOT:           120,  // GPP / off-season general prep
   MAINTENANCE:     120,  // Maintain fitness between cycles
+  HEALTH_BASE:     140,  // v8: moderate cap — tempo + ROM trades volume for quality
 };
 
 // Local fatigue caps are more generous than systemic (can trash a muscle group
@@ -33,6 +34,7 @@ const LOCAL_CAPS: Record<BlockType, number> = {
   DELOAD:           80,
   PIVOT:           160,
   MAINTENANCE:     160,
+  HEALTH_BASE:     180,  // v8: bias toward "feel everything," not "trash anything"
 };
 
 // ── Budget calculation ────────────────────────────────────────────────────────

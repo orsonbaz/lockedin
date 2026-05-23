@@ -191,6 +191,15 @@ export interface SwapContext {
    * to bypass injury-aware filtering.
    */
   activeInjuries?:    Injury[];
+  /**
+   * v8: when true, the swap engine adds a "joint-friendly" boost to candidates
+   * with tempo / single-leg / weighted-calisthenics / low-spinal-load
+   * profiles. Callers compute this from the active arc (priorities lead with
+   * INJURY_HEALING or MOBILITY), the active block (HEALTH_BASE), the
+   * trainingGoal (LONGEVITY / MOBILITY_REBUILD), or the presence of any
+   * active injury — see `inferJointFriendly` in swap.ts callers.
+   */
+  preferJointFriendly?: boolean;
 }
 
 export interface SwapCandidate {

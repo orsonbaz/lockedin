@@ -56,6 +56,7 @@ const BLOCK_LABELS: Record<BlockType, string> = {
   DELOAD:          'Deload',
   PIVOT:           'Pivot',
   MAINTENANCE:     'Maintenance',
+  HEALTH_BASE:     'Health Base',
 };
 
 export function blockLabel(type: BlockType): string {
@@ -71,6 +72,7 @@ export function blockCaption(type: BlockType): string {
     case 'DELOAD':          return 'Recover so the next block lands.';
     case 'PIVOT':           return 'Shift focus mid-cycle.';
     case 'MAINTENANCE':     return 'Hold gains during constraints.';
+    case 'HEALTH_BASE':     return 'Full ROM + tempo — joints stay healthy.';
   }
 }
 

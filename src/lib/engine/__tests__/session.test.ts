@@ -41,6 +41,7 @@ function makeBlock(
     DELOAD:          { volumeTarget: 0.5, intensityTarget: 0.65 },
     PIVOT:           { volumeTarget: 0.8, intensityTarget: 0.70 },
     MAINTENANCE:     { volumeTarget: 0.75, intensityTarget: 0.75 },
+    HEALTH_BASE:     { volumeTarget: 0.85, intensityTarget: 0.70 },
   };
   const base = baseMap[blockType];
   return {

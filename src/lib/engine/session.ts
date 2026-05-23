@@ -657,6 +657,9 @@ function blockTypeToSessionType(blockType: BlockType): SessionType {
     DELOAD:          'RECOVERY',
     PIVOT:           'ACCUMULATION',
     MAINTENANCE:     'BRIDGE',
+    // v8: HEALTH_BASE biases toward TECHNICAL — tempo + ROM work fits
+    // technical-quality framing better than ACCUMULATION volume framing.
+    HEALTH_BASE:     'TECHNICAL',
   };
   return map[blockType];
 }
@@ -1180,6 +1183,8 @@ function getBaseRpeForBlock(
     DELOAD:          6.0,
     PIVOT:           7.0,
     MAINTENANCE:     7.5,
+    // v8: HEALTH_BASE keeps RPE under 8 — never grinders.
+    HEALTH_BASE:     7.0,
   };
   const mid = midRpe[blockType];
 
@@ -1209,6 +1214,9 @@ function getRepsForBlock(
     case 'DELOAD':          return 5;
     case 'PIVOT':           return base;
     case 'MAINTENANCE':     return Math.max(3, base - 1);
+    // v8: HEALTH_BASE — moderate reps with tempo bias. Pull rep count up so
+    // the load can come down without losing total mechanical work.
+    case 'HEALTH_BASE':     return Math.max(5, base + 1);
   }
 }
 

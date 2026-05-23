@@ -43,7 +43,7 @@ interface PillarMeta {
 const PILLARS: PillarMeta[] = [
   { key: 'sleep',      label: 'Sleep',       short: '7d hours + quality',      icon: Moon,            route: '/settings/wearables' },
   { key: 'cardio',     label: 'Cardio',      short: 'Zone 2 / wk vs target',   icon: Heart,           route: '/health/cardio' },
-  { key: 'strength',   label: 'Strength',    short: 'Sessions / wk',           icon: Dumbbell,        route: '/session/today' },
+  { key: 'strength',   label: 'Strength',    short: 'Sessions / wk',           icon: Dumbbell,        route: '/health/strength' },
   { key: 'mobility',   label: 'Mobility',    short: 'Routines / wk',           icon: Activity,        route: '/mobility' },
   { key: 'recovery',   label: 'Recovery',    short: 'HRV vs 28d baseline',     icon: Battery,         route: '/checkin' },
   { key: 'nutrition',  label: 'Nutrition',   short: 'Protein + kcal band',     icon: UtensilsCrossed, route: '/nutrition' },

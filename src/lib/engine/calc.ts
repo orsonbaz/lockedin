@@ -145,6 +145,10 @@ export function blockToIntensity(block: BlockType): number {
     DELOAD:          0.65,
     PIVOT:           0.70,
     MAINTENANCE:     0.75,
+    // v8: HEALTH_BASE — moderate intensity, never near max. Full-ROM tempo
+    // work biases the prescription toward 65-75% so the intent stays
+    // "joint quality + work capacity," not strength PRs.
+    HEALTH_BASE:     0.70,
   };
   return map[block];
 }
@@ -158,6 +162,7 @@ export function blockToSets(block: BlockType): number {
     DELOAD:          2,
     PIVOT:           3,
     MAINTENANCE:     3,
+    HEALTH_BASE:     3,
   };
   return map[block];
 }

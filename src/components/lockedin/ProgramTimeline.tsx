@@ -25,6 +25,7 @@ const BLOCK_COLOURS: Record<BlockType, string> = {
   DELOAD:          C.muted,
   PIVOT:           '#8B5CF6',
   MAINTENANCE:     C.green,
+  HEALTH_BASE:     C.greenDeep,
 };
 
 interface Props {

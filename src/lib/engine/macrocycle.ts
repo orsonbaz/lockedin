@@ -177,6 +177,7 @@ function blockToVolumeTarget(blockType: BlockType): number {
     DELOAD:          0.5,
     PIVOT:           0.8,
     MAINTENANCE:     0.75,
+    HEALTH_BASE:     0.85, // moderate volume — full ROM eats into capacity
   };
   return map[blockType];
 }

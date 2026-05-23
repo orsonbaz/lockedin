@@ -65,6 +65,7 @@ const BLOCK_COLORS: Record<BlockType, string> = {
   DELOAD:          '#787882',
   PIVOT:           '#8B5CF6',
   MAINTENANCE:     '#22C55E',
+  HEALTH_BASE:     '#16A34A',
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

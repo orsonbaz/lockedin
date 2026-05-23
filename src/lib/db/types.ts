@@ -20,7 +20,11 @@ export type BlockType =
   | 'REALIZATION'
   | 'DELOAD'
   | 'PIVOT'
-  | 'MAINTENANCE';
+  | 'MAINTENANCE'
+  // v8: sustainable-strength block. Modest intensity (65-75% CHS), full ROM,
+  // tempo bias, single-side balance work. The default block when the active
+  // arc is LONGEVITY / MOBILITY_REBUILD / INJURY_REHAB-flavored.
+  | 'HEALTH_BASE';
 
 export type SessionType =
   | 'ACCUMULATION'

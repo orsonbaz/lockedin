@@ -149,6 +149,14 @@ export function suggestSwaps(
 
     if (injuryResult.blocked) continue;
 
+    // 8. v8 — joint-friendly bias. Fires when the active arc / injury /
+    // block-type context favors gentler mechanics (HEALTH_BASE block,
+    // injury_healing / mobility-leading arc, any active injury, longevity-
+    // flavored training goal). Pure additive bonus — never subtracts.
+    const jointFriendlyBoost = context.preferJointFriendly
+      ? scoreJointFriendly(candidate)
+      : 0;
+
     // ── Composite score ───────────────────────────────────────────────────
     const baseScore =
       patternScore     * 0.25 +
@@ -160,7 +168,10 @@ export function suggestSwaps(
 
     const normalised = Math.max(
       0,
-      Math.min(100, Math.round(baseScore * 100) - injuryResult.penalty + injuryResult.boost),
+      Math.min(
+        100,
+        Math.round(baseScore * 100) - injuryResult.penalty + injuryResult.boost + jointFriendlyBoost,
+      ),
     );
 
     const loadFactor = computeLoadAdjustmentFactor(source, candidate);
@@ -192,6 +203,35 @@ export function suggestSwaps(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Score a candidate's "joint-friendly" character. Returns a 0-40 boost added
+ * to the swap score when the SwapContext signals a longevity bias.
+ *
+ * Bias inputs (each addable independently):
+ *   - swapGroups includes `*_TEMPO`              → +12
+ *   - swapGroups includes `SINGLE_LEG_*`         → +10
+ *   - swapGroups includes `*_WEIGHTED_CALI`      → +8
+ *   - spinalLoad in {LOW, NONE}                  → +8
+ *   - specificity 2-3                            → +4
+ *
+ * Sum is capped at 40 so a perfectly joint-friendly candidate gets a
+ * meaningful bump without dwarfing the muscle/pattern fit.
+ */
+function scoreJointFriendly(candidate: {
+  swapGroups: readonly string[];
+  fatigue: { spinalLoad: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE' };
+  specificity: number;
+}): number {
+  let score = 0;
+  const groups = candidate.swapGroups;
+  if (groups.some((g) => g.endsWith('_TEMPO'))) score += 12;
+  if (groups.some((g) => g.startsWith('SINGLE_LEG'))) score += 10;
+  if (groups.some((g) => g.endsWith('_WEIGHTED_CALI'))) score += 8;
+  if (candidate.fatigue.spinalLoad === 'LOW' || candidate.fatigue.spinalLoad === 'NONE') score += 8;
+  if (candidate.specificity >= 2 && candidate.specificity <= 3) score += 4;
+  return Math.min(40, score);
+}
+
 function blockTypeToSpecificityWindow(blockType: BlockType): number {
   const map: Record<BlockType, number> = {
     REALIZATION:     5,
@@ -200,6 +240,9 @@ function blockTypeToSpecificityWindow(blockType: BlockType): number {
     DELOAD:          3,
     PIVOT:           2,
     MAINTENANCE:     3,
+    // v8: HEALTH_BASE — prefer variations over pure comp lifts. Specificity
+    // 2-3 opens up tempo / single-leg / weighted-calisthenics swaps.
+    HEALTH_BASE:     2,
   };
   return map[blockType];
 }
