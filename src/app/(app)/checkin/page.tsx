@@ -648,6 +648,18 @@ function CheckInInner() {
     router.push(nextHref ?? '/home');
   }, [router, nextHref, modality]);
 
+  // v8: only surface SBD-specific UI (focus-lift picker, "Full SBD day"
+  // toggle, secondary-lift control) when the active arc actually wants it.
+  // The underlying auto-suggestion logic still runs — we just don't show
+  // the controls to athletes whose arc deprioritizes competition.
+  // MUST come before any early return so the hook count stays stable
+  // across renders (React error #310 otherwise).
+  const showCompetitionUi = useMemo(() => {
+    if (!activeArc) return true; // no arc → behave like the legacy app
+    return activeArc.primaryGoal === 'COMPETITION_PREP'
+      || activeArc.priorities.includes('COMPETITION');
+  }, [activeArc]);
+
   // ── Loading guard ──────────────────────────────────────────────────────
   if (!ready) {
     return (
@@ -674,16 +686,6 @@ function CheckInInner() {
     month:   'long',
     day:     'numeric',
   });
-
-  // v8: only surface SBD-specific UI (focus-lift picker, "Full SBD day"
-  // toggle, secondary-lift control) when the active arc actually wants it.
-  // The underlying auto-suggestion logic still runs — we just don't show
-  // the controls to athletes whose arc deprioritizes competition.
-  const showCompetitionUi = useMemo(() => {
-    if (!activeArc) return true; // no arc → behave like the legacy app
-    return activeArc.primaryGoal === 'COMPETITION_PREP'
-      || activeArc.priorities.includes('COMPETITION');
-  }, [activeArc]);
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
