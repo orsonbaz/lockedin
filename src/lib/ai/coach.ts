@@ -9,6 +9,13 @@
  */
 
 import { db, today }        from '@/lib/db/database';
+import {
+  getActiveArc,
+  listTransitions,
+  arcDayCount,
+  ARC_PRIORITY_LABELS,
+  ARC_CONSTRAINT_LABELS,
+} from '@/lib/arcs';
 import { readinessLabel }   from '@/lib/engine/readiness';
 import { getFullKnowledge, getTopicKnowledge } from './knowledge-base';
 import { buildMemorySection, buildSummarySection } from './memory';
@@ -36,6 +43,10 @@ export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: stri
 // The `knowledge` cap is dynamic.
 const SECTION_CAPS = {
   role:       600,
+  // Arc is the athlete's persistent training context (v8). It frames every
+  // other section — keep it cheap to render but generous on the cap so the
+  // coachDirective body always fits in full.
+  arc:        1200,
   profile:    500,
   program:    800,
   state:      500,
@@ -54,8 +65,8 @@ const SECTION_CAPS = {
   // They MUST fit completely; truncation here = user-visible bug ("coach
   // can't change anything"). Sized generously above the current ~3.4k
   // string so future additions don't silently regress.
-  actions:    4000,
-  guidelines: 800,
+  actions:    4500,
+  guidelines: 1000,
 } as const;
 
 type SectionName = keyof typeof SECTION_CAPS | 'knowledge';
@@ -95,6 +106,72 @@ function renderSection(section: PromptSection, cap: number): string {
  * @param userMessage   Optional — the user's latest message. Used to select
  *                      relevant knowledge-base sections (topic-aware injection).
  */
+/**
+ * Build the "Active Arc" section — the athlete's persistent training context.
+ * Returns empty string when no arc is active so the section is omitted.
+ */
+async function buildArcSection(): Promise<string> {
+  const arc = await getActiveArc();
+  if (!arc) return '';
+
+  const day = arcDayCount(arc, today());
+  const priorities = arc.priorities.length > 0
+    ? arc.priorities.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(' > ')
+    : '(none specified)';
+  const deprioritized = arc.deprioritized.length > 0
+    ? arc.deprioritized.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(', ')
+    : 'none';
+  const constraints = arc.constraints.length > 0
+    ? arc.constraints.map((c) => ARC_CONSTRAINT_LABELS[c] ?? c).join(', ')
+    : 'none';
+  const budgetLine = arc.weeklyTimeBudgetMin
+    ? `Weekly time budget: ${arc.weeklyTimeBudgetMin} min.`
+    : 'No weekly time cap.';
+
+  // Recent transitions — last 2 the athlete has been involved in, summary
+  // included if the coach has rolled one up. This is what makes prior-arc
+  // memory cheap: a couple of one-liners instead of full history scans.
+  const allTransitions = await listTransitions();
+  const recent = allTransitions.slice(0, 2);
+  let recentArcsBlock = '';
+  if (recent.length > 0) {
+    const lines = await Promise.all(
+      recent.map(async (t) => {
+        // Skip the transition INTO the current arc (already shown above);
+        // surface only outgoing / prior context.
+        if (t.toArcId === arc.id && !t.fromArcId) return null;
+        const otherId = t.toArcId === arc.id ? t.fromArcId : t.toArcId;
+        if (!otherId) return null;
+        const other = await db.trainingArcs.get(otherId);
+        if (!other) return null;
+        const tag = t.toArcId === arc.id ? 'Came from' : 'Switched to';
+        const summary = t.summary ? ` — ${t.summary}` : '';
+        return `  - ${tag} "${other.name}" on ${t.createdAt.slice(0, 10)}${summary}`;
+      }),
+    );
+    const filtered = lines.filter((l): l is string => Boolean(l));
+    if (filtered.length > 0) {
+      recentArcsBlock = `Recent arcs:\n${filtered.join('\n')}`;
+    }
+  }
+
+  const directive = arc.coachDirective.trim() || '(no specific directive set)';
+  const successMarkers = arc.successMarkers && arc.successMarkers.length > 0
+    ? `\nSuccess markers: ${arc.successMarkers.join('; ')}.`
+    : '';
+
+  return [
+    `ACTIVE ARC: "${arc.name}" — started ${arc.startDate}, day ${day}.`,
+    `Intent: ${arc.intent.trim()}`,
+    `Primary goal: ${arc.primaryGoal}.`,
+    `Priorities (ordered, dominant first): ${priorities}.`,
+    `Deprioritized: ${deprioritized}.`,
+    `Constraints: ${constraints}. ${budgetLine}${successMarkers}`,
+    `Athlete's directive to you: ${directive}`,
+    recentArcsBlock,
+  ].filter(Boolean).join('\n');
+}
+
 export async function buildSystemPrompt(
   userMessage?: string,
 ): Promise<string> {
@@ -407,8 +484,9 @@ export async function buildSystemPrompt(
   const knowledge = userMessage ? getTopicKnowledge(userMessage) : getFullKnowledge();
   const knowledgeCap = 6000;
 
-  // ── Long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
-  const [memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
+  // ── Active arc + long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
+  const [arcBody, memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
+    buildArcSection(),
     buildMemorySection(userMessage, SECTION_CAPS.memories),
     buildSummarySection(SECTION_CAPS.summary),
     buildWeakPointsSection(SECTION_CAPS.weakPoints),
@@ -442,6 +520,11 @@ Available actions:
 - [ACTION:IMPORT_WEARABLE] — Open the wearable importer so the athlete can drop in an Apple Health / Oura / Whoop / CSV export
 - [ACTION:REGENERATE_SESSION|reason=...] — LAST RESORT, almost never the right tool. Delegates to a separate AI pass that runs on its own context and frequently fails or returns no changes. Prefer direct tags (UPDATE_REPS / SET_RPE_TARGET / ADJUST_SET_LOAD / ADD_EXERCISE / REMOVE_EXERCISE / SWAP_EXERCISE) — even for open-ended "remake today" / "rebuild" / "regenerate" requests. YOU have the memories, profile, readiness, and goals; YOU decide what changes are warranted; emit those changes as direct tags.
 - [ACTION:RESET_TODAY|reason=...] — Wipe today's session, readiness, and bodyweight log so the athlete can redo their check-in from scratch (e.g. they want to switch primary lift, picked the wrong secondary, or readiness was logged with bad data). Different from REGENERATE_SESSION: this discards readiness too and routes the athlete back to /checkin. Refuses to run if today's session is already COMPLETED.
+- [ACTION:START_ARC|name=Get Strong Again|intent=Rebuild a sustainable strength base|priorities=STRENGTH_BARBELL,STRENGTH_CALISTHENICS,MOBILITY|deprioritized=COMPETITION|constraints=|directive=Treat barbell and weighted-calisthenics strength as co-equal expressions.|primary_goal=STRENGTH_PROGRESSION|weekly_time_min=300] — Spin up a NEW training arc and make it active. Ends the currently-active arc and writes a transition the coach can reference later. Priorities/deprioritized/constraints are comma-separated. Valid priorities: INJURY_HEALING, MOBILITY, STRENGTH_BARBELL, STRENGTH_CALISTHENICS, CONDITIONING, BODY_COMP, SKILL, COMPETITION, MAINTENANCE, TIME_EFFICIENT, STRESS_REDUCTION. Valid constraints: LIMITED_TIME, TRAVELING_FREQUENTLY, NO_GYM, HOME_ONLY, POST_INJURY, HIGH_LIFE_STRESS, SLEEP_DEPRIVED, EQUIPMENT_LIMITED. Valid primary_goal values: LONGEVITY, MOBILITY_REBUILD, INJURY_REHAB, COMPETITION_PREP, STRENGTH_PROGRESSION, SKILL_PROGRESSION, WEIGHT_LOSS, WEIGHT_GAIN, GENERAL_FITNESS, MAINTENANCE. Weekly_time_min is optional.
+- [ACTION:END_ARC|reason=Hit my mobility benchmarks] — Close out the currently-active arc. The arc stays in history. Use when the athlete signals their training season is wrapping up.
+- [ACTION:PAUSE_ARC|reason=Travelling for two weeks] — Pause the active arc temporarily without closing it. Use for transient life events.
+- [ACTION:RESUME_ARC|id=<arcId>] — Resume a paused arc as the active one.
+- [ACTION:UPDATE_ARC|priorities=STRENGTH_BARBELL,COMPETITION,MOBILITY|deprioritized=BODY_COMP|directive=Switch focus to meet prep — peaking in 8 weeks.] — Edit fields on the active arc (priorities / deprioritized / constraints / directive / intent / weekly_time_min / primary_goal). Comma-separated lists overwrite the prior value; omit a field to leave it unchanged. Use this when the athlete's intent within the arc shifts without warranting a whole new arc.
 
 Rules:
 - IF THE ATHLETE ASKS YOU TO CHANGE / SWAP / ADD / REMOVE / ADJUST / SKIP / ABBREVIATE / LOG / REGENERATE anything, you MUST emit the matching ACTION tag — without it, nothing happens. Always pair "Yes I'll do X" with the tag for X.
@@ -503,6 +586,8 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
 
   const guidelines = [
     '- Be direct and confident. You are an expert coach, not a chatbot.',
+    '- WHEN AN ACTIVE ARC IS PRESENT (see "Active Arc" section): the arc IS the frame. Every recommendation must serve its intent, respect its ordered priorities, honour its constraints, and avoid its deprioritized areas. The athlete\'s coach directive is THEIR voice telling you what they want — treat it as binding context. If the athlete asks for something that contradicts the active arc, gently call it out and either (a) propose adjusting the arc via UPDATE_ARC, or (b) confirm they want to override just this session. Do not silently push generic powerlifting advice when the active arc is "Get Healthy".',
+    '- When the athlete\'s training season clearly shifts (back from injury, started a meet prep, became a parent, etc.), propose START_ARC with sensible defaults — don\'t just memorize the change in athleteMemory. Arcs are the right home for season-long context; memory is for granular facts.',
     '- Run the Coach\'s First Questions before recommending: state, goal, history, what the body needs, primary purpose.',
     '- Reason from the Framework and the knowledge base — synthesise across philosophies. Do not quote individual coaches by name.',
     '- For ANY injury / pain / "tight" / "stiff" complaint, use the REMEDIAL_KNOWLEDGE module + the "Remedial Exercise Rx" section. The modern evidence base is: tightness is rarely a length problem (strengthen the muscle through range first), tendons want HEAVY SLOW RESISTANCE not rest, isometrics for acute tendon pain, and acute static stretching pre-training reduces strength. Do NOT default to "do these stretches" — that is outdated advice for most complaints. Tight hip flexors specifically: dead bug + standing band hip flexion + glute bridge come BEFORE couch stretch; couch stretch is post-training only. Always screen for red flags first; refer out if any fire.',
@@ -520,7 +605,12 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
   const sections: PromptSection[] = [
     {
       name: 'role',
-      content: 'You are the Lockedin AI coach — an elite strength coach. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor. Operate from the Coaching Intelligence Framework and the wider knowledge base — synthesise across the philosophies they encode rather than quoting individual coaches. Match the athlete\'s primary discipline and training goal. Lean on RPE autoregulation, readiness signals, recent-exposure awareness, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
+      content: 'You are the Lockedin AI coach — an elite strength coach. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor. Operate from the Coaching Intelligence Framework and the wider knowledge base — synthesise across the philosophies they encode rather than quoting individual coaches. When an Active Arc is present, treat it as the FIRST input: every recommendation must serve the arc\'s intent, respect its priorities and constraints, and avoid its deprioritized areas. Lean on RPE autoregulation, readiness signals, recent-exposure awareness, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
+    },
+    {
+      name: 'arc',
+      heading: 'Active Arc',
+      content: arcBody,
     },
     {
       name: 'profile',

@@ -22,13 +22,30 @@
 import { db, today, newId } from '@/lib/db/database';
 import { prescribeLoad, roundLoad, quantizeRpe } from '@/lib/engine/calc';
 import { EXERCISE_BY_ID, EXERCISE_LIBRARY } from '@/lib/exercises/index';
-import type { SessionExercise, AthleteProfile } from '@/lib/db/types';
+import type {
+  SessionExercise,
+  AthleteProfile,
+  ArcPriority,
+  ArcConstraint,
+  TrainingGoal,
+} from '@/lib/db/types';
 import { addMemory, removeMemory, isValidMemoryKind, parseExpiry, describeExpiry } from './memory';
 import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
 import { abbreviateSession, estimateSessionMinutes, type GeneratedExercise } from '@/lib/engine/session';
 import { applyWeekTimeBox, mondayOf, addOverride } from '@/lib/engine/schedule';
 import { recordRefeed, saveTodayTarget } from '@/lib/engine/nutrition-db';
 import type { NutritionMealType, NutritionLog, NutritionProfile } from '@/lib/db/types';
+import {
+  getActiveArc,
+  createArc,
+  updateArc,
+  endArc,
+  pauseArc,
+  resumeArc,
+  activateArc,
+  ARC_PRIORITY_LABELS,
+  ARC_CONSTRAINT_LABELS,
+} from '@/lib/arcs';
 
 // ── Action Types ──────────────────────────────────────────────────────────────
 
@@ -52,7 +69,13 @@ export type CoachActionType =
   | 'REQUEST_FORM_CHECK'
   | 'IMPORT_WEARABLE'
   | 'REGENERATE_SESSION'
-  | 'RESET_TODAY';
+  | 'RESET_TODAY'
+  // v8: training arc lifecycle
+  | 'START_ARC'
+  | 'END_ARC'
+  | 'PAUSE_ARC'
+  | 'RESUME_ARC'
+  | 'UPDATE_ARC';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -342,9 +365,138 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    // ── v8: training arc lifecycle ───────────────────────────────────────────
+
+    case 'START_ARC': {
+      const name = params.name?.trim();
+      const intent = params.intent?.trim();
+      const priorities = parseArcPriorities(params.priorities);
+      if (!name || !intent || priorities.length === 0) return null;
+      const goal = (params.primary_goal || '').toUpperCase();
+      const primaryGoal: TrainingGoal = isValidTrainingGoal(goal) ? goal : 'LONGEVITY';
+      const summary = priorities
+        .slice(0, 2)
+        .map((p) => ARC_PRIORITY_LABELS[p] ?? p)
+        .join(' · ');
+      return {
+        type,
+        params,
+        displayText: `Start "${name}" arc — ${summary}`,
+        confirmText: `Start "${name}"`,
+      };
+    }
+
+    case 'END_ARC': {
+      const reason = params.reason?.trim();
+      return {
+        type,
+        params,
+        displayText: reason
+          ? `End the current arc — ${reason}`
+          : 'End the current arc',
+        confirmText: 'End arc',
+      };
+    }
+
+    case 'PAUSE_ARC': {
+      const reason = params.reason?.trim();
+      return {
+        type,
+        params,
+        displayText: reason ? `Pause the current arc — ${reason}` : 'Pause the current arc',
+        confirmText: 'Pause arc',
+      };
+    }
+
+    case 'RESUME_ARC': {
+      const id = params.id?.trim();
+      if (!id) return null;
+      return {
+        type,
+        params,
+        displayText: `Resume arc ${id.slice(0, 8)}…`,
+        confirmText: 'Resume arc',
+      };
+    }
+
+    case 'UPDATE_ARC': {
+      const changes = describeArcPatch(params);
+      if (changes.length === 0) return null;
+      return {
+        type,
+        params,
+        displayText: `Update active arc: ${changes.join(' · ')}`,
+        confirmText: 'Update arc',
+      };
+    }
+
     default:
       return null;
   }
+}
+
+// ── Arc parser helpers ───────────────────────────────────────────────────────
+
+const VALID_PRIORITIES: ReadonlySet<ArcPriority> = new Set(
+  Object.keys(ARC_PRIORITY_LABELS) as ArcPriority[],
+);
+const VALID_CONSTRAINTS: ReadonlySet<ArcConstraint> = new Set(
+  Object.keys(ARC_CONSTRAINT_LABELS) as ArcConstraint[],
+);
+const VALID_TRAINING_GOALS: ReadonlySet<string> = new Set<TrainingGoal>([
+  'LONGEVITY',
+  'MOBILITY_REBUILD',
+  'INJURY_REHAB',
+  'COMPETITION_PREP',
+  'STRENGTH_PROGRESSION',
+  'SKILL_PROGRESSION',
+  'WEIGHT_LOSS',
+  'WEIGHT_GAIN',
+  'GENERAL_FITNESS',
+  'MAINTENANCE',
+]);
+
+function isValidTrainingGoal(g: string): g is TrainingGoal {
+  return VALID_TRAINING_GOALS.has(g);
+}
+
+function parseArcPriorities(raw: string | undefined): ArcPriority[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s): s is ArcPriority => VALID_PRIORITIES.has(s as ArcPriority));
+}
+
+function parseArcConstraints(raw: string | undefined): ArcConstraint[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s): s is ArcConstraint => VALID_CONSTRAINTS.has(s as ArcConstraint));
+}
+
+/** Human-readable summary of which fields an UPDATE_ARC tag will change. */
+function describeArcPatch(params: Record<string, string>): string[] {
+  const parts: string[] = [];
+  if (params.priorities !== undefined) {
+    const list = parseArcPriorities(params.priorities);
+    parts.push(list.length > 0 ? `priorities → ${list.join(', ')}` : 'priorities cleared');
+  }
+  if (params.deprioritized !== undefined) {
+    const list = parseArcPriorities(params.deprioritized);
+    parts.push(list.length > 0 ? `deprioritized → ${list.join(', ')}` : 'deprioritized cleared');
+  }
+  if (params.constraints !== undefined) {
+    const list = parseArcConstraints(params.constraints);
+    parts.push(list.length > 0 ? `constraints → ${list.join(', ')}` : 'constraints cleared');
+  }
+  if (params.directive !== undefined) parts.push('coach directive');
+  if (params.intent !== undefined) parts.push('intent');
+  if (params.weekly_time_min !== undefined) parts.push(`time budget → ${params.weekly_time_min}m/wk`);
+  if (params.primary_goal !== undefined) parts.push(`goal → ${params.primary_goal}`);
+  if (params.name !== undefined) parts.push(`name → "${params.name}"`);
+  return parts;
 }
 
 // ── Action Executors ──────────────────────────────────────────────────────────
@@ -396,6 +548,16 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeRegenerateSession(action.params);
       case 'RESET_TODAY':
         return await executeResetToday(action.params);
+      case 'START_ARC':
+        return await executeStartArc(action.params);
+      case 'END_ARC':
+        return await executeEndArc(action.params);
+      case 'PAUSE_ARC':
+        return await executePauseArc(action.params);
+      case 'RESUME_ARC':
+        return await executeResumeArc(action.params);
+      case 'UPDATE_ARC':
+        return await executeUpdateArc(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -1074,6 +1236,96 @@ async function executeResetToday(params: Record<string, string>): Promise<Action
   };
 }
 
+// ── Training Arc executors (v8) ─────────────────────────────────────────────
+
+async function executeStartArc(params: Record<string, string>): Promise<ActionResult> {
+  const name = params.name?.trim();
+  const intent = params.intent?.trim();
+  const priorities = parseArcPriorities(params.priorities);
+  if (!name || !intent || priorities.length === 0) {
+    return { success: false, message: 'Arc needs a name, intent, and at least one priority.' };
+  }
+  const goalRaw = (params.primary_goal || '').toUpperCase();
+  const primaryGoal: TrainingGoal = isValidTrainingGoal(goalRaw) ? goalRaw : 'LONGEVITY';
+  const budget = parseInt(params.weekly_time_min || '0', 10);
+  const arc = await createArc({
+    name,
+    intent,
+    primaryGoal,
+    priorities,
+    deprioritized: parseArcPriorities(params.deprioritized),
+    constraints: parseArcConstraints(params.constraints),
+    weeklyTimeBudgetMin: Number.isFinite(budget) && budget > 0 ? budget : undefined,
+    coachDirective: params.directive?.trim() || '',
+    activate: true,
+    transitionReason: params.reason?.trim() || 'Started from chat',
+  });
+  return {
+    success: true,
+    message: `"${arc.name}" is now your active training arc.`,
+    navigateTo: `/settings/arcs/${arc.id}`,
+  };
+}
+
+async function executeEndArc(params: Record<string, string>): Promise<ActionResult> {
+  const arc = await getActiveArc();
+  if (!arc) return { success: false, message: 'No active arc to end.' };
+  await endArc(arc.id, params.reason?.trim());
+  return { success: true, message: `Ended "${arc.name}". It stays in your arc history.` };
+}
+
+async function executePauseArc(params: Record<string, string>): Promise<ActionResult> {
+  const arc = await getActiveArc();
+  if (!arc) return { success: false, message: 'No active arc to pause.' };
+  await pauseArc(arc.id);
+  const reason = params.reason?.trim();
+  return {
+    success: true,
+    message: reason ? `Paused "${arc.name}" — ${reason}.` : `Paused "${arc.name}".`,
+  };
+}
+
+async function executeResumeArc(params: Record<string, string>): Promise<ActionResult> {
+  const id = params.id?.trim();
+  if (!id) return { success: false, message: 'Resume needs an arc id.' };
+  const target = await db.trainingArcs.get(id);
+  if (!target) return { success: false, message: 'Arc not found.' };
+  await resumeArc(id);
+  return { success: true, message: `Resumed "${target.name}".`, navigateTo: `/settings/arcs/${id}` };
+}
+
+async function executeUpdateArc(params: Record<string, string>): Promise<ActionResult> {
+  const arc = await getActiveArc();
+  if (!arc) return { success: false, message: 'No active arc to update.' };
+
+  const patch: Parameters<typeof updateArc>[1] = {};
+  if (params.priorities !== undefined) patch.priorities = parseArcPriorities(params.priorities);
+  if (params.deprioritized !== undefined) patch.deprioritized = parseArcPriorities(params.deprioritized);
+  if (params.constraints !== undefined) patch.constraints = parseArcConstraints(params.constraints);
+  if (params.directive !== undefined) patch.coachDirective = params.directive.trim();
+  if (params.intent !== undefined) patch.intent = params.intent.trim();
+  if (params.name !== undefined) patch.name = params.name.trim();
+  if (params.weekly_time_min !== undefined) {
+    const n = parseInt(params.weekly_time_min, 10);
+    patch.weeklyTimeBudgetMin = Number.isFinite(n) && n > 0 ? n : undefined;
+  }
+  if (params.primary_goal !== undefined) {
+    const g = params.primary_goal.toUpperCase();
+    if (isValidTrainingGoal(g)) patch.primaryGoal = g;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { success: false, message: 'No valid fields to update.' };
+  }
+
+  await updateArc(arc.id, patch);
+  return { success: true, message: `Updated "${arc.name}".` };
+}
+
+// `activateArc` is imported for the executor but referenced via the existing
+// arcs helpers below — surfaced here so future ACTIVATE_ARC-style actions can
+// reuse the import without re-adding it.
+void activateArc;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // `getMaxForLift` and `liftAnchorForExercise` live in ./lift-anchor so the
