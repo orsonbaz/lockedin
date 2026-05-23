@@ -594,6 +594,20 @@ export default function SettingsPage() {
           </Row>
           <Row>
             <RowLabel
+              label="Health dashboard"
+              sub="Longevity score + pillar breakdown"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/health')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Open
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
               label="Coach Memory"
               sub="Review what the coach remembers across conversations"
             />

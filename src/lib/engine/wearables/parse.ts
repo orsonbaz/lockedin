@@ -103,6 +103,12 @@ const APPLE_NAME_MAP: Record<string, { kind: WearableMetricKind; unit: string }>
   resting_heart_rate:     { kind: 'RESTING_HR',       unit: 'bpm' },
   respiratory_rate:       { kind: 'RESPIRATORY_RATE', unit: 'breaths/min' },
   apple_sleeping_wrist_temperature: { kind: 'BODY_TEMP_DELTA', unit: '°C' },
+  // v8: longevity-pillar inputs.
+  step_count:             { kind: 'STEPS',            unit: 'steps' },
+  steps:                  { kind: 'STEPS',            unit: 'steps' },
+  active_energy:          { kind: 'ACTIVE_KCAL',      unit: 'kcal' },
+  active_kcal:            { kind: 'ACTIVE_KCAL',      unit: 'kcal' },
+  vo2_max:                { kind: 'VO2_MAX',          unit: 'ml/kg/min' },
 };
 
 export function parseAppleHealth(raw: unknown): ParsedPayload {
@@ -284,6 +290,10 @@ export function parseWhoop(raw: unknown): ParsedPayload {
 const VALID_KINDS = new Set<WearableMetricKind>([
   'HRV', 'RESTING_HR', 'SLEEP_HOURS', 'SLEEP_QUALITY',
   'RECOVERY_SCORE', 'STRAIN', 'RESPIRATORY_RATE', 'BODY_TEMP_DELTA',
+  // v8: longevity-pillar inputs.
+  'STEPS', 'ZONE_2_MINUTES', 'VO2_MAX', 'ACTIVE_KCAL',
+  'STRESS_SCORE', 'BLOOD_GLUCOSE_FASTING',
+  'BLOOD_PRESSURE_SYS', 'BLOOD_PRESSURE_DIA',
 ]);
 
 export function parseManualCsv(csv: string): ParsedPayload {
