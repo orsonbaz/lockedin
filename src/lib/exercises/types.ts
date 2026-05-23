@@ -2,7 +2,7 @@
 // These types describe the static exercise catalogue (shipped in the JS bundle,
 // never stored in Dexie) and the user's equipment preferences (stored in Dexie).
 
-import type { BlockType, Lift } from '@/lib/db/types';
+import type { BlockType, Lift, Injury } from '@/lib/db/types';
 
 // ── Gym hardware (distinct from Equipment = federation class RAW/SINGLE_PLY/…) ─
 
@@ -183,6 +183,14 @@ export interface SwapContext {
   /** Current session fatigue budget (used for budgetScore). */
   remainingSystemic:  number;
   remainingLocal:     number;
+  /**
+   * v8: active injuries the swap engine should consult. When present,
+   * candidates whose movementPattern / swapGroups are hard-contraindicated
+   * are filtered out entirely; soft constraints (NO_AXIAL_LOAD, TEMPO_ONLY,
+   * etc.) apply scoring penalties / boosts. Pass an empty array (or omit)
+   * to bypass injury-aware filtering.
+   */
+  activeInjuries?:    Injury[];
 }
 
 export interface SwapCandidate {

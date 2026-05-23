@@ -15,6 +15,7 @@ import type { Exercise, SwapCandidate, SwapContext, GymEquipment } from './types
 import type { BlockType } from '@/lib/db/types';
 import { EXERCISE_LIBRARY, EXERCISES_BY_SWAP_GROUP } from './index';
 import { computeSessionBudget, budgetHeadroom } from './fatigue-budget';
+import { applyInjuryFilters } from '@/lib/injuries';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -127,8 +128,29 @@ export function suggestSwaps(
     const defaultSets = 3;  // conservative estimate for the swap
     const bScore = budgetHeadroom(candidate, defaultSets, adjustedBudget);
 
+    // 7. v8 — Injury filter. Hard-blocks contraindicated candidates and
+    // applies soft penalties / boosts for constraint flags.
+    const injuryResult = context.activeInjuries && context.activeInjuries.length > 0
+      ? applyInjuryFilters(
+          {
+            movementPattern: candidate.movementPattern,
+            swapGroups:      candidate.swapGroups,
+            spinalLoad:      candidate.fatigue.spinalLoad,
+            // Tempo variants are conventionally tagged with a `*_TEMPO`
+            // swap group (added in phase 8). Until those exist, this is a
+            // no-op signal — the filter just doesn't fire its tempo boost.
+            hasTempo:        candidate.swapGroups.some((g) => g.endsWith('_TEMPO')),
+            isUnilateral:    candidate.swapGroups.some((g) => g.startsWith('SINGLE_LEG')),
+            isOverhead:      candidate.movementPattern === 'VERTICAL_PUSH',
+          },
+          context.activeInjuries,
+        )
+      : { blocked: false, penalty: 0, boost: 0, reasons: [] };
+
+    if (injuryResult.blocked) continue;
+
     // ── Composite score ───────────────────────────────────────────────────
-    const score =
+    const baseScore =
       patternScore     * 0.25 +
       muscleScore      * 0.25 +
       fatigueScore     * 0.20 +
@@ -136,15 +158,21 @@ export function suggestSwaps(
       specificityScore * 0.10 +
       bScore           * 0.05;
 
-    const normalised = Math.round(score * 100);
+    const normalised = Math.max(
+      0,
+      Math.min(100, Math.round(baseScore * 100) - injuryResult.penalty + injuryResult.boost),
+    );
 
     const loadFactor = computeLoadAdjustmentFactor(source, candidate);
-    const reason = buildSwapReason(
+    let reason = buildSwapReason(
       source,
       candidate,
       { patternScore, muscleScore, fatigueScore, equipScore, specificityScore, budgetScore: bScore },
       context,
     );
+    if (injuryResult.reasons.length > 0) {
+      reason = `${reason.replace(/\.$/, '')}; ${injuryResult.reasons.join('; ')}.`;
+    }
 
     scored.push({
       exercise:                candidate,

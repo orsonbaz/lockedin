@@ -580,6 +580,20 @@ export default function SettingsPage() {
           </Row>
           <Row>
             <RowLabel
+              label="Injuries"
+              sub="Filters the swap engine — coach reads these on every turn"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/health/injuries')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Manage
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
               label="Coach Memory"
               sub="Review what the coach remembers across conversations"
             />

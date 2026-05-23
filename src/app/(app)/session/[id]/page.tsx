@@ -27,6 +27,7 @@ import { DEFAULT_GEAR }                                   from '@/lib/db/types';
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
+import { listActiveInjuries }                              from '@/lib/injuries';
 import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
 import { unpackReviewIssues }                             from '@/lib/engine/session-review';
 import { detectSessionPRs }                               from '@/lib/engine/session-prs';
@@ -692,7 +693,7 @@ export default function SessionPage({
   }, [pageState]);
 
   /** Open swap modal for an exercise in the overview list. */
-  const openSwapModal = useCallback((ex: SessionExercise) => {
+  const openSwapModal = useCallback(async (ex: SessionExercise) => {
     const libEx = ex.libraryExerciseId
       ? EXERCISE_BY_ID.get(ex.libraryExerciseId)
       : undefined;
@@ -703,6 +704,9 @@ export default function SessionPage({
     const profile = equipmentProfile;
     const avail = profile?.availableEquipment ?? ['BARBELL', 'DUMBBELL', 'BODYWEIGHT', 'CABLE', 'MACHINE'];
     const blockType = sessionBlock?.blockType ?? 'ACCUMULATION';
+    // v8: pull active injuries so the swap engine can filter contraindicated
+    // candidates and bias toward injury-friendly variants.
+    const activeInjuries = await listActiveInjuries();
     const candidates = suggestSwaps(libEx, {
       blockType,
       availableEquipment: avail,
@@ -711,6 +715,7 @@ export default function SessionPage({
       wearingWristWraps:  profile?.hasWristWraps ?? false,
       remainingSystemic:  180,
       remainingLocal:     220,
+      activeInjuries,
     });
     setSwapCandidates(candidates);
     setSwapForExId(ex.id);
@@ -1239,7 +1244,7 @@ export default function SessionPage({
                         {!reorderMode && ex.libraryExerciseId && (
                           <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); openSwapModal(ex); }}
+                            onClick={(e) => { e.stopPropagation(); void openSwapModal(ex); }}
                             className="text-xs px-2 py-0.5 rounded-full transition-colors active:opacity-70"
                             style={{ backgroundColor: 'rgba(245,166,35,0.15)', color: C.gold }}
                           >
