@@ -1,13 +1,18 @@
 'use client';
 
 /**
- * BottomNav — Fixed 6-tab navigation bar.
+ * BottomNav — Fixed 5-tab navigation bar (v8 longevity-first IA).
  * Appears on all screens inside src/app/(app)/layout.tsx.
+ *
+ * Tabs: Today · Move · Train · Health · Coach.
+ * Dropped from v7 nav: Nutrition (now a card on /health), Progress
+ * (replaced by /health), Goals (reachable from /health and /train). The
+ * routes themselves still exist so deep links keep working.
  */
 
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  House, Dumbbell, Bot, TrendingUp, Target, Flame,
+  House, Dumbbell, Bot, Activity, HeartPulse,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -28,36 +33,32 @@ interface Tab {
 
 const TABS: Tab[] = [
   {
-    label:         'Home',
+    label:         'Today',
     icon:          House,
     href:          '/home',
   },
   {
-    label:         'Session',
+    label:         'Move',
+    icon:          Activity,
+    href:          '/mobility',
+    matchPrefixes: ['/mobility/'],
+  },
+  {
+    label:         'Train',
     icon:          Dumbbell,
     href:          '/session/today',
-    matchPrefixes: ['/session/'],
+    matchPrefixes: ['/session/', '/checkin', '/recover'],
   },
   {
-    label:         'Nutrition',
-    icon:          Flame,
-    href:          '/nutrition',
-    matchPrefixes: ['/nutrition/'],
+    label:         'Health',
+    icon:          HeartPulse,
+    href:          '/health',
+    matchPrefixes: ['/health/', '/progress', '/nutrition', '/goals'],
   },
   {
-    label: 'Coach',
-    icon:  Bot,
-    href:  '/coach',
-  },
-  {
-    label: 'Progress',
-    icon:  TrendingUp,
-    href:  '/progress',
-  },
-  {
-    label: 'Goals',
-    icon:  Target,
-    href:  '/goals',
+    label:         'Coach',
+    icon:          Bot,
+    href:          '/coach',
   },
 ];
 

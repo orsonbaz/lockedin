@@ -480,6 +480,35 @@ export default function ProgressPage() {
           </p>
         </div>
 
+        {/* v8: nudge users to the new Health dashboard. /progress still works
+            as a deep link but the top-level Progress tab was removed in the
+            longevity-first redesign — most folks want the new view. */}
+        <button
+          type="button"
+          onClick={() => router.push('/health')}
+          className="w-full text-left rounded-2xl p-4 mb-5 inline-flex items-center gap-3 transition-all active:scale-[0.99]"
+          style={{
+            backgroundColor: `${C.accent}10`,
+            border: `1px solid ${C.accent}40`,
+          }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: `${C.accent}1A`, color: C.accent }}
+          >
+            <span aria-hidden>♥</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold" style={{ color: C.text }}>
+              Open the Health dashboard
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: C.muted }}>
+              Longevity score, pillar breakdown, injury banner — the new home for progress in v8.
+            </p>
+          </div>
+          <span style={{ color: C.accent, fontSize: 18 }}>→</span>
+        </button>
+
         {/* ── PROGRAM TIMELINE ───────────────────────────────────────────── */}
         {program && (
           <div
