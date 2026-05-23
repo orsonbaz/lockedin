@@ -359,36 +359,92 @@ export function generateSession(input: SessionInput): GeneratedSession {
 
 // ── Remedial prep (v8) ────────────────────────────────────────────────────────
 
-const MAX_REMEDIAL_PREP = 3;
+const MAX_REMEDIAL_PREP = 5;
 
 /**
  * Translate active injuries into a small set of GeneratedExercise prep rows.
- * Injuries sort by severity desc so the worst region gets first pick;
- * complaints derived per region; remedies deduped across complaints; capped
- * at MAX_REMEDIAL_PREP so the session stays sane.
+ *
+ * Allocation philosophy — "physio that wants you strong af":
+ *   - Every active injury gets at least ONE remedy (its single highest-
+ *     evidence pick). A sev-2 niggle is still a niggle.
+ *   - Severity ≥ 3 gets TWO remedies — they warrant more attention.
+ *   - Solo injuries get a bonus slot ("breathing room") since there's no
+ *     other injury competing for session time.
+ *   - Total prep capped at MAX_REMEDIAL_PREP (5). If the sum of wants
+ *     overflows, we shave wants from lowest-severity injuries first BUT
+ *     never below 1 — the "no injury gets ignored" invariant holds.
+ *   - Per-injury picks draw from THAT injury's region complaints, so a
+ *     shoulder injury never crowds out a knee injury's slot. Dedupe
+ *     across the final list (a remedy hitting multiple complaints still
+ *     only counts once and counts toward both injuries' allocations).
  */
 function buildRemedialPrep(injuries: readonly Injury[]): GeneratedExercise[] {
-  // Higher severity goes first; within ties newer entries (more recent
-  // activity) precede.
-  const ordered = [...injuries]
-    .filter((i) => i.status !== 'RESOLVED')
-    .sort((a, b) => {
-      if (b.severity !== a.severity) return b.severity - a.severity;
-      return b.updatedAt.localeCompare(a.updatedAt);
-    });
+  const active = injuries.filter((i) => i.status !== 'RESOLVED');
+  if (active.length === 0) return [];
 
-  const complaints = new Set<ReturnType<typeof complaintsForRegion>[number]>();
-  for (const injury of ordered) {
+  // Higher severity goes first; within ties newer activity precedes.
+  const ordered = [...active].sort((a, b) => {
+    if (b.severity !== a.severity) return b.severity - a.severity;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
+
+  // ── Allocate per-injury "want" counts ────────────────────────────────
+  const allocations = ordered.map((injury) => ({
+    injury,
+    want: injury.severity >= 3 ? 2 : 1,
+  }));
+
+  // Solo injury → +1 breathing room.
+  if (allocations.length === 1) allocations[0].want += 1;
+
+  // Cap total at MAX_REMEDIAL_PREP. Shave from lowest-severity injuries
+  // first, but never below 1 (every injury keeps at least one remedy).
+  let total = allocations.reduce((sum, a) => sum + a.want, 0);
+  while (total > MAX_REMEDIAL_PREP) {
+    const droppable = [...allocations].reverse().find((a) => a.want > 1);
+    if (!droppable) break;
+    droppable.want -= 1;
+    total -= 1;
+  }
+
+  // ── Pick remedies per injury, dedup across the whole list ────────────
+  const picked: RemedialExercise[] = [];
+  const seenIds = new Set<string>();
+
+  for (const { injury, want } of allocations) {
+    if (picked.length >= MAX_REMEDIAL_PREP) break;
+
+    // Collect this injury's region complaints (dedup across its own regions).
+    const injuryComplaints = new Set<ReturnType<typeof complaintsForRegion>[number]>();
     for (const region of injury.regions) {
       for (const c of complaintsForRegion(region)) {
-        complaints.add(c);
+        injuryComplaints.add(c);
       }
     }
-  }
-  if (complaints.size === 0) return [];
+    if (injuryComplaints.size === 0) continue;
 
-  const remedies = pickTopRemedies([...complaints], MAX_REMEDIAL_PREP);
-  return remedies.map((rem, i) => remedyToExercise(rem, i + 1));
+    // Pull this injury's top picks from its own pool. Ask for an oversized
+    // buffer so duplicates already-in-picked don't starve us.
+    const buffer = pickTopRemedies([...injuryComplaints], want + picked.length);
+
+    let added = 0;
+    for (const rem of buffer) {
+      if (added >= want) break;
+      if (picked.length >= MAX_REMEDIAL_PREP) break;
+      if (seenIds.has(rem.id)) {
+        // Already prepped (probably by a higher-severity injury whose
+        // complaints overlap). Count it as satisfying this injury's slot too
+        // — no need to add a duplicate exercise.
+        added += 1;
+        continue;
+      }
+      seenIds.add(rem.id);
+      picked.push(rem);
+      added += 1;
+    }
+  }
+
+  return picked.map((rem, i) => remedyToExercise(rem, i + 1));
 }
 
 /**

@@ -83,19 +83,49 @@ describe('generateSession — remedial prep injection (v8)', () => {
     expect(session.exercises[0].notes ?? '').toMatch(/rehab/i);
   });
 
-  it('caps prep at 3 movements even with many injuries / complaints', () => {
+  it('caps prep at 5 movements even with many injuries / complaints', () => {
     const injuries = [
-      makeInjury({ id: 'a', regions: ['LEFT_SHOULDER'] }),
-      makeInjury({ id: 'b', regions: ['LEFT_KNEE'] }),
-      makeInjury({ id: 'c', regions: ['L_SPINE'] }),
-      makeInjury({ id: 'd', regions: ['LEFT_HIP'] }),
-      makeInjury({ id: 'e', regions: ['LEFT_ANKLE'] }),
+      makeInjury({ id: 'a', regions: ['LEFT_SHOULDER'], severity: 4 }),
+      makeInjury({ id: 'b', regions: ['LEFT_KNEE'],     severity: 3 }),
+      makeInjury({ id: 'c', regions: ['L_SPINE'],       severity: 2 }),
+      makeInjury({ id: 'd', regions: ['LEFT_HIP'],      severity: 2 }),
+      makeInjury({ id: 'e', regions: ['LEFT_ANKLE'],    severity: 1 }),
     ];
     const baseline = generateSession(baseInput);
     const session = generateSession({ ...baseInput, activeInjuries: injuries });
     const added = session.exercises.length - baseline.exercises.length;
-    expect(added).toBeLessThanOrEqual(3);
+    expect(added).toBeLessThanOrEqual(5);
     expect(added).toBeGreaterThan(0);
+  });
+
+  it('every active injury gets at least one remedy — even low-severity', () => {
+    // The "physio that wants you strong af" invariant: a sev-2 niggle isn't
+    // ignored when a sev-4 problem is also active.
+    const big = makeInjury({ id: 'a', regions: ['LEFT_KNEE'], severity: 4, label: 'Bad knee' });
+    const small = makeInjury({ id: 'b', regions: ['LEFT_SHOULDER'], severity: 2, label: 'Cranky shoulder' });
+    const session = generateSession({ ...baseInput, activeInjuries: [big, small] });
+    const note = session.modifications.join(' ');
+    // The modifications line names both injuries.
+    expect(note).toContain('Bad knee');
+    expect(note).toContain('Cranky shoulder');
+  });
+
+  it('a solo low-severity injury still gets a couple of remedies', () => {
+    const injury = makeInjury({ regions: ['LEFT_SHOULDER'], severity: 2 });
+    const baseline = generateSession(baseInput);
+    const session = generateSession({ ...baseInput, activeInjuries: [injury] });
+    const added = session.exercises.length - baseline.exercises.length;
+    // Solo injury + severity 2 → base want 1 + solo bonus 1 = 2 remedies.
+    expect(added).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a solo high-severity injury gets more remedies (severity ≥ 3 + solo bonus)', () => {
+    const injury = makeInjury({ regions: ['L_SPINE'], severity: 4 });
+    const baseline = generateSession(baseInput);
+    const session = generateSession({ ...baseInput, activeInjuries: [injury] });
+    const added = session.exercises.length - baseline.exercises.length;
+    // Sev ≥ 3 base want 2 + solo bonus 1 = 3 remedies.
+    expect(added).toBeGreaterThanOrEqual(3);
   });
 
   it('rehab prep comes before competition exercises', () => {
