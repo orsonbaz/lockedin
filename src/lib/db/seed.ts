@@ -1,8 +1,16 @@
 import { db, newId, today } from './database';
-import type { AthleteProfile } from './types';
+import type { AthleteProfile, TrainingArc } from './types';
 
 /**
- * Inserts a default AthleteProfile when the DB is empty.
+ * Inserts a default AthleteProfile + initial "Get Healthy" arc + a
+ * HEALTH_BASE → ACCUMULATION starter cycle when the DB is empty.
+ *
+ * v8 defaults: trainingGoal is LONGEVITY (was COMPETITION_PREP in v7),
+ * the seed cycle leads with HEALTH_BASE blocks, and the active arc is
+ * "Get Healthy" with INJURY_HEALING + MOBILITY priorities. Athletes
+ * who want a competition focus start a new arc from /settings/arcs/new
+ * — see the COMPETITION-priority gate in /meet/layout.tsx.
+ *
  * Safe to call on every app load — exits immediately if data already exists.
  */
 export async function seedIfEmpty(): Promise<void> {
@@ -45,6 +53,10 @@ export async function seedIfEmpty(): Promise<void> {
     peakDayOfWeek: 6,  // Saturday
     unitSystem: 'KG',
 
+    // v8: default goal is longevity. Athletes who want a comp peak
+    // start a "Back to Powerlifting" arc which flips this implicitly.
+    trainingGoal: 'LONGEVITY',
+
     onboardingComplete: false,
     createdAt: now,
     updatedAt: now,
@@ -52,11 +64,35 @@ export async function seedIfEmpty(): Promise<void> {
 
   await db.profile.put(profile);
 
-  // Seed an active training cycle (no meet attached — user adds their own)
+  // v8: seed the initial training arc. The v8 upgrade callback handles
+  // this for users migrating from v7; the seed path covers fresh installs.
+  const arc: TrainingArc = {
+    id: newId(),
+    name: 'Get Healthy',
+    intent:
+      'Rebuild durable joint health and mobility while keeping baseline strength. ' +
+      'Lean on weighted calisthenics and joint-friendly variations.',
+    status: 'ACTIVE',
+    startDate: today(),
+    primaryGoal: 'LONGEVITY',
+    priorities: ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'],
+    deprioritized: ['COMPETITION'],
+    constraints: [],
+    coachDirective:
+      'Prioritize my long-term joint health over peak performance. ' +
+      'Treat barbell and weighted-calisthenics strength as co-equal expressions. ' +
+      'When in doubt, choose the joint-friendly variation.',
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.trainingArcs.put(arc);
+
+  // Seed an active training cycle. v8 default leads with HEALTH_BASE
+  // (full ROM + tempo) before accumulation — sustainable strength foundation.
   const cycleId = newId();
   await db.cycles.put({
     id: cycleId,
-    name: '12-Week Meet Prep',
+    name: '12-Week Foundation',
     startDate: today(),
     totalWeeks: 12,
     currentWeek: 1,
@@ -64,35 +100,34 @@ export async function seedIfEmpty(): Promise<void> {
     createdAt: new Date().toISOString(),
   });
 
-  // Seed three blocks: Accumulation → Intensification → Realization
   const blockIds = [newId(), newId(), newId()];
   await db.blocks.bulkPut([
     {
       id: blockIds[0],
       cycleId,
-      blockType: 'ACCUMULATION',
+      blockType: 'HEALTH_BASE',
       weekStart: 1,
       weekEnd: 4,
-      volumeTarget: 1.1,
-      intensityTarget: 0.72,
+      volumeTarget: 0.85,
+      intensityTarget: 0.70,
     },
     {
       id: blockIds[1],
       cycleId,
-      blockType: 'INTENSIFICATION',
+      blockType: 'ACCUMULATION',
       weekStart: 5,
       weekEnd: 9,
-      volumeTarget: 0.9,
-      intensityTarget: 0.82,
+      volumeTarget: 1.1,
+      intensityTarget: 0.75,
     },
     {
       id: blockIds[2],
       cycleId,
-      blockType: 'REALIZATION',
+      blockType: 'HEALTH_BASE',
       weekStart: 10,
       weekEnd: 12,
-      volumeTarget: 0.65,
-      intensityTarget: 0.92,
+      volumeTarget: 0.85,
+      intensityTarget: 0.70,
     },
   ]);
 
@@ -103,10 +138,10 @@ export async function seedIfEmpty(): Promise<void> {
     blockId: blockIds[0],
     cycleId,
     scheduledDate: today(),
-    sessionType: 'ACCUMULATION',
+    sessionType: 'TECHNICAL',
     primaryLift: 'SQUAT',
     status: 'SCHEDULED',
-    coachNote: 'Week 1 — focus on bar path and bracing. Keep RPE honest.',
+    coachNote: 'Week 1, Health Base — full ROM, tempo, RPE 7. No grinders.',
   });
 
   // Exercises will be generated from the user's actual maxes after onboarding completes
