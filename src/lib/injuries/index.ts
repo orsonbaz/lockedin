@@ -8,6 +8,7 @@
  */
 
 import { db, newId, today } from '@/lib/db/database';
+import { invalidateCache } from '@/lib/ai/coach-cache';
 import type {
   Injury,
   InjuryStatus,
@@ -88,6 +89,7 @@ export async function createInjury(input: CreateInjuryInput): Promise<Injury> {
     updatedAt: nowIso,
   };
   await db.injuries.add(injury);
+  await invalidateCache();
   return injury;
 }
 
@@ -96,6 +98,7 @@ export async function updateInjury(
   patch: Partial<Omit<Injury, 'id' | 'createdAt' | 'updatedAt'>>,
 ): Promise<void> {
   await db.injuries.update(id, { ...patch, updatedAt: new Date().toISOString() });
+  await invalidateCache();
 }
 
 export async function updateInjuryStatus(
@@ -108,6 +111,7 @@ export async function updateInjuryStatus(
   };
   if (status === 'RESOLVED') patch.resolvedDate = today();
   await db.injuries.update(id, patch);
+  await invalidateCache();
 }
 
 export async function deleteInjury(id: string): Promise<void> {
@@ -115,6 +119,7 @@ export async function deleteInjury(id: string): Promise<void> {
     await db.symptomLogs.where('injuryId').equals(id).delete();
     await db.injuries.delete(id);
   });
+  await invalidateCache();
 }
 
 // ── Symptom logging ──────────────────────────────────────────────────────────

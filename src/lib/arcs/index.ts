@@ -11,6 +11,7 @@
  */
 
 import { db, today, newId } from '@/lib/db/database';
+import { invalidateCache } from '@/lib/ai/coach-cache';
 import type {
   TrainingArc,
   ArcTransition,
@@ -113,6 +114,7 @@ export async function createArc(input: CreateArcInput): Promise<TrainingArc> {
   }
 
   await db.trainingArcs.add(arc);
+  if (arc.status === 'ACTIVE') await invalidateCache();
   return arc;
 }
 
@@ -122,6 +124,8 @@ export async function updateArc(
   patch: Partial<Omit<TrainingArc, 'id' | 'createdAt' | 'updatedAt' | 'status'>>,
 ): Promise<void> {
   await db.trainingArcs.update(id, { ...patch, updatedAt: new Date().toISOString() });
+  const arc = await db.trainingArcs.get(id);
+  if (arc?.status === 'ACTIVE') await invalidateCache();
 }
 
 /**
@@ -147,6 +151,7 @@ export async function activateArc(id: string, reason?: string): Promise<void> {
     endDate: undefined,
     updatedAt: new Date().toISOString(),
   });
+  await invalidateCache();
 }
 
 export async function endArc(id: string, reason?: string): Promise<void> {
@@ -181,6 +186,7 @@ async function endArcInternal(id: string, _reason?: string): Promise<void> {
     endDate: today(),
     updatedAt: new Date().toISOString(),
   });
+  await invalidateCache();
 }
 
 async function setArcStatus(id: string, status: ArcStatus): Promise<void> {
@@ -188,6 +194,7 @@ async function setArcStatus(id: string, status: ArcStatus): Promise<void> {
     status,
     updatedAt: new Date().toISOString(),
   });
+  await invalidateCache();
 }
 
 async function writeTransition(

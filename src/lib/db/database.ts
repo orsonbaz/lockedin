@@ -36,6 +36,8 @@ import type {
   MobilityRomEntry,
   LongevitySnapshot,
   BodyRegion,
+  CoachCache,
+  CoachCallStats,
 } from './types';
 import type { UserEquipmentProfile, CustomExercise } from '@/lib/exercises/types';
 
@@ -74,6 +76,9 @@ export class LockedinDB extends Dexie {
   mobilitySessions!: Table<MobilitySession>;
   mobilityRomEntries!: Table<MobilityRomEntry>;
   longevitySnapshots!: Table<LongevitySnapshot>;
+  // v9: coach prompt caching
+  coachCaches!: Table<CoachCache>;
+  coachCallStats!: Table<CoachCallStats>;
 
   constructor() {
     super('LockedinDB');
@@ -158,6 +163,15 @@ export class LockedinDB extends Dexie {
       longevitySnapshots: 'id, date',
     }).upgrade(async (tx) => {
       await upgradeToV8(tx);
+    });
+
+    // v9: coach prompt caching — purely additive (two new tables, no
+    // existing-table changes, no migration callback).
+    this.version(9).stores({
+      // Single-row 'me' — kept indexed-by-id so we can do `db.coachCaches.get('me')`.
+      coachCaches:    'id, hash, expiresAt',
+      // Append-only call stats for the Settings telemetry panel.
+      coachCallStats: 'id, timestamp, cacheHit',
     });
   }
 }
@@ -393,6 +407,8 @@ const TABLE_NAMES = [
   'injuries', 'symptomLogs', 'rehabProtocols',
   'mobilityMovements', 'mobilityRoutines', 'mobilitySessions', 'mobilityRomEntries',
   'longevitySnapshots',
+  // v9 (backup v8): coach prompt caching
+  'coachCaches', 'coachCallStats',
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
@@ -410,9 +426,10 @@ interface BackupPayload {
    * v4 = nutrition;
    * v5 = form checks;
    * v6 = wearables;
-   * v7 = training arcs + injuries + mobility + longevity (Dexie v8).
+   * v7 = training arcs + injuries + mobility + longevity (Dexie v8);
+   * v8 = coach prompt caching (Dexie v9).
    */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   exportedAt: string;
   tables: Partial<Record<TableName, unknown[]>>;
 }
@@ -423,7 +440,7 @@ export async function exportAll(): Promise<BackupPayload> {
   for (const name of TABLE_NAMES) {
     tables[name] = await (db[name] as Table<unknown>).toArray();
   }
-  return { version: 7, exportedAt: new Date().toISOString(), tables };
+  return { version: 8, exportedAt: new Date().toISOString(), tables };
 }
 
 /**
@@ -435,7 +452,7 @@ export async function exportAll(): Promise<BackupPayload> {
 export async function importAll(
   payload: BackupPayload,
 ): Promise<Record<string, number>> {
-  if (payload.version < 1 || payload.version > 7) {
+  if (payload.version < 1 || payload.version > 8) {
     throw new Error(`Unsupported backup version: ${payload.version}`);
   }
 

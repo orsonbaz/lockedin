@@ -868,6 +868,11 @@ async function executeUpdateMax(params: Record<string, string>): Promise<ActionR
     updatedAt: new Date().toISOString(),
   } as Partial<AthleteProfile>);
 
+  // v9: maxes are part of the cached stable core — invalidate so the next
+  // coach turn sees the new value.
+  const { invalidateCache } = await import('./coach-cache');
+  await invalidateCache();
+
   return { success: true, message: `${lift!.toLowerCase()} max updated to ${rounded} kg.` };
 }
 

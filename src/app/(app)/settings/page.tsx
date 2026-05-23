@@ -30,6 +30,22 @@ import type { UserEquipmentProfile }          from '@/lib/exercises/types';
 const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+/**
+ * Returns true when a profile patch touches any field that appears in the
+ * cached stable-core string (v9 prompt caching). Used to decide whether to
+ * invalidate the coach cache after a profile write.
+ */
+function touchesStableCore(patch: Partial<AthleteProfile>): boolean {
+  const stableKeys: Array<keyof AthleteProfile> = [
+    'name', 'sex', 'weightKg', 'trainingAgeMonths',
+    'bottleneck', 'responder', 'overshooter',
+    'maxSquat', 'maxBench', 'maxDeadlift',
+    'maxWeightedPullUp', 'maxWeightedDip', 'maxWeightedMuscleUp',
+    'trainingGoal',
+  ];
+  return stableKeys.some((k) => k in patch);
+}
+
 // ── Row components ──────────────────────────────────────────────────────────────
 function SectionHeader({ title }: { title: string }) {
   return (
@@ -162,6 +178,13 @@ export default function SettingsPage() {
     try {
       await db.profile.update('me', { ...patch, updatedAt: new Date().toISOString() });
       setProfile((p) => (p ? { ...p, ...patch } : p));
+      // v9: profile fields land in the cached stable core. Invalidate so the
+      // next coach call picks up the new value. (Lazy import to avoid pulling
+      // the cache module into the page bundle until we touch it.)
+      if (touchesStableCore(patch)) {
+        const { invalidateCache } = await import('@/lib/ai/coach-cache');
+        await invalidateCache();
+      }
       toast('Saved', { duration: 1500 });
     } catch {
       toast('Failed to save', { duration: 3000 });
@@ -694,6 +717,9 @@ export default function SettingsPage() {
           </>
         )}
 
+        {/* ── 5b. COACH CACHE (v9) ────────────────────────────────────── */}
+        <CoachCachePanel />
+
         {/* ── 6. DATA ──────────────────────────────────────────────────── */}
         <SectionHeader title="Your Data" />
         <SettingsCard>
@@ -867,5 +893,81 @@ export default function SettingsPage() {
 
       </div>
     </div>
+  );
+}
+
+// ── Coach cache telemetry panel (v9) ────────────────────────────────────────
+
+function CoachCachePanel() {
+  const stats = useLiveQuery(async () => {
+    const { recentStats, aggregateStats } = await import('@/lib/ai/coach-cache');
+    const rows = await recentStats(20);
+    return { rows, agg: aggregateStats(rows) };
+  }, []);
+
+  const activeCache = useLiveQuery(async () => {
+    const row = await db.coachCaches.get('me');
+    if (!row) return null;
+    return row;
+  }, []);
+
+  const handleClear = async () => {
+    const { invalidateCache } = await import('@/lib/ai/coach-cache');
+    await invalidateCache();
+    toast('Cache cleared — next coach turn will rebuild it.', { duration: 2000 });
+  };
+
+  if (!stats) return null;
+
+  return (
+    <>
+      <SectionHeader title="Coach Cache" />
+      <SettingsCard>
+        <Row>
+          <RowLabel
+            label="Active cache"
+            sub={activeCache
+              ? `Hash ${activeCache.hash} · expires ${new Date(activeCache.expiresAt).toLocaleTimeString()}`
+              : 'No active cache — next turn creates one'}
+          />
+          <button
+            type="button"
+            onClick={() => void handleClear()}
+            disabled={!activeCache}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg disabled:opacity-40"
+            style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+          >
+            Clear
+          </button>
+        </Row>
+        <Row>
+          <RowLabel
+            label="Recent turns"
+            sub={`${stats.rows.length} sampled — ${stats.agg.hitRatePct}% hit rate`}
+          />
+          <span className="text-sm font-bold tabular-nums" style={{ color: C.accent }}>
+            {stats.agg.hitRatePct}%
+          </span>
+        </Row>
+        <Row>
+          <RowLabel
+            label="Tokens served from cache"
+            sub={`vs ${stats.agg.totalUncachedInputTokens.toLocaleString()} uncached input · ${stats.agg.totalOutputTokens.toLocaleString()} output`}
+          />
+          <span className="text-sm font-bold tabular-nums" style={{ color: C.text }}>
+            {stats.agg.totalCachedTokens.toLocaleString()}
+          </span>
+        </Row>
+        <Row>
+          <RowLabel
+            label="Estimated savings"
+            sub="At Gemini 2.5 Flash prices ($0.30/M uncached vs $0.03/M cached)"
+          />
+          <span className="text-sm font-bold tabular-nums" style={{ color: C.green }}>
+            ${stats.agg.estimatedSavingsUsd.toFixed(4)}
+          </span>
+        </Row>
+      </SettingsCard>
+    </>
   );
 }

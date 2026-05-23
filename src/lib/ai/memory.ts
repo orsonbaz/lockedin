@@ -224,6 +224,13 @@ export async function addMemory(input: MemoryInput): Promise<AthleteMemory> {
     sourceMessageId: input.sourceMessageId,
   };
   await db.athleteMemory.add(memory);
+  // v9: high-importance memories are part of the cached stable core
+  // snapshot — adding one invalidates the cache so the next coach call
+  // includes the fresh memory.
+  if (memory.importance >= 4) {
+    const { invalidateCache } = await import('./coach-cache');
+    await invalidateCache();
+  }
   return memory;
 }
 
@@ -231,6 +238,10 @@ export async function removeMemory(id: string): Promise<boolean> {
   const existing = await db.athleteMemory.get(id);
   if (!existing) return false;
   await db.athleteMemory.delete(id);
+  if (existing.importance >= 4) {
+    const { invalidateCache } = await import('./coach-cache');
+    await invalidateCache();
+  }
   return true;
 }
 
