@@ -28,6 +28,14 @@ import type {
   ArcPriority,
   ArcConstraint,
   TrainingGoal,
+  BodyRegion,
+  InjuryStatus,
+  InjurySeverity,
+  InjuryConstraint,
+  InjuryMovementPattern,
+  PainScale,
+  StiffnessScale,
+  IrritabilityLevel,
 } from '@/lib/db/types';
 import { addMemory, removeMemory, isValidMemoryKind, parseExpiry, describeExpiry } from './memory';
 import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
@@ -46,6 +54,22 @@ import {
   ARC_PRIORITY_LABELS,
   ARC_CONSTRAINT_LABELS,
 } from '@/lib/arcs';
+import {
+  createInjury,
+  updateInjuryStatus,
+  logSymptom,
+  BODY_REGION_LABELS,
+  INJURY_CONSTRAINT_LABELS,
+  INJURY_MOVEMENT_PATTERN_LABELS,
+  INJURY_STATUS_LABELS,
+} from '@/lib/injuries';
+import {
+  generateRoutine,
+  type MobilityFocus,
+} from '@/lib/mobility/routine-generator';
+import { listActiveInjuries } from '@/lib/injuries';
+import { weakRegions } from '@/lib/mobility/rom-assessment';
+import { MOBILITY_BY_ID } from '@/lib/mobility';
 
 // ── Action Types ──────────────────────────────────────────────────────────────
 
@@ -75,7 +99,15 @@ export type CoachActionType =
   | 'END_ARC'
   | 'PAUSE_ARC'
   | 'RESUME_ARC'
-  | 'UPDATE_ARC';
+  | 'UPDATE_ARC'
+  // v8: injuries
+  | 'ADD_INJURY'
+  | 'UPDATE_INJURY_STATUS'
+  | 'LOG_SYMPTOM'
+  // v8: mobility
+  | 'GENERATE_MOBILITY_FLOW'
+  | 'START_MOBILITY_FLOW'
+  | 'LOG_ROM';
 
 export interface CoachAction {
   type: CoachActionType;
@@ -430,6 +462,98 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
       };
     }
 
+    // ── v8: injuries ────────────────────────────────────────────────────────
+
+    case 'ADD_INJURY': {
+      const label = params.label?.trim();
+      const regions = parseRegions(params.regions);
+      if (!label || regions.length === 0) return null;
+      const statusRaw = (params.status || 'MANAGING').toUpperCase();
+      const status: InjuryStatus = isValidInjuryStatus(statusRaw) ? statusRaw : 'MANAGING';
+      const severity = clampSeverity(parseInt(params.severity || '3', 10));
+      const constraints = parseInjuryConstraints(params.constraints);
+      const contraindicatedPatterns = parseInjuryPatterns(params.contraindicated_patterns);
+      const regionLabels = regions.slice(0, 2).map((r) => BODY_REGION_LABELS[r]).join(', ');
+      return {
+        type,
+        params,
+        displayText: `Log injury "${label}" — ${regionLabels}${constraints.length > 0 ? ` (${constraints.length} constraint${constraints.length === 1 ? '' : 's'})` : ''} · severity ${severity}, ${INJURY_STATUS_LABELS[status].toLowerCase()}`,
+        confirmText: 'Log injury',
+        // Pass-through to executor — store cleaned values so the executor
+        // doesn't re-parse.
+        // We piggyback on `params` since CoachAction.params is the contract.
+        // The executor reparses defensively.
+        // (No-op: avoid future temptation.)
+        ...(contraindicatedPatterns.length > 0 ? {} : {}),
+      };
+    }
+
+    case 'UPDATE_INJURY_STATUS': {
+      const id = params.id?.trim();
+      const statusRaw = (params.status || '').toUpperCase();
+      if (!id || !isValidInjuryStatus(statusRaw)) return null;
+      return {
+        type,
+        params,
+        displayText: `Update injury → ${INJURY_STATUS_LABELS[statusRaw as InjuryStatus]}`,
+        confirmText: 'Update status',
+      };
+    }
+
+    case 'LOG_SYMPTOM': {
+      const id = params.injury_id?.trim();
+      const painAtRest = parseInt(params.pain_at_rest || '', 10);
+      const painUnderLoad = parseInt(params.pain_under_load || '', 10);
+      if (!id || !isPainScale(painAtRest) || !isPainScale(painUnderLoad)) return null;
+      const stiff = parseInt(params.stiffness || '0', 10);
+      const irrRaw = (params.irritability || 'MED').toUpperCase();
+      const irr: IrritabilityLevel = irrRaw === 'LOW' || irrRaw === 'HIGH' ? irrRaw : 'MED';
+      return {
+        type,
+        params,
+        displayText: `Log symptom: rest ${painAtRest}/10, load ${painUnderLoad}/10, stiff ${stiff}/5, ${irr.toLowerCase()}`,
+        confirmText: 'Log symptom',
+      };
+    }
+
+    // ── v8: mobility ────────────────────────────────────────────────────────
+
+    case 'GENERATE_MOBILITY_FLOW': {
+      const focusRaw = (params.focus || 'CUSTOM').toUpperCase();
+      const focus: MobilityFocus = isValidMobilityFocus(focusRaw) ? focusRaw : 'CUSTOM';
+      const minutes = clampMinutes(parseInt(params.minutes || '10', 10));
+      return {
+        type,
+        params: { ...params, focus, minutes: String(minutes) },
+        displayText: `Generate a ${minutes}-min ${focusToLabel(focus)} flow`,
+        confirmText: 'Generate flow',
+      };
+    }
+
+    case 'START_MOBILITY_FLOW': {
+      const id = params.routine_id?.trim();
+      if (!id) return null;
+      return {
+        type,
+        params,
+        displayText: `Start the "${id}" flow`,
+        confirmText: 'Start flow',
+      };
+    }
+
+    case 'LOG_ROM': {
+      const movementId = params.movement_id?.trim();
+      const rating = parseInt(params.rating || '', 10);
+      if (!movementId || isNaN(rating) || rating < 0 || rating > 100) return null;
+      const m = MOBILITY_BY_ID.get(movementId);
+      return {
+        type,
+        params,
+        displayText: `Log ROM for ${m?.name ?? movementId}: ${rating}/100`,
+        confirmText: 'Log ROM',
+      };
+    }
+
     default:
       return null;
   }
@@ -474,6 +598,78 @@ function parseArcConstraints(raw: string | undefined): ArcConstraint[] {
     .split(',')
     .map((s) => s.trim().toUpperCase())
     .filter((s): s is ArcConstraint => VALID_CONSTRAINTS.has(s as ArcConstraint));
+}
+
+// ── Injury / mobility parser helpers ─────────────────────────────────────────
+
+const VALID_REGIONS: ReadonlySet<BodyRegion> = new Set(
+  Object.keys(BODY_REGION_LABELS) as BodyRegion[],
+);
+const VALID_INJURY_CONSTRAINTS: ReadonlySet<InjuryConstraint> = new Set(
+  Object.keys(INJURY_CONSTRAINT_LABELS) as InjuryConstraint[],
+);
+const VALID_INJURY_PATTERNS: ReadonlySet<InjuryMovementPattern> = new Set(
+  Object.keys(INJURY_MOVEMENT_PATTERN_LABELS) as InjuryMovementPattern[],
+);
+const VALID_INJURY_STATUSES = new Set<InjuryStatus>([
+  'ACUTE', 'SUBACUTE', 'CHRONIC', 'MANAGING', 'REHAB', 'RESOLVED',
+]);
+
+function isValidInjuryStatus(s: string): s is InjuryStatus {
+  return VALID_INJURY_STATUSES.has(s as InjuryStatus);
+}
+
+function clampSeverity(n: number): InjurySeverity {
+  if (!Number.isFinite(n) || n < 1) return 1;
+  if (n > 5) return 5;
+  return Math.round(n) as InjurySeverity;
+}
+
+function parseRegions(raw: string | undefined): BodyRegion[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s): s is BodyRegion => VALID_REGIONS.has(s as BodyRegion));
+}
+
+function parseInjuryConstraints(raw: string | undefined): InjuryConstraint[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s): s is InjuryConstraint => VALID_INJURY_CONSTRAINTS.has(s as InjuryConstraint));
+}
+
+function parseInjuryPatterns(raw: string | undefined): InjuryMovementPattern[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s): s is InjuryMovementPattern => VALID_INJURY_PATTERNS.has(s as InjuryMovementPattern));
+}
+
+function isPainScale(n: number): n is PainScale {
+  return Number.isInteger(n) && n >= 0 && n <= 10;
+}
+
+const VALID_MOBILITY_FOCUSES = new Set<MobilityFocus>([
+  'AM_RESET', 'PM_DECOMPRESS', 'PRE_SQUAT', 'PRE_PRESS', 'PRE_DEADLIFT',
+  'DESK_RESET', 'POST_SESSION', 'CUSTOM',
+]);
+
+function isValidMobilityFocus(s: string): s is MobilityFocus {
+  return VALID_MOBILITY_FOCUSES.has(s as MobilityFocus);
+}
+
+function clampMinutes(n: number): number {
+  if (!Number.isFinite(n) || n < 3) return 5;
+  if (n > 60) return 60;
+  return Math.round(n);
+}
+
+function focusToLabel(f: MobilityFocus): string {
+  return f.toLowerCase().replace(/_/g, ' ');
 }
 
 /** Human-readable summary of which fields an UPDATE_ARC tag will change. */
@@ -558,6 +754,18 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeResumeArc(action.params);
       case 'UPDATE_ARC':
         return await executeUpdateArc(action.params);
+      case 'ADD_INJURY':
+        return await executeAddInjury(action.params);
+      case 'UPDATE_INJURY_STATUS':
+        return await executeUpdateInjuryStatus(action.params);
+      case 'LOG_SYMPTOM':
+        return await executeLogSymptom(action.params);
+      case 'GENERATE_MOBILITY_FLOW':
+        return await executeGenerateMobilityFlow(action.params);
+      case 'START_MOBILITY_FLOW':
+        return await executeStartMobilityFlow(action.params);
+      case 'LOG_ROM':
+        return await executeLogRom(action.params);
       default:
         return { success: false, message: 'Unknown action type.' };
     }
@@ -1326,6 +1534,136 @@ async function executeUpdateArc(params: Record<string, string>): Promise<ActionR
 // arcs helpers below — surfaced here so future ACTIVATE_ARC-style actions can
 // reuse the import without re-adding it.
 void activateArc;
+
+// ── Injury executors (v8) ────────────────────────────────────────────────────
+
+async function executeAddInjury(params: Record<string, string>): Promise<ActionResult> {
+  const label = params.label?.trim();
+  const regions = parseRegions(params.regions);
+  if (!label || regions.length === 0) {
+    return { success: false, message: 'Injury needs a label and at least one region.' };
+  }
+  const statusRaw = (params.status || 'MANAGING').toUpperCase();
+  const status: InjuryStatus = isValidInjuryStatus(statusRaw) ? statusRaw : 'MANAGING';
+  const severity = clampSeverity(parseInt(params.severity || '3', 10));
+  const constraints = parseInjuryConstraints(params.constraints);
+  const contraindicatedPatterns = parseInjuryPatterns(params.contraindicated_patterns);
+  const preferredPatterns = parseInjuryPatterns(params.preferred_patterns);
+  const injury = await createInjury({
+    label,
+    regions,
+    status,
+    severity,
+    constraints,
+    contraindicatedPatterns,
+    preferredPatterns,
+    notes: params.notes?.trim() || undefined,
+  });
+  return {
+    success: true,
+    message: `Logged "${injury.label}". The swap engine will route around it now.`,
+    navigateTo: `/health/injuries/${injury.id}`,
+  };
+}
+
+async function executeUpdateInjuryStatus(params: Record<string, string>): Promise<ActionResult> {
+  const id = params.id?.trim();
+  const statusRaw = (params.status || '').toUpperCase();
+  if (!id || !isValidInjuryStatus(statusRaw)) {
+    return { success: false, message: 'Need an injury id and a valid status.' };
+  }
+  const injury = await db.injuries.get(id);
+  if (!injury) return { success: false, message: 'Injury not found.' };
+  await updateInjuryStatus(id, statusRaw as InjuryStatus);
+  return {
+    success: true,
+    message: `"${injury.label}" → ${INJURY_STATUS_LABELS[statusRaw as InjuryStatus]}.`,
+  };
+}
+
+async function executeLogSymptom(params: Record<string, string>): Promise<ActionResult> {
+  const injuryId = params.injury_id?.trim();
+  const painAtRest = parseInt(params.pain_at_rest || '', 10);
+  const painUnderLoad = parseInt(params.pain_under_load || '', 10);
+  if (!injuryId || !isPainScale(painAtRest) || !isPainScale(painUnderLoad)) {
+    return { success: false, message: 'Need injury_id and valid pain_at_rest / pain_under_load.' };
+  }
+  const injury = await db.injuries.get(injuryId);
+  if (!injury) return { success: false, message: 'Injury not found.' };
+  const stiffRaw = parseInt(params.stiffness || '0', 10);
+  const stiffness: StiffnessScale = (Math.max(0, Math.min(5, isNaN(stiffRaw) ? 0 : stiffRaw))) as StiffnessScale;
+  const irrRaw = (params.irritability || 'MED').toUpperCase();
+  const irritability: IrritabilityLevel = irrRaw === 'LOW' || irrRaw === 'HIGH' ? irrRaw : 'MED';
+  await logSymptom({
+    injuryId,
+    painAtRest,
+    painUnderLoad,
+    stiffness,
+    irritability,
+    note: params.note?.trim() || undefined,
+  });
+  return { success: true, message: `Logged symptom for "${injury.label}".` };
+}
+
+// ── Mobility executors (v8) ──────────────────────────────────────────────────
+
+async function executeGenerateMobilityFlow(params: Record<string, string>): Promise<ActionResult> {
+  const focusRaw = (params.focus || 'CUSTOM').toUpperCase();
+  const focus: MobilityFocus = isValidMobilityFocus(focusRaw) ? focusRaw : 'CUSTOM';
+  const minutes = clampMinutes(parseInt(params.minutes || '10', 10));
+  const [injuries, weak] = await Promise.all([
+    listActiveInjuries(),
+    weakRegions(),
+  ]);
+  const routine = generateRoutine({
+    focus,
+    minutes,
+    injuries,
+    weakRegions: weak,
+  });
+  // Persist as a CUSTOM routine so the runner can step through it the same
+  // way as the templates.
+  const id = newId();
+  await db.mobilityRoutines.add({
+    id,
+    name: `Coach: ${focusToLabel(focus)}`,
+    ownerId: 'me',
+    durationMin: routine.estimatedMinutes,
+    movementIds: routine.movementIds,
+    source: 'LLM',
+    tags: ['coach_generated'],
+    createdAt: new Date().toISOString(),
+  });
+  return {
+    success: true,
+    message: `Generated a ${routine.estimatedMinutes}-min flow with ${routine.movementIds.length} movements. Opening the runner…`,
+    navigateTo: `/mobility/${id}/run`,
+  };
+}
+
+async function executeStartMobilityFlow(params: Record<string, string>): Promise<ActionResult> {
+  const id = params.routine_id?.trim();
+  if (!id) return { success: false, message: 'Need a routine_id.' };
+  return {
+    success: true,
+    message: 'Opening the flow…',
+    navigateTo: `/mobility/${id}/run`,
+  };
+}
+
+async function executeLogRom(params: Record<string, string>): Promise<ActionResult> {
+  const movementId = params.movement_id?.trim();
+  const rating = parseInt(params.rating || '', 10);
+  if (!movementId || isNaN(rating) || rating < 0 || rating > 100) {
+    return { success: false, message: 'Need movement_id and rating 0-100.' };
+  }
+  const movement = MOBILITY_BY_ID.get(movementId);
+  if (!movement) return { success: false, message: 'Movement not found in library.' };
+  const region = movement.regions[0];
+  const { logSelfRating } = await import('@/lib/mobility/rom-assessment');
+  await logSelfRating({ movementId, region, selfRating: rating });
+  return { success: true, message: `Logged ROM ${rating}/100 for ${movement.name}.` };
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 // `getMaxForLift` and `liftAnchorForExercise` live in ./lift-anchor so the
