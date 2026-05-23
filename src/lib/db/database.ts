@@ -1,4 +1,4 @@
-import Dexie, { type Table } from 'dexie';
+import Dexie, { type Table, type Transaction } from 'dexie';
 import type {
   AthleteProfile,
   BlockType,
@@ -22,6 +22,20 @@ import type {
   FormCheckKeyframe,
   WearableImport,
   WearableMetric,
+  TrainingArc,
+  ArcTransition,
+  ArcConstraint,
+  ArcPriority,
+  Injury,
+  InjurySeverity,
+  SymptomLog,
+  RehabProtocol,
+  MobilityMovement,
+  MobilityRoutine,
+  MobilitySession,
+  MobilityRomEntry,
+  LongevitySnapshot,
+  BodyRegion,
 } from './types';
 import type { UserEquipmentProfile, CustomExercise } from '@/lib/exercises/types';
 
@@ -49,6 +63,17 @@ export class LockedinDB extends Dexie {
   formCheckKeyframes!: Table<FormCheckKeyframe>;
   wearableImports!: Table<WearableImport>;
   wearableMetrics!: Table<WearableMetric>;
+  // v8: longevity-first redesign
+  trainingArcs!: Table<TrainingArc>;
+  arcTransitions!: Table<ArcTransition>;
+  injuries!: Table<Injury>;
+  symptomLogs!: Table<SymptomLog>;
+  rehabProtocols!: Table<RehabProtocol>;
+  mobilityMovements!: Table<MobilityMovement>;
+  mobilityRoutines!: Table<MobilityRoutine>;
+  mobilitySessions!: Table<MobilitySession>;
+  mobilityRomEntries!: Table<MobilityRomEntry>;
+  longevitySnapshots!: Table<LongevitySnapshot>;
 
   constructor() {
     super('LockedinDB');
@@ -109,7 +134,158 @@ export class LockedinDB extends Dexie {
       wearableImports: 'id, source, importedAt, fileHash',
       wearableMetrics: 'id, date, metricKind, importId, [date+metricKind]',
     });
+
+    // v8: longevity-first redesign — Training Arcs, Injuries, Mobility,
+    // Longevity score. The upgrade callback backfills an initial "Get Healthy"
+    // arc and migrates legacy INJURY-kind AthleteMemory rows into Injury
+    // records so the gating logic in swap.ts can read structured data.
+    this.version(8).stores({
+      // Active arc lookup is the hot path — indexed on status. startDate lets us
+      // sort arc history chronologically without a full scan.
+      trainingArcs:       'id, status, startDate, createdAt',
+      arcTransitions:     'id, fromArcId, toArcId, createdAt',
+      // *regions lets us answer "any open injury affecting LEFT_KNEE?" cheaply.
+      // *contraindicatedSwapGroups powers the swap-engine hard filter.
+      injuries:           'id, status, *regions, *contraindicatedSwapGroups, updatedAt',
+      symptomLogs:        'id, injuryId, date, [injuryId+date]',
+      rehabProtocols:     'id, injuryId',
+      // Mobility movements are mostly read from a static library, but custom
+      // user-authored ones get persisted here.
+      mobilityMovements:  'id, category, *regions, isCustom',
+      mobilityRoutines:   'id, source, archivedAt, createdAt',
+      mobilitySessions:   'id, routineId, date, [date+routineId]',
+      mobilityRomEntries: 'id, date, movementId, region, [movementId+date]',
+      longevitySnapshots: 'id, date',
+    }).upgrade(async (tx) => {
+      await upgradeToV8(tx);
+    });
   }
+}
+
+/**
+ * v8 upgrade — runs once per database when stepping from v7 → v8.
+ *
+ * Backfill behavior:
+ * 1. Default `AthleteProfile.trainingGoal` to 'LONGEVITY' when unset.
+ * 2. Migrate `AthleteMemory` rows of kind 'INJURY' into stub `Injury` records
+ *    so the swap engine can read structured data going forward. The memory
+ *    rows are kept (no data loss); they just stop being the source of truth
+ *    for gating decisions.
+ * 3. Auto-create the initial 'Get Healthy' `TrainingArc` so the rest of the
+ *    app can assume an active arc always exists.
+ */
+async function upgradeToV8(tx: Transaction): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const todayStr = nowIso.slice(0, 10);
+
+  const profileTable = tx.table<AthleteProfile>('profile');
+  const memoryTable = tx.table<AthleteMemory>('athleteMemory');
+  const injuryTable = tx.table<Injury>('injuries');
+  const arcTable = tx.table<TrainingArc>('trainingArcs');
+
+  // 1. Default trainingGoal → LONGEVITY for any profile that doesn't have one.
+  const profiles = await profileTable.toArray();
+  for (const profile of profiles) {
+    if (!profile.trainingGoal) {
+      await profileTable.update(profile.id, { trainingGoal: 'LONGEVITY' });
+    }
+  }
+
+  // 2. Backfill Injury rows from legacy memory.
+  const injuryMemories = await memoryTable.where('kind').equals('INJURY').toArray();
+  for (const memory of injuryMemories) {
+    const id = (globalThis.crypto?.randomUUID?.() ?? `inj_${memory.id}`);
+    const regions = guessRegionsFromText(memory.content);
+    await injuryTable.add({
+      id,
+      label: memory.content.slice(0, 120),
+      regions,
+      status: 'MANAGING',
+      severity: Math.min(Math.max(memory.importance, 1), 5) as InjurySeverity,
+      onsetDate: memory.createdAt.slice(0, 10),
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: [],
+      constraints: [],
+      notes: `Migrated from athleteMemory ${memory.id}`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+  }
+
+  // 3. Auto-create the initial 'Get Healthy' arc if none exists yet.
+  const existingArcs = await arcTable.count();
+  if (existingArcs === 0) {
+    const hasOpenInjuries = (await injuryTable.count()) > 0;
+    const priorities: ArcPriority[] = [
+      'INJURY_HEALING',
+      'MOBILITY',
+      'STRENGTH_CALISTHENICS',
+      'STRENGTH_BARBELL',
+    ];
+    const constraints: ArcConstraint[] = hasOpenInjuries ? ['POST_INJURY'] : [];
+    await arcTable.add({
+      id: globalThis.crypto?.randomUUID?.() ?? `arc_${Date.now()}`,
+      name: 'Get Healthy',
+      intent:
+        'Rebuild durable joint health and mobility while keeping baseline strength. ' +
+        'Lean on weighted calisthenics and joint-friendly variations; avoid max-effort barbell work.',
+      status: 'ACTIVE',
+      startDate: todayStr,
+      primaryGoal: 'LONGEVITY',
+      priorities,
+      deprioritized: ['COMPETITION'],
+      constraints,
+      coachDirective:
+        'Prioritize my long-term joint health over peak performance. ' +
+        'Treat barbell and weighted-calisthenics strength as co-equal expressions. ' +
+        'When in doubt, choose the joint-friendly variation.',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+  }
+}
+
+/**
+ * Cheap heuristic — scan an injury-memory body for region keywords. We bias
+ * toward over-tagging (better to flag too many regions than to miss the
+ * affected joint and let the swap engine prescribe something risky).
+ *
+ * Exported for testability; not part of the public DB API.
+ */
+export function guessRegionsFromText(text: string): BodyRegion[] {
+  const lower = text.toLowerCase();
+  const regions: BodyRegion[] = [];
+  const probes: Array<[RegExp, BodyRegion]> = [
+    [/\b(neck|cervical)\b/, 'CERVICAL_SPINE'],
+    [/\b(t[- ]?spine|thoracic|mid[- ]?back|upper back)\b/, 'T_SPINE'],
+    [/\b(l[- ]?spine|lumbar|low back|lower back)\b/, 'L_SPINE'],
+    [/\b(si joint|sacroiliac)\b/, 'SI_JOINT'],
+    [/\b(left shoulder|l shoulder)\b/, 'LEFT_SHOULDER'],
+    [/\b(right shoulder|r shoulder)\b/, 'RIGHT_SHOULDER'],
+    [/\bshoulder\b/, 'LEFT_SHOULDER'],
+    [/\b(left elbow)\b/, 'LEFT_ELBOW'],
+    [/\b(right elbow)\b/, 'RIGHT_ELBOW'],
+    [/\belbow\b/, 'LEFT_ELBOW'],
+    [/\b(left wrist)\b/, 'LEFT_WRIST'],
+    [/\b(right wrist)\b/, 'RIGHT_WRIST'],
+    [/\bwrist\b/, 'LEFT_WRIST'],
+    [/\b(left hip)\b/, 'LEFT_HIP'],
+    [/\b(right hip)\b/, 'RIGHT_HIP'],
+    [/\bhip\b/, 'LEFT_HIP'],
+    [/\b(left knee)\b/, 'LEFT_KNEE'],
+    [/\b(right knee)\b/, 'RIGHT_KNEE'],
+    [/\bknee\b/, 'LEFT_KNEE'],
+    [/\b(left ankle)\b/, 'LEFT_ANKLE'],
+    [/\b(right ankle)\b/, 'RIGHT_ANKLE'],
+    [/\bankle\b/, 'LEFT_ANKLE'],
+    [/\b(core|abs|abdominal)\b/, 'CORE'],
+    [/\b(pelvic floor)\b/, 'PELVIC_FLOOR'],
+  ];
+  for (const [pattern, region] of probes) {
+    if (pattern.test(lower) && !regions.includes(region)) regions.push(region);
+  }
+  return regions.length > 0 ? regions : ['OTHER'];
 }
 
 export const db = new LockedinDB();
@@ -212,13 +388,31 @@ const TABLE_NAMES = [
   'nutritionProfile', 'nutritionLogs', 'nutritionTargets',
   'formChecks', 'formCheckKeyframes',
   'wearableImports', 'wearableMetrics',
+  // v8 (backup v7): longevity-first redesign
+  'trainingArcs', 'arcTransitions',
+  'injuries', 'symptomLogs', 'rehabProtocols',
+  'mobilityMovements', 'mobilityRoutines', 'mobilitySessions', 'mobilityRomEntries',
+  'longevitySnapshots',
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
 
 interface BackupPayload {
-  /** v1 = original; v2 = equipmentProfile + customExercises; v3 = memory + schedule; v4 = nutrition; v5 = form checks; v6 = wearables */
-  version: 1 | 2 | 3 | 4 | 5 | 6;
+  /**
+   * Backup format version. Bumped each time we add tables to the export
+   * surface. Note: this is the backup format version, not the Dexie schema
+   * version (which is one ahead — Dexie v2 added bodyweight without a
+   * corresponding backup-format bump).
+   *
+   * v1 = original;
+   * v2 = equipmentProfile + customExercises;
+   * v3 = memory + schedule;
+   * v4 = nutrition;
+   * v5 = form checks;
+   * v6 = wearables;
+   * v7 = training arcs + injuries + mobility + longevity (Dexie v8).
+   */
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   exportedAt: string;
   tables: Partial<Record<TableName, unknown[]>>;
 }
@@ -229,7 +423,7 @@ export async function exportAll(): Promise<BackupPayload> {
   for (const name of TABLE_NAMES) {
     tables[name] = await (db[name] as Table<unknown>).toArray();
   }
-  return { version: 6, exportedAt: new Date().toISOString(), tables };
+  return { version: 7, exportedAt: new Date().toISOString(), tables };
 }
 
 /**
@@ -241,7 +435,7 @@ export async function exportAll(): Promise<BackupPayload> {
 export async function importAll(
   payload: BackupPayload,
 ): Promise<Record<string, number>> {
-  if (payload.version < 1 || payload.version > 6) {
+  if (payload.version < 1 || payload.version > 7) {
     throw new Error(`Unsupported backup version: ${payload.version}`);
   }
 

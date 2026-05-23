@@ -278,14 +278,22 @@ export async function buildWearablesSection(charCap: number): Promise<string> {
     'RECOVERY_SCORE', 'STRAIN', 'RESPIRATORY_RATE', 'BODY_TEMP_DELTA',
   ];
   const labels: Record<WearableMetric['metricKind'], string> = {
-    HRV:              'HRV',
-    RESTING_HR:       'RHR',
-    SLEEP_HOURS:      'Sleep',
-    SLEEP_QUALITY:    'Sleep score',
-    RECOVERY_SCORE:   'Recovery',
-    STRAIN:           'Strain',
-    RESPIRATORY_RATE: 'Resp rate',
-    BODY_TEMP_DELTA:  'Temp Δ',
+    HRV:                   'HRV',
+    RESTING_HR:            'RHR',
+    SLEEP_HOURS:           'Sleep',
+    SLEEP_QUALITY:         'Sleep score',
+    RECOVERY_SCORE:        'Recovery',
+    STRAIN:                'Strain',
+    RESPIRATORY_RATE:      'Resp rate',
+    BODY_TEMP_DELTA:       'Temp Δ',
+    STEPS:                 'Steps',
+    ZONE_2_MINUTES:        'Zone 2',
+    VO2_MAX:               'VO₂max',
+    ACTIVE_KCAL:           'Active kcal',
+    STRESS_SCORE:          'Stress',
+    BLOOD_GLUCOSE_FASTING: 'Fasting BG',
+    BLOOD_PRESSURE_SYS:    'BP sys',
+    BLOOD_PRESSURE_DIA:    'BP dia',
   };
 
   for (const kind of order) {

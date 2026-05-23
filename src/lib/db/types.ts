@@ -154,8 +154,14 @@ export const DEFAULT_GEAR: GearConfig = {
 /**
  * High-level training focus. Sets the tone for the coach's programming
  * suggestions and the knowledge it retrieves.
+ *
+ * v8: `LONGEVITY` is the new default. `MOBILITY_REBUILD` and `INJURY_REHAB`
+ * cover post-injury or capacity-rebuilding seasons.
  */
 export type TrainingGoal =
+  | 'LONGEVITY'            // long-term joint health + sustainable strength (default)
+  | 'MOBILITY_REBUILD'     // recovering ROM after a sedentary or post-injury period
+  | 'INJURY_REHAB'         // active rehab — gated by an open Injury
   | 'COMPETITION_PREP'     // peaking for a powerlifting / street-lift meet
   | 'STRENGTH_PROGRESSION' // chase specific PRs without a meet on the calendar
   | 'SKILL_PROGRESSION'    // calisthenics skills: muscle-up, front lever, planche
@@ -294,14 +300,23 @@ export type WearableSource = 'APPLE_HEALTH' | 'OURA' | 'WHOOP' | 'MANUAL_CSV';
  * shapes into the readiness engine.
  */
 export type WearableMetricKind =
-  | 'HRV'              // ms (RMSSD or SDNN — source-dependent)
-  | 'RESTING_HR'       // bpm
-  | 'SLEEP_HOURS'      // hours
-  | 'SLEEP_QUALITY'    // 0-100
-  | 'RECOVERY_SCORE'   // 0-100 (Whoop recovery, Oura readiness, Apple HRV-trend)
-  | 'STRAIN'           // Whoop-style 0-21
-  | 'RESPIRATORY_RATE' // breaths/min
-  | 'BODY_TEMP_DELTA'; // °C deviation from baseline
+  | 'HRV'                    // ms (RMSSD or SDNN — source-dependent)
+  | 'RESTING_HR'             // bpm
+  | 'SLEEP_HOURS'            // hours
+  | 'SLEEP_QUALITY'          // 0-100
+  | 'RECOVERY_SCORE'         // 0-100 (Whoop recovery, Oura readiness, Apple HRV-trend)
+  | 'STRAIN'                 // Whoop-style 0-21
+  | 'RESPIRATORY_RATE'       // breaths/min
+  | 'BODY_TEMP_DELTA'        // °C deviation from baseline
+  // v8: broader health metrics for the longevity dashboard
+  | 'STEPS'                  // daily step count
+  | 'ZONE_2_MINUTES'         // minutes spent in heart-rate zone 2
+  | 'VO2_MAX'                // ml/kg/min
+  | 'ACTIVE_KCAL'            // active calories burned
+  | 'STRESS_SCORE'           // 0-100 (Garmin, Oura)
+  | 'BLOOD_GLUCOSE_FASTING'  // mg/dL
+  | 'BLOOD_PRESSURE_SYS'     // mmHg
+  | 'BLOOD_PRESSURE_DIA';    // mmHg
 
 export interface WearableImport {
   id: string;
@@ -490,5 +505,301 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  createdAt: string;
+}
+
+// ── Lift focus generalization (v8) ───────────────────────────────────────────
+
+/**
+ * Narrow union for the three barbell competition lifts. Used by Meet,
+ * MeetAttempt, FormCheck, and any 1RM/comp-prep math. Stays stable even as
+ * sessions broaden into mobility / conditioning / skill work.
+ */
+export type CompLift = 'SQUAT' | 'BENCH' | 'DEADLIFT';
+
+/**
+ * Broader training focus that a session can have. Supersedes the original
+ * `Lift` union in newer code paths. `Lift` is preserved as-is for back-compat
+ * and remains assignable from CompLift / the legacy split-routine focuses.
+ */
+export type LiftFocus =
+  // Comp lifts (assignable from CompLift)
+  | 'SQUAT' | 'BENCH' | 'DEADLIFT'
+  // Legacy split-routine focuses (kept for back-compat with existing sessions)
+  | 'UPPER' | 'LOWER' | 'FULL'
+  // v8: explicit sustainable-strength focuses
+  | 'STRENGTH_LOWER' | 'STRENGTH_UPPER' | 'STRENGTH_FULL'
+  // v8: non-strength sessions are now first-class
+  | 'MOBILITY' | 'ZONE_2' | 'CONDITIONING' | 'REHAB' | 'SKILL';
+
+// ── Training Arcs (v8) ───────────────────────────────────────────────────────
+
+export type ArcStatus = 'PLANNED' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'ABANDONED';
+
+/**
+ * Ordered priority tags an arc declares. The first entry is the dominant
+ * focus; later entries are secondary. The block engine and swap scorer read
+ * the order to break ties.
+ */
+export type ArcPriority =
+  | 'INJURY_HEALING'
+  | 'MOBILITY'
+  | 'STRENGTH_BARBELL'
+  | 'STRENGTH_CALISTHENICS'
+  | 'CONDITIONING'
+  | 'BODY_COMP'
+  | 'SKILL'
+  | 'COMPETITION'
+  | 'MAINTENANCE'
+  | 'TIME_EFFICIENT'
+  | 'STRESS_REDUCTION';
+
+/**
+ * Life or training constraints that shape every session generated under
+ * this arc. Fed straight into the existing equipment / time-budget filters.
+ */
+export type ArcConstraint =
+  | 'LIMITED_TIME'
+  | 'TRAVELING_FREQUENTLY'
+  | 'NO_GYM'
+  | 'HOME_ONLY'
+  | 'POST_INJURY'
+  | 'HIGH_LIFE_STRESS'
+  | 'SLEEP_DEPRIVED'
+  | 'EQUIPMENT_LIMITED';
+
+/**
+ * Athlete-authored, named, persistent training context. One arc is active at
+ * a time. Arcs sit above TrainingCycle (cycles live inside an arc) and above
+ * TrainingGoal (the arc wraps the goal with priorities, constraints, and
+ * coach-directed framing).
+ */
+export interface TrainingArc {
+  id: string;
+  name: string;
+  intent: string;
+  status: ArcStatus;
+  startDate: string;                  // YYYY-MM-DD
+  endDate?: string;                   // YYYY-MM-DD when COMPLETED / ABANDONED
+  primaryGoal: TrainingGoal;
+  priorities: ArcPriority[];          // ordered, first = dominant
+  deprioritized: ArcPriority[];       // explicit "not focused on this"
+  constraints: ArcConstraint[];
+  weeklyTimeBudgetMin?: number;
+  /** Free text written by the athlete to the coach. Read on every coach turn. */
+  coachDirective: string;
+  successMarkers?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Persisted record of an arc → arc switch. The `summary` is generated at
+ * transition time so future arcs can reference prior-arc context cheaply.
+ */
+export interface ArcTransition {
+  id: string;
+  fromArcId?: string;                 // undefined for the first arc ever
+  toArcId: string;
+  reason?: string;
+  summary?: string;
+  createdAt: string;
+}
+
+// ── Body regions (v8) ────────────────────────────────────────────────────────
+
+/** Anatomical regions used by the injury system to gate exercise selection. */
+export type BodyRegion =
+  | 'NECK' | 'CERVICAL_SPINE' | 'T_SPINE' | 'L_SPINE' | 'SI_JOINT'
+  | 'LEFT_SHOULDER' | 'RIGHT_SHOULDER'
+  | 'LEFT_ELBOW' | 'RIGHT_ELBOW'
+  | 'LEFT_WRIST' | 'RIGHT_WRIST'
+  | 'LEFT_HIP' | 'RIGHT_HIP'
+  | 'LEFT_KNEE' | 'RIGHT_KNEE'
+  | 'LEFT_ANKLE' | 'RIGHT_ANKLE'
+  | 'CORE' | 'PELVIC_FLOOR' | 'OTHER';
+
+// ── Injury system (v8) ───────────────────────────────────────────────────────
+
+export type InjuryStatus =
+  | 'ACUTE'      // <2 weeks, hot
+  | 'SUBACUTE'   // 2-6 weeks, healing
+  | 'CHRONIC'    // long-standing, persistent
+  | 'MANAGING'   // present but tolerable, modify training around it
+  | 'REHAB'      // actively rehabbing with a protocol
+  | 'RESOLVED';  // closed out — kept for history
+
+export type InjurySeverity = 1 | 2 | 3 | 4 | 5;
+
+/**
+ * Soft constraints attached to an injury. The swap engine applies these as
+ * scoring penalties / boosts, not hard filters. (Hard filters live in
+ * `contraindicatedPatterns` and `contraindicatedSwapGroups`.)
+ */
+export type InjuryConstraint =
+  | 'NO_AXIAL_LOAD'
+  | 'NO_MAX_EFFORT'
+  | 'TEMPO_ONLY'
+  | 'FULL_ROM_REQUIRED'
+  | 'UNILATERAL_ONLY'
+  | 'NO_OVERHEAD'
+  | 'NO_BILATERAL_HINGE'
+  | 'PAIN_FREE_RANGE_ONLY'
+  | 'ISOMETRIC_PREFERRED'
+  | 'HEAVY_SLOW_RESISTANCE';
+
+/**
+ * Re-exported from exercises/types.ts via string parallel. We avoid the
+ * import here to keep db/types.ts as a leaf module; the swap engine is
+ * responsible for verifying the string match when filtering candidates.
+ */
+export type InjuryMovementPattern =
+  | 'SQUAT' | 'HINGE'
+  | 'HORIZONTAL_PUSH' | 'VERTICAL_PUSH'
+  | 'HORIZONTAL_PULL' | 'VERTICAL_PULL'
+  | 'SINGLE_LEG' | 'CARRY' | 'CORE';
+
+export interface Injury {
+  id: string;
+  label: string;                                // free text: "Left rotator cuff tendinopathy"
+  regions: BodyRegion[];
+  status: InjuryStatus;
+  severity: InjurySeverity;
+  onsetDate: string;                            // YYYY-MM-DD
+  resolvedDate?: string;                        // YYYY-MM-DD
+  contraindicatedPatterns: InjuryMovementPattern[];
+  /** Swap group IDs (matching `SWAP_GROUPS` values in exercises lib) to filter out entirely. */
+  contraindicatedSwapGroups: string[];
+  preferredPatterns: InjuryMovementPattern[];
+  constraints: InjuryConstraint[];
+  activeRehabProtocolId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PainScale = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type StiffnessScale = 0 | 1 | 2 | 3 | 4 | 5;
+export type IrritabilityLevel = 'LOW' | 'MED' | 'HIGH';
+
+export interface SymptomLog {
+  id: string;
+  injuryId: string;
+  date: string;                                 // YYYY-MM-DD
+  painAtRest: PainScale;
+  painUnderLoad: PainScale;
+  stiffness: StiffnessScale;
+  irritability: IrritabilityLevel;
+  note?: string;
+  loggedAt: string;                             // ISO timestamp
+}
+
+export interface RehabProtocol {
+  id: string;
+  injuryId: string;
+  name: string;
+  phase: 1 | 2 | 3 | 4;                         // acute → return-to-load
+  /** Mobility movement IDs and / or exercise library IDs. */
+  movementIds: string[];
+  frequencyPerWeek: number;
+  durationWeeks: number;
+  notes?: string;
+  createdAt: string;
+}
+
+// ── Mobility system (v8) ─────────────────────────────────────────────────────
+
+export type MobilityCategory =
+  | 'CARS'           // controlled articular rotations
+  | 'HIP_OPENER'
+  | 'T_SPINE'
+  | 'L_SPINE'
+  | 'SHOULDER_ROM'
+  | 'ANKLE'
+  | 'WRIST_FOREARM'
+  | 'NEURAL_GLIDE'
+  | 'BREATHING'
+  | 'SOFT_TISSUE'
+  | 'GROUND_FLOW';
+
+export type MobilitySide = 'BILATERAL' | 'UNILATERAL';
+
+export interface MobilityMovement {
+  id: string;                                   // e.g. 'cars_shoulder', 'cossack_squat'
+  name: string;
+  category: MobilityCategory;
+  regions: BodyRegion[];
+  /** Typical dose. Either durationSec or reps is set; sometimes both. */
+  durationSec?: number;
+  reps?: number;
+  sides?: MobilitySide;
+  isCustom: boolean;
+  /** When true, the runner prompts the athlete to rate the rep's ROM. */
+  hasRomAssessment: boolean;
+  cueShort: string;
+  createdAt: string;
+}
+
+export type MobilityRoutineSource = 'TEMPLATE' | 'LLM' | 'CUSTOM';
+
+export interface MobilityRoutine {
+  id: string;
+  name: string;
+  ownerId: 'me';
+  durationMin: number;
+  movementIds: string[];                        // ordered
+  source: MobilityRoutineSource;
+  /** Tags the rule-based generator uses to compose this routine. */
+  tags?: string[];                              // e.g. ['AM', 'pre_squat', 'desk_recovery']
+  createdAt: string;
+  archivedAt?: string;
+}
+
+export interface MobilitySession {
+  id: string;
+  routineId: string;
+  date: string;                                 // YYYY-MM-DD
+  completedAt?: string;                         // ISO timestamp; undefined ⇒ skipped/in-progress
+  totalMinutes?: number;
+  note?: string;
+}
+
+export type MobilitySideTag = 'LEFT' | 'RIGHT';
+
+/**
+ * A ROM data point. Either `selfRating` (0-100 slider, daily) or
+ * `measuredDegrees` (periodic marker assessment), often both.
+ */
+export interface MobilityRomEntry {
+  id: string;
+  date: string;                                 // YYYY-MM-DD
+  movementId: string;
+  region: BodyRegion;
+  selfRating?: number;                          // 0-100
+  measuredDegrees?: number;
+  side?: MobilitySideTag;
+  loggedAt: string;                             // ISO timestamp
+}
+
+// ── Longevity score (v8) ─────────────────────────────────────────────────────
+
+/**
+ * Daily snapshot of the composite longevity score and its sub-pillar
+ * contributions. One row per date.
+ */
+export interface LongevitySnapshot {
+  id: string;
+  date: string;                                 // YYYY-MM-DD
+  score: number;                                // 0-100
+  pillars: {
+    sleep: number;
+    cardio: number;
+    strength: number;
+    mobility: number;
+    nutrition: number;
+    recovery: number;
+    injuryRisk: number;
+  };
+  note?: string;
   createdAt: string;
 }
