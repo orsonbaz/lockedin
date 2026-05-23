@@ -552,6 +552,20 @@ export default function SettingsPage() {
           )}
           <Row>
             <RowLabel
+              label="Training Arcs"
+              sub="What season of training you're in — frames every coach reply"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/settings/arcs')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Manage
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
               label="Coach Memory"
               sub="Review what the coach remembers across conversations"
             />
