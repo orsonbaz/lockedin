@@ -17,6 +17,8 @@
 import { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { db, today, newId } from '@/lib/db/database';
+import { getActiveArc } from '@/lib/arcs';
+import { listActiveInjuries, logSymptom } from '@/lib/injuries';
 import {
   calcHrvBaseline,
   calcHrvDeviation,
@@ -33,7 +35,8 @@ import { RingProgress }    from '@/components/lockedin/RingProgress';
 import { C }               from '@/lib/theme';
 import type {
   HRVSource, ReadinessRecord, SessionExercise, BodyweightEntry,
-  SessionModalityChoice, Lift,
+  SessionModalityChoice, Lift, TrainingArc, Injury,
+  PainScale, StiffnessScale, IrritabilityLevel,
 } from '@/lib/db/types';
 import type { LiftExposure } from '@/lib/engine/session';
 
@@ -213,6 +216,9 @@ function CheckInInner() {
   const [submitting,      setSubmitting]      = useState(false);
   const [autoFilled,      setAutoFilled]      = useState<HRVSource | null>(null);
   const [liftExposures,    setLiftExposures]    = useState<LiftExposure[]>([]);
+  // v8: arc + injuries drive what's worth surfacing here.
+  const [activeArc, setActiveArc] = useState<TrainingArc | null>(null);
+  const [activeInjuries, setActiveInjuries] = useState<Injury[]>([]);
   const [preferredPrimary, setPreferredPrimary] = useState<'SQUAT' | 'BENCH' | 'DEADLIFT' | null>(null);
   /**
    * Explicit override for the secondary comp lift:
@@ -276,6 +282,18 @@ function CheckInInner() {
           setLiftExposures(exposures);
           const suggested = suggestPrimaryLift(exposures);
           if (suggested) setPreferredPrimary(suggested);
+        }
+
+        // v8: load arc + active injuries so the page can hide SBD-specific UI
+        // when the active arc isn't competition-focused, and surface a symptom
+        // quick-log card when there are injuries to track.
+        const [arc, injuries] = await Promise.all([
+          getActiveArc().catch(() => null),
+          listActiveInjuries().catch(() => []),
+        ]);
+        if (!cancelled) {
+          setActiveArc(arc);
+          setActiveInjuries(injuries);
         }
 
         setReady(true);
@@ -657,6 +675,16 @@ function CheckInInner() {
     day:     'numeric',
   });
 
+  // v8: only surface SBD-specific UI (focus-lift picker, "Full SBD day"
+  // toggle, secondary-lift control) when the active arc actually wants it.
+  // The underlying auto-suggestion logic still runs — we just don't show
+  // the controls to athletes whose arc deprioritizes competition.
+  const showCompetitionUi = useMemo(() => {
+    if (!activeArc) return true; // no arc → behave like the legacy app
+    return activeArc.primaryGoal === 'COMPETITION_PREP'
+      || activeArc.priorities.includes('COMPETITION');
+  }, [activeArc]);
+
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div
@@ -770,7 +798,19 @@ function CheckInInner() {
             </div>
           </Section>
 
+          {/* ── SECTION: Active injuries — symptom quick-log (v8) ─────── */}
+          {activeInjuries.length > 0 && (
+            <InjurySymptomCard
+              injuries={activeInjuries}
+              onLogged={() => {
+                // Reload so the card reflects "logged today" state.
+                void listActiveInjuries().then(setActiveInjuries);
+              }}
+            />
+          )}
+
           {/* ── SECTION: Focus lift today ────────────────────────────── */}
+          {showCompetitionUi && (
           <Section title="What's your focus lift today?">
             <div className="grid grid-cols-3 gap-2">
               {(['SQUAT', 'BENCH', 'DEADLIFT'] as const).map((lift) => {
@@ -907,6 +947,7 @@ function CheckInInner() {
               </p>
             )}
           </Section>
+          )}
 
           {/* ── SECTION 1a: Training style today ─────────────────────── */}
           <Section title="How are you training today?">
@@ -1155,6 +1196,154 @@ function CheckInInner() {
 
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Injury symptom quick-log (v8) ────────────────────────────────────────────
+
+function InjurySymptomCard({
+  injuries,
+  onLogged,
+}: {
+  injuries: Injury[];
+  onLogged: () => void;
+}) {
+  return (
+    <div
+      className="rounded-2xl p-4"
+      style={{ backgroundColor: SURFACE, border: `1px solid ${C.border}` }}
+    >
+      <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: MUTED }}>
+        Active injuries — how do they feel today?
+      </p>
+      <p className="text-xs mb-3" style={{ color: MUTED }}>
+        Logs build a timeline the coach reads on every turn.
+      </p>
+      <div className="flex flex-col gap-3">
+        {injuries.slice(0, 4).map((inj) => (
+          <InjuryRow key={inj.id} injury={inj} onLogged={onLogged} />
+        ))}
+      </div>
+      {injuries.length > 4 && (
+        <p className="text-[11px] mt-3" style={{ color: MUTED }}>
+          + {injuries.length - 4} more in /health/injuries
+        </p>
+      )}
+    </div>
+  );
+}
+
+function InjuryRow({
+  injury,
+  onLogged,
+}: {
+  injury: Injury;
+  onLogged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [painAtRest, setRest] = useState<PainScale>(2);
+  const [painUnderLoad, setLoad] = useState<PainScale>(4);
+  const [stiffness, setStiff] = useState<StiffnessScale>(2);
+  const [irritability, setIrr] = useState<IrritabilityLevel>('MED');
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const severityColor = injury.severity >= 4 ? C.red : injury.severity >= 3 ? GOLD : MUTED;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await logSymptom({ injuryId: injury.id, painAtRest, painUnderLoad, stiffness, irritability });
+      setSaved(true);
+      onLogged();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl" style={{ border: `1px solid ${C.border}`, backgroundColor: BG }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+      >
+        <span
+          aria-hidden
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: severityColor }}
+        />
+        <span className="text-sm font-medium flex-1 truncate" style={{ color: TEXT }}>
+          {injury.label}
+        </span>
+        {saved && (
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: C.green }}>
+            Logged
+          </span>
+        )}
+        <span className="text-[11px]" style={{ color: MUTED }}>{open ? '−' : '+'}</span>
+      </button>
+      {open && !saved && (
+        <div className="px-3 pb-3 pt-1 space-y-2.5">
+          <SymRow label="Pain at rest" value={painAtRest} max={10} onChange={(v) => setRest(v as PainScale)} />
+          <SymRow label="Pain under load" value={painUnderLoad} max={10} onChange={(v) => setLoad(v as PainScale)} />
+          <SymRow label="Stiffness" value={stiffness} max={5} onChange={(v) => setStiff(v as StiffnessScale)} />
+          <div className="flex items-center gap-2">
+            <span className="text-xs flex-1" style={{ color: MUTED }}>Irritability</span>
+            <div className="flex gap-1">
+              {(['LOW', 'MED', 'HIGH'] as IrritabilityLevel[]).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => setIrr(l)}
+                  className="text-[10px] font-medium px-2 py-1 rounded-md transition-all active:scale-95"
+                  style={{
+                    backgroundColor: irritability === l ? `${ACCENT}22` : C.dim,
+                    border: `1px solid ${irritability === l ? ACCENT : C.border}`,
+                    color: irritability === l ? ACCENT : TEXT,
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="w-full py-2 rounded-lg text-xs font-semibold disabled:opacity-40"
+            style={{ backgroundColor: ACCENT, color: '#1a1000' }}
+          >
+            {saving ? 'Saving…' : 'Log symptom'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SymRow({
+  label, value, max, onChange,
+}: {
+  label: string; value: number; max: number; onChange: (v: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs flex-1" style={{ color: MUTED }}>{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={max}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        className="flex-[2]"
+      />
+      <span className="text-xs font-bold tabular-nums w-8 text-right" style={{ color: TEXT }}>
+        {value}<span className="text-[9px] font-normal" style={{ color: MUTED }}>/{max}</span>
+      </span>
     </div>
   );
 }
