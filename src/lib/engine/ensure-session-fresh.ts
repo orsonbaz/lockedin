@@ -193,6 +193,9 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   }
 
   const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
+  // v8: prepend dosed remedial prep for active injuries.
+  const { listActiveInjuries } = await import('@/lib/injuries');
+  const activeInjuries = await listActiveInjuries().catch(() => []);
 
   let generated = generateSession({
     profile,
@@ -203,6 +206,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     weekWithinBlock,
     overshootHistory,
     recentLiftExposures,
+    activeInjuries,
   });
 
   // Post-generation sanity review. If the review flags a BLOCK-severity
@@ -229,6 +233,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
       weekWithinBlock,
       overshootHistory,
       recentLiftExposures,
+      activeInjuries,
       forcePrimary: forced,
     });
   }

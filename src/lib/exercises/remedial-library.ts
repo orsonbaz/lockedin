@@ -558,6 +558,65 @@ export function remediesFor(complaint: Complaint): readonly RemedialExercise[] {
     .sort((a, b) => order[a.evidenceLevel] - order[b.evidenceLevel]);
 }
 
+// ── Region → Complaint map (v8) ──────────────────────────────────────────────
+//
+// Used by the session generator's remedial-prep selector: given an Injury's
+// affected regions, surface the candidate complaints worth treating with
+// dosed prep work. Multiple complaints per region is intentional — a
+// shoulder injury could be impingement, cuff irritation, or pec-driven
+// internal rotation, and the prep we'd prescribe overlaps usefully across
+// all three.
+//
+// Lower-case region strings used directly so callers can pass the BodyRegion
+// union from db/types without an import dance.
+
+const REGION_TO_COMPLAINTS: Record<string, readonly Complaint[]> = {
+  NECK:           ['tight_upper_traps'],
+  CERVICAL_SPINE: ['tight_upper_traps'],
+  T_SPINE:        ['thoracic_extension_limited'],
+  L_SPINE:        ['low_back_stiffness', 'low_back_pain_acute'],
+  SI_JOINT:       ['si_joint_irritation'],
+  LEFT_SHOULDER:  ['shoulder_impingement', 'rotator_cuff_irritation', 'tight_pecs_internal_rotation'],
+  RIGHT_SHOULDER: ['shoulder_impingement', 'rotator_cuff_irritation', 'tight_pecs_internal_rotation'],
+  LEFT_ELBOW:     ['lateral_epicondylitis', 'medial_epicondylitis'],
+  RIGHT_ELBOW:    ['lateral_epicondylitis', 'medial_epicondylitis'],
+  LEFT_WRIST:     ['wrist_pain_pressing'],
+  RIGHT_WRIST:    ['wrist_pain_pressing'],
+  LEFT_HIP:       ['tight_hip_flexors', 'glute_inhibition'],
+  RIGHT_HIP:      ['tight_hip_flexors', 'glute_inhibition'],
+  LEFT_KNEE:      ['patellar_tendinopathy', 'anterior_knee_pain', 'knee_tracking_valgus'],
+  RIGHT_KNEE:     ['patellar_tendinopathy', 'anterior_knee_pain', 'knee_tracking_valgus'],
+  LEFT_ANKLE:     ['ankle_dorsiflexion_limited', 'achilles_tendinopathy', 'plantar_fasciopathy'],
+  RIGHT_ANKLE:    ['ankle_dorsiflexion_limited', 'achilles_tendinopathy', 'plantar_fasciopathy'],
+};
+
+/** Complaints worth prep-loading for the given anatomical region (or [] when unknown). */
+export function complaintsForRegion(region: string): readonly Complaint[] {
+  return REGION_TO_COMPLAINTS[region] ?? [];
+}
+
+/**
+ * Pick the top-N remedial exercises across a set of complaints. Highest-
+ * evidence first; dedupes across complaints (each exercise appears once
+ * even when it serves multiple complaints — common e.g. dead bug, hip CARs).
+ */
+export function pickTopRemedies(
+  complaints: readonly Complaint[],
+  limit: number,
+): readonly RemedialExercise[] {
+  const seen = new Set<string>();
+  const out: RemedialExercise[] = [];
+  for (const complaint of complaints) {
+    for (const ex of remediesFor(complaint)) {
+      if (seen.has(ex.id)) continue;
+      seen.add(ex.id);
+      out.push(ex);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 /**
  * Map free-text injury / complaint phrases to canonical Complaint ids.
  * Substring match — generous, lower-cased. Returns the first match per

@@ -1360,11 +1360,14 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
   const cycleWeek = cycle?.currentWeek ?? 1;
   const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
 
+  // v8: prepend dosed remedial prep for active injuries.
+  const activeInjuries = await listActiveInjuries();
   const baseline = generateSession({
     profile, block,
     weekDayOfWeek: new Date(`${today()}T12:00:00`).getDay(),
     readinessScore, sessionNumber, weekWithinBlock,
     recentLiftExposures,
+    activeInjuries,
   });
 
   const authored = await authorSessionFromCoach({

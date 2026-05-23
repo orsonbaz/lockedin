@@ -492,6 +492,9 @@ function CheckInInner() {
 
           // 4. Re-generate session with live readiness data
           const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
+          // v8: pull active injuries so the generator can prepend dosed
+          // remedial prep before the comp lift.
+          const liveInjuries = await listActiveInjuries().catch(() => []);
           let generated = generateSession({
             profile,
             block,
@@ -501,6 +504,7 @@ function CheckInInner() {
             weekWithinBlock,
             overshootHistory,
             recentLiftExposures,
+            activeInjuries: liveInjuries,
             // Honor the athlete's lift preference and session format.
             ...(preferredPrimary ? { forcePrimary: preferredPrimary as Lift } : {}),
             ...(sbdMode ? { forceSBD: true } : {}),
@@ -526,6 +530,7 @@ function CheckInInner() {
             generated = generateSession({
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
+              activeInjuries: liveInjuries,
               forcePrimary: forced as Lift,
               ...(sbdMode ? {} : { preferredSecondary }),
             });

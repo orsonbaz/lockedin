@@ -13,6 +13,7 @@ import type {
   SetStructure,
   SessionType,
   RewardSystem,
+  Injury,
 } from '@/lib/db/types';
 import {
   prescribeLoad,
@@ -26,6 +27,11 @@ import {
   overshooterRpeAdjust,
 } from './calc';
 import { selectAccessories } from './accessory-selector';
+import {
+  complaintsForRegion,
+  pickTopRemedies,
+  type RemedialExercise,
+} from '@/lib/exercises/remedial-library';
 
 // ── Public Interfaces ──────────────────────────────────────────────────────────
 
@@ -101,6 +107,18 @@ export interface SessionInput {
    * the same lift as the primary).
    */
   preferredSecondary?: 'AUTO' | 'NONE' | 'SQUAT' | 'BENCH' | 'DEADLIFT';
+  /**
+   * v8: active injuries the generator should prep-load around. When present,
+   * 1-3 dosed remedial exercises (drawn from the remedial library, keyed by
+   * the injuries' anatomical regions) get prepended to the session so the
+   * athlete warms up the cranky joint BEFORE touching the main lift. Sets +
+   * reps + holdSeconds + tempo come straight from the remedial library so
+   * the prescription stays evidence-grounded.
+   *
+   * Caller passes the same activeInjuries list it gives to the swap engine
+   * (see SwapContext.activeInjuries) — getting both wires consistent.
+   */
+  activeInjuries?: Injury[];
 }
 
 export interface GeneratedExercise {
@@ -315,10 +333,86 @@ export function generateSession(input: SessionInput): GeneratedSession {
     );
   }
 
-  // ── 5. Coach note ──────────────────────────────────────────────────────────
+  // ── 5. v8 — Prepend remedial prep for active injuries ──────────────────────
+  // The athlete sees these FIRST in the session so the cranky joint warms up
+  // before the main lift loads it. Dosed off the remedial library (evidence-
+  // graded, complaint-keyed); injuries with higher severity drive the pick
+  // order, capped at 3 prep exercises so the session doesn't bloat.
+  if (input.activeInjuries && input.activeInjuries.length > 0) {
+    const prep = buildRemedialPrep(input.activeInjuries);
+    if (prep.length > 0) {
+      exercises.unshift(...prep);
+      exercises.forEach((e, i) => { e.order = i + 1; });
+      modifications.push(
+        `Prepped ${prep.length} rehab movement${prep.length === 1 ? '' : 's'} ` +
+        `for ${input.activeInjuries.slice(0, 2).map((i) => i.label).join(', ')}` +
+        `${input.activeInjuries.length > 2 ? ` (+${input.activeInjuries.length - 2})` : ''}.`,
+      );
+    }
+  }
+
+  // ── 6. Coach note ──────────────────────────────────────────────────────────
   const coachNote = buildCoachNote(readinessScore, block.blockType);
 
   return { sessionType, primaryLift, secondaryLifts: secondaryLifts.length > 0 ? secondaryLifts : undefined, exercises, modifications, coachNote };
+}
+
+// ── Remedial prep (v8) ────────────────────────────────────────────────────────
+
+const MAX_REMEDIAL_PREP = 3;
+
+/**
+ * Translate active injuries into a small set of GeneratedExercise prep rows.
+ * Injuries sort by severity desc so the worst region gets first pick;
+ * complaints derived per region; remedies deduped across complaints; capped
+ * at MAX_REMEDIAL_PREP so the session stays sane.
+ */
+function buildRemedialPrep(injuries: readonly Injury[]): GeneratedExercise[] {
+  // Higher severity goes first; within ties newer entries (more recent
+  // activity) precede.
+  const ordered = [...injuries]
+    .filter((i) => i.status !== 'RESOLVED')
+    .sort((a, b) => {
+      if (b.severity !== a.severity) return b.severity - a.severity;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
+
+  const complaints = new Set<ReturnType<typeof complaintsForRegion>[number]>();
+  for (const injury of ordered) {
+    for (const region of injury.regions) {
+      for (const c of complaintsForRegion(region)) {
+        complaints.add(c);
+      }
+    }
+  }
+  if (complaints.size === 0) return [];
+
+  const remedies = pickTopRemedies([...complaints], MAX_REMEDIAL_PREP);
+  return remedies.map((rem, i) => remedyToExercise(rem, i + 1));
+}
+
+/**
+ * GeneratedExercise shape so the session UI renders these alongside the comp
+ * work. exerciseType ACCESSORY + the "Rehab prep" note tag flags them as
+ * non-main work; load is 0 (bodyweight or light implement); RPE 5 (these are
+ * prep, never grinders).
+ */
+function remedyToExercise(rem: RemedialExercise, order: number): GeneratedExercise {
+  const reps = rem.dosing.reps ?? 0;
+  const cue = rem.cues[0] ?? '';
+  const note = `Rehab prep — ${cue}`.slice(0, 220);
+  return {
+    name: rem.name,
+    exerciseType: 'ACCESSORY',
+    setStructure: 'STRAIGHT',
+    sets: rem.dosing.sets,
+    reps: reps > 0 ? reps : Math.max(1, Math.round((rem.dosing.holdSeconds ?? 30) / 10)),
+    rpeTarget: 5,
+    estimatedLoadKg: 0,
+    order,
+    notes: note,
+    tempo: rem.dosing.tempo,
+  };
 }
 
 // ── SBD Secondary Helpers ─────────────────────────────────────────────────────
