@@ -139,15 +139,30 @@ describe('generateSession — remedial prep injection (v8)', () => {
     }
   });
 
-  it('rehab exercises carry RPE 5 and 0 estimated load (prep, not loading)', () => {
+  it('rehab exercises carry mechanism-appropriate RPE — loading mechanisms hit RPE 6.5-7', () => {
     const injury = makeInjury({ regions: ['LEFT_KNEE'], severity: 4 });
     const session = generateSession({ ...baseInput, activeInjuries: [injury] });
     const rehab = session.exercises.filter((e) => (e.notes ?? '').toLowerCase().includes('rehab'));
     expect(rehab.length).toBeGreaterThan(0);
     for (const ex of rehab) {
-      expect(ex.rpeTarget).toBeLessThanOrEqual(5);
+      // No grinders — never above RPE 7 for prep.
+      expect(ex.rpeTarget).toBeLessThanOrEqual(7);
+      // Load stays at 0 — athlete picks the load to hit the prescribed RPE.
       expect(ex.estimatedLoadKg).toBe(0);
     }
+    // Knee remedies include HSR leg extension etc. — at least one should be a
+    // proper loading mechanism (RPE ≥ 6.5, tagged as VARIATION).
+    const loaded = rehab.find((e) => e.rpeTarget >= 6.5);
+    expect(loaded).toBeDefined();
+    expect(loaded!.exerciseType).toBe('VARIATION');
+  });
+
+  it('progression criteria appear in the rehab exercise notes', () => {
+    const injury = makeInjury({ regions: ['LEFT_KNEE'], severity: 4 });
+    const session = generateSession({ ...baseInput, activeInjuries: [injury] });
+    const rehab = session.exercises.filter((e) => (e.notes ?? '').toLowerCase().includes('rehab'));
+    const withProgress = rehab.find((e) => (e.notes ?? '').toLowerCase().includes('progress'));
+    expect(withProgress).toBeDefined();
   });
 
   it('higher-severity injuries are prepped first', () => {

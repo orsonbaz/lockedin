@@ -449,24 +449,73 @@ function buildRemedialPrep(injuries: readonly Injury[]): GeneratedExercise[] {
 
 /**
  * GeneratedExercise shape so the session UI renders these alongside the comp
- * work. exerciseType ACCESSORY + the "Rehab prep" note tag flags them as
- * non-main work; load is 0 (bodyweight or light implement); RPE 5 (these are
- * prep, never grinders).
+ * work. The mapping is mechanism-aware:
+ *
+ *   HEAVY_SLOW    → RPE 7  — these are real loaded sets (4×8 tempo etc.).
+ *   ECCENTRIC     → RPE 7  — controlled lengthening under load.
+ *   STRENGTHEN    → RPE 6.5 — working sets, not pump work.
+ *   ISOMETRIC     → RPE 5  — analgesic / motor-control holds.
+ *   ACTIVATE      → RPE 5  — wake-up drills, not loading.
+ *   STABILIZE     → RPE 5  — McGill-style endurance.
+ *   MOBILIZE/STRETCH/NEURAL_GLIDE → RPE 4 — not loading at all.
+ *
+ * estimatedLoadKg stays 0 — for HSR / eccentric work, the athlete picks the
+ * load that gets them to the target RPE on the prescribed tempo. The session
+ * logger captures actual load so progression happens organically over time
+ * (same as bodyweight accessories elsewhere in the engine). The progression
+ * criterion from the library entry rides along in `notes` so the athlete
+ * sees when to level up.
+ *
+ * Type tag: HEAVY_SLOW / ECCENTRIC / STRENGTHEN map to ExerciseType
+ * `'VARIATION'` so they read as real training work in the UI; lighter
+ * mechanisms map to `'ACCESSORY'`.
  */
 function remedyToExercise(rem: RemedialExercise, order: number): GeneratedExercise {
-  const reps = rem.dosing.reps ?? 0;
-  const cue = rem.cues[0] ?? '';
-  const note = `Rehab prep — ${cue}`.slice(0, 220);
+  const loadable =
+    rem.mechanism === 'HEAVY_SLOW' ||
+    rem.mechanism === 'ECCENTRIC' ||
+    rem.mechanism === 'STRENGTHEN';
+
+  const rpeByMechanism: Record<typeof rem.mechanism, number> = {
+    HEAVY_SLOW:    7,
+    ECCENTRIC:     7,
+    STRENGTHEN:    6.5,
+    ISOMETRIC:     5,
+    ACTIVATE:      5,
+    STABILIZE:     5,
+    MOBILIZE:      4,
+    STRETCH:       4,
+    NEURAL_GLIDE:  4,
+  };
+  const rpeTarget = quantizeRpe(rpeByMechanism[rem.mechanism]);
+
+  const reps = rem.dosing.reps && rem.dosing.reps > 0
+    ? rem.dosing.reps
+    : Math.max(1, Math.round((rem.dosing.holdSeconds ?? 30) / 10));
+
+  // Build the notes line: lead with rehab tag + first cue, then surface the
+  // load hint (HSR cues often include "Load = ~70 % of your 8RM …") and the
+  // progression criterion so the athlete sees the path forward.
+  const firstCue = rem.cues[0] ?? '';
+  const loadHint = rem.cues.find((c) => /load|kg|%|rm/i.test(c)) ?? '';
+  const tag = loadable ? 'Rehab + loading' : 'Rehab prep';
+  const noteParts = [
+    `${tag} — ${firstCue}`,
+    loadHint && loadHint !== firstCue ? loadHint : '',
+    `Progress: ${rem.dosing.progressionCriteria}`,
+  ].filter(Boolean);
+  const notes = noteParts.join(' · ').slice(0, 280);
+
   return {
     name: rem.name,
-    exerciseType: 'ACCESSORY',
+    exerciseType: loadable ? 'VARIATION' : 'ACCESSORY',
     setStructure: 'STRAIGHT',
     sets: rem.dosing.sets,
-    reps: reps > 0 ? reps : Math.max(1, Math.round((rem.dosing.holdSeconds ?? 30) / 10)),
-    rpeTarget: 5,
+    reps,
+    rpeTarget,
     estimatedLoadKg: 0,
     order,
-    notes: note,
+    notes,
     tempo: rem.dosing.tempo,
   };
 }
