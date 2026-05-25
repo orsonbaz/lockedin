@@ -54,6 +54,7 @@ import {
   ARC_PRIORITY_LABELS,
   ARC_CONSTRAINT_LABELS,
 } from '@/lib/arcs';
+import { regenerateCycleFromArc } from '@/lib/arcs/cycle-sync';
 import {
   createInjury,
   updateInjuryStatus,
@@ -1476,9 +1477,18 @@ async function executeStartArc(params: Record<string, string>): Promise<ActionRe
     activate: true,
     transitionReason: params.reason?.trim() || 'Started from chat',
   });
+
+  // Regenerate the macrocycle from the new arc's priorities so the next
+  // session draws from the right phasing model (competition → linear,
+  // longevity → sustainable rhythm). Best-effort: if the profile isn't
+  // ready yet, the seeded cycle stays in place.
+  const synced = await regenerateCycleFromArc(arc).catch(() => null);
+  const cycleHint = synced
+    ? ` New ${synced.blockCount}-block cycle aligned to your priorities.`
+    : '';
   return {
     success: true,
-    message: `"${arc.name}" is now your active training arc.`,
+    message: `"${arc.name}" is now your active training arc.${cycleHint}`,
     navigateTo: `/settings/arcs/${arc.id}`,
   };
 }
@@ -1507,7 +1517,21 @@ async function executeResumeArc(params: Record<string, string>): Promise<ActionR
   const target = await db.trainingArcs.get(id);
   if (!target) return { success: false, message: 'Arc not found.' };
   await resumeArc(id);
-  return { success: true, message: `Resumed "${target.name}".`, navigateTo: `/settings/arcs/${id}` };
+
+  // Read back the just-activated arc (resumeArc may have rewritten startDate /
+  // status), then realign the macrocycle to its priorities.
+  const refreshed = await db.trainingArcs.get(id);
+  const synced = refreshed
+    ? await regenerateCycleFromArc(refreshed).catch(() => null)
+    : null;
+  const cycleHint = synced
+    ? ` Cycle rebuilt around this arc's priorities.`
+    : '';
+  return {
+    success: true,
+    message: `Resumed "${target.name}".${cycleHint}`,
+    navigateTo: `/settings/arcs/${id}`,
+  };
 }
 
 async function executeUpdateArc(params: Record<string, string>): Promise<ActionResult> {
