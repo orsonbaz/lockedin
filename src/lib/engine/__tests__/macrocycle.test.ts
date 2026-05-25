@@ -335,3 +335,119 @@ describe('generateMacrocycle — default totalWeeks', () => {
     expect(cycle.totalWeeks).toBe(8);
   });
 });
+
+// ── Longevity rhythm (priorities without COMPETITION) ────────────────────────
+
+describe('generateMacrocycle — longevity priorities (8 weeks)', () => {
+  const result = generateMacrocycle({
+    profile: baseProfile,
+    startDate: START_DATE,
+    totalWeeks: 8,
+    priorities: ['STRENGTH_BARBELL', 'MOBILITY'],
+  });
+
+  it('produces HEALTH_BASE/DELOAD pairs only — never REALIZATION', () => {
+    expect(result.blocks.every((b) => b.blockType !== 'REALIZATION')).toBe(true);
+    expect(result.blocks.every((b) => b.blockType !== 'INTENSIFICATION')).toBe(true);
+    expect(result.blocks.every((b) => b.blockType !== 'ACCUMULATION')).toBe(true);
+  });
+
+  it('rotates HEALTH_BASE(3) → DELOAD(1) twice across 8 weeks', () => {
+    expect(result.blocks.map((b) => b.blockType)).toEqual([
+      'HEALTH_BASE',
+      'DELOAD',
+      'HEALTH_BASE',
+      'DELOAD',
+    ]);
+  });
+
+  it('covers weeks 1–8 with no gaps', () => {
+    assertNoGaps(result.blocks, 8);
+  });
+
+  it('cycle name reflects longevity, not meet prep', () => {
+    expect(result.cycle.name).toMatch(/longevity/i);
+  });
+});
+
+describe('generateMacrocycle — longevity priorities (12 weeks)', () => {
+  const result = generateMacrocycle({
+    profile: baseProfile,
+    startDate: START_DATE,
+    totalWeeks: 12,
+    priorities: ['MOBILITY', 'STRENGTH_CALISTHENICS'],
+  });
+
+  it('repeats the 3:1 rhythm three times', () => {
+    expect(result.blocks.map((b) => b.blockType)).toEqual([
+      'HEALTH_BASE',
+      'DELOAD',
+      'HEALTH_BASE',
+      'DELOAD',
+      'HEALTH_BASE',
+      'DELOAD',
+    ]);
+  });
+
+  it('covers weeks 1–12 with no gaps', () => {
+    assertNoGaps(result.blocks, 12);
+  });
+});
+
+describe('generateMacrocycle — longevity priorities (remainder weeks)', () => {
+  it('appends a short HEALTH_BASE tail when totalWeeks is not divisible by 4', () => {
+    const result = generateMacrocycle({
+      profile: baseProfile,
+      startDate: START_DATE,
+      totalWeeks: 5,
+      priorities: ['MOBILITY'],
+    });
+    expect(result.blocks.map((b) => b.blockType)).toEqual([
+      'HEALTH_BASE',
+      'DELOAD',
+      'HEALTH_BASE',
+    ]);
+    assertNoGaps(result.blocks, 5);
+  });
+
+  it('drops the deload when there is no room for one (3 weeks)', () => {
+    const result = generateMacrocycle({
+      profile: baseProfile,
+      startDate: START_DATE,
+      totalWeeks: 3,
+      priorities: ['MOBILITY'],
+    });
+    expect(result.blocks).toHaveLength(1);
+    expect(result.blocks[0].blockType).toBe('HEALTH_BASE');
+    expect(result.blocks[0].weekEnd).toBe(3);
+  });
+});
+
+// ── COMPETITION priority falls back to meet-prep phasing ──────────────────────
+
+describe('generateMacrocycle — priorities include COMPETITION', () => {
+  it('uses meet-prep phasing even without a meetDate', () => {
+    const result = generateMacrocycle({
+      profile: baseProfile,
+      startDate: START_DATE,
+      totalWeeks: 8,
+      priorities: ['COMPETITION', 'STRENGTH_BARBELL'],
+    });
+    // Same shape as the existing no-meet / general path.
+    expect(result.blocks.some((b) => b.blockType === 'INTENSIFICATION')).toBe(true);
+    expect(result.blocks.every((b) => b.blockType !== 'HEALTH_BASE')).toBe(true);
+  });
+
+  it('still uses meet-prep phasing when a meetDate is supplied alongside non-competition priorities', () => {
+    // Explicit meet date trumps priorities — athlete has a date on the platform.
+    const result = generateMacrocycle({
+      profile: baseProfile,
+      meetDate: MEET_DATE,
+      startDate: START_DATE,
+      totalWeeks: 12,
+      priorities: ['MOBILITY', 'STRENGTH_BARBELL'],
+    });
+    const last = result.blocks[result.blocks.length - 1];
+    expect(last.blockType).toBe('REALIZATION');
+  });
+});

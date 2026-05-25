@@ -5,6 +5,7 @@
 
 import type {
   AthleteProfile,
+  ArcPriority,
   TrainingCycle,
   TrainingBlock,
   BlockType,
@@ -18,6 +19,14 @@ export interface MacrocycleInput {
   meetDate?: string;   // ISO date string — if provided, work backwards
   startDate: string;   // ISO date string
   totalWeeks?: number; // defaults: 12 (with meet) | 8 (no meet)
+  /**
+   * Active arc priorities. When provided and the list does NOT include
+   * `COMPETITION`, the macrocycle uses a sustainable longevity rhythm
+   * (HEALTH_BASE/DELOAD, no realization peak). Omit (or include COMPETITION)
+   * to fall back to powerlifting-style accumulation → intensification →
+   * realization phasing.
+   */
+  priorities?: ArcPriority[];
 }
 
 export interface GeneratedMacrocycle {
@@ -29,17 +38,25 @@ export interface GeneratedMacrocycle {
 // ── Generator ─────────────────────────────────────────────────────────────────
 
 export function generateMacrocycle(input: MacrocycleInput): GeneratedMacrocycle {
-  const { meetDate, startDate } = input;
+  const { meetDate, startDate, priorities } = input;
+
+  // A meet date is itself a competition signal — even if priorities omitted
+  // it, the athlete has a date on the platform, so honor the linear macrocycle.
+  const competitionMode =
+    meetDate !== undefined ||
+    priorities === undefined ||
+    priorities.includes('COMPETITION');
+
   const totalWeeks = input.totalWeeks ?? (meetDate ? 12 : 8);
 
-  const blocks: Omit<TrainingBlock, 'id'>[] = meetDate
-    ? buildMeetBlocks(totalWeeks)
-    : buildGeneralBlocks(totalWeeks);
+  const blocks: Omit<TrainingBlock, 'id'>[] = competitionMode
+    ? meetDate
+      ? buildMeetBlocks(totalWeeks)
+      : buildGeneralBlocks(totalWeeks)
+    : buildLongevityBlocks(totalWeeks);
 
   const cycle: Omit<TrainingCycle, 'id'> = {
-    name: meetDate
-      ? `${totalWeeks}-Week Meet Prep`
-      : `${totalWeeks}-Week Training Block`,
+    name: cycleName(totalWeeks, meetDate, competitionMode),
     startDate,
     meetId:       undefined,
     totalWeeks,
@@ -49,6 +66,16 @@ export function generateMacrocycle(input: MacrocycleInput): GeneratedMacrocycle 
   };
 
   return { cycle, blocks };
+}
+
+function cycleName(
+  totalWeeks: number,
+  meetDate: string | undefined,
+  competitionMode: boolean,
+): string {
+  if (meetDate) return `${totalWeeks}-Week Meet Prep`;
+  if (competitionMode) return `${totalWeeks}-Week Training Block`;
+  return `${totalWeeks}-Week Longevity Block`;
 }
 
 // ── Block Builders ─────────────────────────────────────────────────────────────
@@ -148,6 +175,41 @@ function buildGeneralBlocks(totalWeeks: number): Omit<TrainingBlock, 'id'>[] {
   }
 
   blocks.push(makeBlock('INTENSIFICATION', cursor, totalWeeks));
+  return blocks;
+}
+
+/**
+ * Longevity rhythm — open-ended 3:1 work:deload pattern with no peak.
+ *
+ * Used for arcs whose priorities do not include COMPETITION. Every working
+ * block is HEALTH_BASE (sustainable intensity, full ROM, tempo bias); no
+ * REALIZATION block is ever emitted, because there's nothing to realize
+ * toward.
+ *
+ * 12 weeks → HB(3) → DL(1) → HB(3) → DL(1) → HB(3) → DL(1)
+ *  8 weeks → HB(3) → DL(1) → HB(3) → DL(1)
+ *  5 weeks → HB(3) → DL(1) → HB(1)
+ *  4 weeks → HB(3) → DL(1)
+ *  3 weeks → HB(3)                       (too short to earn a deload)
+ *  1 week  → HB(1)
+ */
+function buildLongevityBlocks(totalWeeks: number): Omit<TrainingBlock, 'id'>[] {
+  const blocks: Omit<TrainingBlock, 'id'>[] = [];
+  let cursor = 1;
+  let remaining = totalWeeks;
+
+  while (remaining >= 4) {
+    blocks.push(makeBlock('HEALTH_BASE', cursor, cursor + 2));
+    cursor += 3;
+    blocks.push(makeBlock('DELOAD', cursor, cursor));
+    cursor += 1;
+    remaining -= 4;
+  }
+
+  if (remaining > 0) {
+    blocks.push(makeBlock('HEALTH_BASE', cursor, cursor + remaining - 1));
+  }
+
   return blocks;
 }
 
