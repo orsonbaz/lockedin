@@ -160,6 +160,16 @@ async function buildArcSection(): Promise<string> {
     ? `\nSuccess markers: ${arc.successMarkers.join('; ')}.`
     : '';
 
+  // Phasing model: a competition arc gets the linear powerlifting macrocycle
+  // (accumulation → intensification → realization). Every other arc gets an
+  // open-ended sustainable rhythm — no peaking, no "weeks out", no realization.
+  // Spelling this out keeps the coach from defaulting to meet-prep vocabulary
+  // on a "Get Healthy" / "New Dad" / "Mobility Rebuild" arc.
+  const competitionMode = arc.priorities.includes('COMPETITION');
+  const phasingLine = competitionMode
+    ? 'Macrocycle framing: COMPETITION mode. The standard linear macrocycle applies — accumulation → intensification → realization. It is appropriate to reference "weeks out", peak timing, attempt selection, and the upcoming realization block.'
+    : 'Macrocycle framing: LONGEVITY mode. The macrocycle uses an open-ended sustainable rhythm (HEALTH_BASE work blocks with periodic deloads — never a realization peak). Do NOT frame programming in terms of "weeks out", "peaking", "time to peak", "meet prep", "realization", or "intensification block". Strength compounds through consistent dosed work, not by stacking phases toward a date. If the athlete asks to peak, propose UPDATE_ARC to add COMPETITION to priorities first.';
+
   return [
     `ACTIVE ARC: "${arc.name}" — started ${arc.startDate}, day ${day}.`,
     `Intent: ${arc.intent.trim()}`,
@@ -168,6 +178,7 @@ async function buildArcSection(): Promise<string> {
     `Deprioritized: ${deprioritized}.`,
     `Constraints: ${constraints}. ${budgetLine}${successMarkers}`,
     `Athlete's directive to you: ${directive}`,
+    phasingLine,
     recentArcsBlock,
   ].filter(Boolean).join('\n');
 }
