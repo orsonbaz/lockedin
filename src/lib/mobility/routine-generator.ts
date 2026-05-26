@@ -42,6 +42,13 @@ export interface GenerateRoutineInput {
   injuries?: Injury[];
   /** ROM regions the athlete has flagged or that recent assessments show weak. */
   weakRegions?: BodyRegion[];
+  /**
+   * Phase C — body regions with an active/passive ROM gap > ~15°. When set,
+   * the generator prepends a PAIL/RAIL sequence for the first such region
+   * before filling the blueprint, so end-range work goes where the gap is.
+   * Sourced from `computeActiveRomGap()` in rom-assessment.ts.
+   */
+  gappedRegions?: BodyRegion[];
   /** Optional explicit movement IDs to seed the routine with. */
   seedMovementIds?: string[];
 }
@@ -184,7 +191,14 @@ function scoreCandidate(m: MobilityMovement, weakRegions: BodyRegion[]): number 
 }
 
 export function generateRoutine(input: GenerateRoutineInput): GeneratedRoutine {
-  const { focus, minutes, injuries = [], weakRegions = [], seedMovementIds = [] } = input;
+  const {
+    focus,
+    minutes,
+    injuries = [],
+    weakRegions = [],
+    gappedRegions = [],
+    seedMovementIds = [],
+  } = input;
   const blueprint = FOCUS_BLUEPRINTS[focus];
 
   // Build the candidate pool per blueprint slot. We use a two-pass fill so
@@ -206,6 +220,29 @@ export function generateRoutine(input: GenerateRoutineInput): GeneratedRoutine {
     if (m && !seen.has(m.id)) {
       picked.push(m);
       seen.add(m.id);
+    }
+  }
+
+  // Phase C — prepend up to 2 PAIL/RAIL movements for any gapped region.
+  // End-range isometric loading goes WHERE the active/passive ROM gap is.
+  // Filtered by injuries like everything else; counts against the time budget
+  // and will be trimmed by the budget logic below if it overruns.
+  if (gappedRegions.length > 0) {
+    const pailRailPool = filterForInjuries(
+      MOBILITY_BY_CATEGORY.get('PAILS_RAILS') ?? [],
+      injuries,
+    );
+    let inserted = 0;
+    for (const region of gappedRegions) {
+      if (inserted >= 2) break;
+      const candidate = pailRailPool.find(
+        (m) => m.regions.includes(region) && !seen.has(m.id),
+      );
+      if (candidate) {
+        picked.push(candidate);
+        seen.add(candidate.id);
+        inserted++;
+      }
     }
   }
 
@@ -284,6 +321,11 @@ export function generateRoutine(input: GenerateRoutineInput): GeneratedRoutine {
   }
   if (weakRegions.length > 0) {
     rationaleParts.push(`Biased toward weak ROM in: ${weakRegions.join(', ')}.`);
+  }
+  if (gappedRegions.length > 0) {
+    rationaleParts.push(
+      `PAIL/RAIL work added for active-ROM gap in: ${gappedRegions.join(', ')}.`,
+    );
   }
 
   return {

@@ -720,6 +720,7 @@ export interface RehabProtocol {
 
 export type MobilityCategory =
   | 'CARS'           // controlled articular rotations
+  | 'PAILS_RAILS'    // Phase C: end-range isometric loading (FRC central mechanic)
   | 'HIP_OPENER'
   | 'T_SPINE'
   | 'L_SPINE'

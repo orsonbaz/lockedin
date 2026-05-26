@@ -26,7 +26,8 @@ import { getMaxForLift, liftAnchorForExercise } from './lift-anchor';
 import { prescribeLoad, roundLoad, quantizeRpe } from '@/lib/engine/calc';
 import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
 import type { GeneratedSession, GeneratedExercise } from '@/lib/engine/session';
-import type { AthleteProfile, TrainingBlock } from '@/lib/db/types';
+import type { AthleteProfile, TrainingBlock, BodyRegion, Lift } from '@/lib/db/types';
+import { carsMovements } from '@/lib/mobility/library/cars';
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -539,6 +540,15 @@ ${summaries.join('\n')}`);
     }
   }
 
+  // ── 5b. Phase C — pre-load CAR readiness check ────────────────────────────
+  // For today's primary lift, look at whether the day's primary joint had any
+  // CARs logged in the last 6 hours. If not, surface a nudge — the coach
+  // decides phrasing. This is a readiness primitive, never a blocker.
+  const preloadNudge = await buildPreloadCarNudge(generated);
+  if (preloadNudge) {
+    sections.push(`# JOINT READINESS\n${preloadNudge}`);
+  }
+
   // ── 6. Session to review ─────────────────────────────────────────────────
   const exLines = generated.exercises.map(
     (e) => `  ${e.order}. ${e.name} (${e.exerciseType}): ${e.sets}×${e.reps} @ RPE ${e.rpeTarget}, ~${e.estimatedLoadKg} kg${e.notes ? `\n     Note: ${e.notes}` : ''}`,
@@ -609,6 +619,78 @@ function mondayOf(dateStr: string): string {
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
+}
+
+// ── Phase C — pre-load CAR readiness check ────────────────────────────────────
+//
+// FRC's "joint readiness" primitive: a 60-second CAR set for the day's primary
+// joint is the cheapest input the athlete can give a joint before loading it.
+// We don't block training — we surface a nudge in the advisor context so the
+// AI coach can suggest "do a quick shoulder CAR before your first press set"
+// when CARs haven't happened that morning.
+
+/** Primary joints loaded by each lift; drives CAR coverage check. */
+const LIFT_TO_JOINT_REGIONS: Partial<Record<Lift, BodyRegion[]>> = {
+  SQUAT:    ['LEFT_HIP', 'RIGHT_HIP', 'LEFT_ANKLE', 'RIGHT_ANKLE'],
+  BENCH:    ['LEFT_SHOULDER', 'RIGHT_SHOULDER'],
+  DEADLIFT: ['LEFT_HIP', 'RIGHT_HIP', 'T_SPINE'],
+  // Arc-mode UPPER/LOWER days: cover the broader joint set so the nudge fires
+  // even when the primary isn't a named comp lift.
+  UPPER:    ['LEFT_SHOULDER', 'RIGHT_SHOULDER', 'T_SPINE'],
+  LOWER:    ['LEFT_HIP', 'RIGHT_HIP', 'LEFT_ANKLE', 'RIGHT_ANKLE'],
+  FULL:     ['LEFT_HIP', 'RIGHT_HIP', 'LEFT_SHOULDER', 'RIGHT_SHOULDER'],
+};
+
+const CARS_MOVEMENT_IDS: ReadonlySet<string> = new Set(
+  carsMovements.map((m) => m.id),
+);
+
+async function buildPreloadCarNudge(
+  generated: GeneratedSession,
+): Promise<string | null> {
+  const regions = LIFT_TO_JOINT_REGIONS[generated.primaryLift];
+  if (!regions || regions.length === 0) return null;
+
+  // Did the athlete complete any mobility session in the last 6 hours whose
+  // routine included a CAR? Cheap query — bounded to today's date.
+  const todayStr = today();
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  const recentSessions = await db.mobilitySessions
+    .filter((s) =>
+      s.date === todayStr
+      && Boolean(s.completedAt)
+      && (s.completedAt ?? '') >= sixHoursAgo,
+    )
+    .toArray();
+
+  // Resolve which regions have been "served" by a CAR completed today.
+  const servedRegions = new Set<BodyRegion>();
+  for (const s of recentSessions) {
+    const routine = await db.mobilityRoutines.get(s.routineId);
+    if (!routine) continue;
+    for (const movementId of routine.movementIds) {
+      if (!CARS_MOVEMENT_IDS.has(movementId)) continue;
+      const car = carsMovements.find((m) => m.id === movementId);
+      if (!car) continue;
+      for (const r of car.regions) servedRegions.add(r);
+    }
+  }
+
+  const uncoveredRegions = regions.filter((r) => !servedRegions.has(r));
+  if (uncoveredRegions.length === 0) {
+    return `Today's primary lift is ${generated.primaryLift}. The relevant joints have CARs logged within the last 6 hours — joint readiness checks out.`;
+  }
+
+  const liftLabel = generated.primaryLift.toLowerCase();
+  const jointLabel = uncoveredRegions
+    .map((r) => r.replace('LEFT_', '').replace('RIGHT_', '').replace('_', ' ').toLowerCase())
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .join(', ');
+  return (
+    `Today's primary lift is ${generated.primaryLift}. No CARs for the primary joint(s) (${jointLabel}) ` +
+    `logged in the last 6 hours. Surface a quick 60-second CAR set as a pre-load readiness nudge — ` +
+    `not a block, just a suggestion before the first ${liftLabel} warm-up.`
+  );
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────

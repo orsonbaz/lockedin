@@ -207,3 +207,87 @@ describe('generateSession — remedial prep injection (v8)', () => {
     expect(orders).toEqual(Array.from({ length: orders.length }, (_, i) => i + 1));
   });
 });
+
+describe('generateSession — power preservation warm-up (Phase C)', () => {
+  it('no arc priorities → no power prep (back-compat: existing tests still pass)', () => {
+    const session = generateSession(baseInput);
+    const hasPowerPrep = session.exercises.some(
+      (e) => e.name === 'Power Warm-Up',
+    );
+    expect(hasPowerPrep).toBe(false);
+  });
+
+  it('strength-priority arc → adds power warm-up at order 1', () => {
+    const session = generateSession({
+      ...baseInput,
+      arcPriorities: ['STRENGTH_BARBELL', 'STRENGTH_CALISTHENICS'],
+    });
+    expect(session.exercises[0].name).toBe('Power Warm-Up');
+    expect(session.exercises[0].sets).toBe(5);
+    expect(session.exercises[0].reps).toBe(3);
+    // Modifications surface the addition so the athlete sees what changed.
+    expect(session.modifications.join(' ').toLowerCase()).toMatch(/power preservation/);
+  });
+
+  it('INJURY_HEALING priority → skips power prep (rehab focus)', () => {
+    const session = generateSession({
+      ...baseInput,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY'],
+    });
+    const hasPowerPrep = session.exercises.some(
+      (e) => e.name === 'Power Warm-Up',
+    );
+    expect(hasPowerPrep).toBe(false);
+  });
+
+  it('STRESS_REDUCTION priority → skips power prep (sleep-deprived dad season)', () => {
+    const session = generateSession({
+      ...baseInput,
+      arcPriorities: ['STRESS_REDUCTION', 'TIME_EFFICIENT'],
+    });
+    expect(session.exercises.every((e) => e.name !== 'Power Warm-Up')).toBe(true);
+  });
+
+  it('acute lower-body injury → skips power prep even with strength priority', () => {
+    const injury = makeInjury({
+      regions: ['LEFT_KNEE'],
+      status: 'ACUTE',
+      severity: 4,
+    });
+    const session = generateSession({
+      ...baseInput,
+      arcPriorities: ['STRENGTH_BARBELL'],
+      activeInjuries: [injury],
+    });
+    expect(session.exercises.every((e) => e.name !== 'Power Warm-Up')).toBe(true);
+  });
+
+  it('upper-body-only injury still allows power prep', () => {
+    const injury = makeInjury({
+      regions: ['LEFT_SHOULDER'],
+      status: 'MANAGING',
+      severity: 2,
+    });
+    const session = generateSession({
+      ...baseInput,
+      arcPriorities: ['STRENGTH_BARBELL'],
+      activeInjuries: [injury],
+    });
+    expect(session.exercises[0].name).toBe('Power Warm-Up');
+  });
+
+  it('power prep sits BEFORE remedial prep so explosive work goes in fresh', () => {
+    const injury = makeInjury({ regions: ['LEFT_SHOULDER'] });
+    const session = generateSession({
+      ...baseInput,
+      arcPriorities: ['STRENGTH_BARBELL'],
+      activeInjuries: [injury],
+    });
+    const powerIdx = session.exercises.findIndex((e) => e.name === 'Power Warm-Up');
+    const firstRehabIdx = session.exercises.findIndex(
+      (e) => (e.notes ?? '').toLowerCase().includes('rehab'),
+    );
+    expect(powerIdx).toBe(0);
+    if (firstRehabIdx >= 0) expect(powerIdx).toBeLessThan(firstRehabIdx);
+  });
+});

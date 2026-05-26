@@ -398,6 +398,20 @@ export function generateSession(input: SessionInput): GeneratedSession {
     }
   }
 
+  // ── 5a. Phase C — Power preservation warm-up ───────────────────────────────
+  // Fast-twitch fibers decline fastest past 30. Five reps of explosive work
+  // (jumps / throws) ahead of the strength portion keeps them online and
+  // primes the nervous system for heavier loading. Skipped when the arc
+  // signals rehab focus or any acute lower-body injury contraindicates
+  // jumping. Prepended AHEAD of remedial prep so the joint warms up post-
+  // power and the strength work follows fresh.
+  const powerPrep = buildPowerPrep(input.arcPriorities, input.activeInjuries);
+  if (powerPrep) {
+    exercises.unshift(powerPrep);
+    exercises.forEach((e, i) => { e.order = i + 1; });
+    modifications.push('Power preservation: 5×3 explosive warm-up.');
+  }
+
   // ── 5b. Arc-aware length cap ──────────────────────────────────────────────
   // After prep + comp + variation + accessories are all in the list, sessions
   // can balloon past 10 exercises — especially when injuries add 3-5 prep
@@ -417,6 +431,67 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const coachNote = buildCoachNote(readinessScore, block.blockType);
 
   return { sessionType, primaryLift, secondaryLifts: secondaryLifts.length > 0 ? secondaryLifts : undefined, exercises, modifications, coachNote };
+}
+
+// ── Power preservation prep (Phase C — unified training style) ──────────────
+//
+// Five reps of explosive work as a warm-up keeps fast-twitch fibers online
+// past 30 (they atrophy silently — hypertrophy and slow-strength work don't
+// recruit them). Total cost ≈ 3-5 minutes inside the existing warm-up
+// allowance; does not extend the session. Skipped when the arc focuses on
+// rehab or any active injury would contraindicate jumping/throwing.
+
+const LOWER_BODY_REGIONS_FOR_POWER: readonly string[] = [
+  'LEFT_KNEE', 'RIGHT_KNEE', 'LEFT_ANKLE', 'RIGHT_ANKLE',
+  'LEFT_HIP', 'RIGHT_HIP', 'LOWER_BACK',
+];
+
+/**
+ * Return a single power-preservation warm-up exercise, or null when the
+ * context says to skip. Same shape as remedial-prep entries so the session
+ * UI renders it consistently.
+ */
+function buildPowerPrep(
+  arcPriorities: readonly ArcPriority[] | undefined,
+  activeInjuries: readonly Injury[] | undefined,
+): GeneratedExercise | null {
+  // No arc context = no power prep. Keeps the v8 default behavior unchanged
+  // for arcless sessions and lets the philosophy expression be opt-in via
+  // having an active arc.
+  if (!arcPriorities || arcPriorities.length === 0) return null;
+
+  // Skip when the arc puts injury healing or stress reduction front of mind —
+  // the athlete should not be jumping in those seasons.
+  if (arcPriorities.includes('INJURY_HEALING')) return null;
+  if (arcPriorities.includes('STRESS_REDUCTION')) return null;
+
+  // Skip when any active acute/subacute lower-body injury contraindicates
+  // impact, or any severity-4+ lower-body injury exists.
+  for (const inj of activeInjuries ?? []) {
+    if (inj.status === 'RESOLVED') continue;
+    const touchesLowerBody = inj.regions.some(
+      (r) => LOWER_BODY_REGIONS_FOR_POWER.includes(r as string),
+    );
+    if (!touchesLowerBody) continue;
+    if (inj.status === 'ACUTE' || inj.status === 'SUBACUTE') return null;
+    if (inj.severity >= 4) return null;
+    if (inj.constraints.includes('PAIN_FREE_RANGE_ONLY')) return null;
+  }
+
+  return {
+    name: 'Power Warm-Up',
+    exerciseType: 'ACCESSORY',
+    setStructure: 'STRAIGHT',
+    sets: 5,
+    reps: 3,
+    rpeTarget: 6,
+    estimatedLoadKg: 0,
+    order: 1,
+    notes:
+      'Power preservation — 5×3 explosive reps, ~60-90s rest between sets. ' +
+      'Box jumps, broad jumps, or med ball slams. Quality over quantity — ' +
+      'each rep should be max-effort and clean. Stop short of fatigue.',
+  };
 }
 
 // ── Remedial prep (v8) ────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import type {
 } from '@/lib/db/types';
 
 import { carsMovements }          from './library/cars';
+import { pailsRailsMovements }    from './library/pails-rails';
 import { hipOpenerMovements }     from './library/hip-opener';
 import { tSpineMovements }        from './library/t-spine';
 import { shoulderRomMovements }   from './library/shoulder-rom';
@@ -37,6 +38,7 @@ export { TEMPLATE_ROUTINES } from './routines';
 
 export const MOBILITY_LIBRARY: MobilityMovement[] = [
   ...carsMovements,
+  ...pailsRailsMovements,
   ...hipOpenerMovements,
   ...tSpineMovements,
   ...shoulderRomMovements,
@@ -71,6 +73,7 @@ for (const m of MOBILITY_LIBRARY) {
 
 export const MOBILITY_CATEGORY_LABELS: Record<MobilityCategory, string> = {
   CARS:          'CARs (joint rotations)',
+  PAILS_RAILS:   'PAILs / RAILs (end-range)',
   HIP_OPENER:    'Hip openers',
   T_SPINE:       'Thoracic spine',
   L_SPINE:       'Lumbar / core',
