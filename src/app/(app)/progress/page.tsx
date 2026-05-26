@@ -24,7 +24,8 @@ import { ProgramTimeline } from '@/components/lockedin/ProgramTimeline';
 import { GoalProgressCard } from '@/components/lockedin/GoalProgressCard';
 import { C }              from '@/lib/theme';
 import { nWeeksAgo, shortDate, weekStart } from '@/lib/date-utils';
-import type { BlockType, AthleteProfile, BodyweightEntry } from '@/lib/db/types';
+import type { BlockType, AthleteProfile, BodyweightEntry, TrainingArc } from '@/lib/db/types';
+import { getActiveArc } from '@/lib/arcs';
 
 const BLOCK_COLOURS: Record<BlockType, string> = {
   ACCUMULATION:    C.blue,
@@ -171,6 +172,13 @@ export default function ProgressPage() {
     volumeData: [], e1rmData: [], rpeData: [], bwData: [], compScores: null, history: [],
     program: null, goal: null,
   });
+  // Phase D — active arc drives the SBD-relevance banner above the e1RM chart.
+  const [activeArc, setActiveArc] = useState<TrainingArc | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getActiveArc().then((arc) => { if (!cancelled) setActiveArc(arc); });
+    return () => { cancelled = true; };
+  }, []);
 
   const loadData = useCallback(async (weeks: number) => {
     // ── Shared: completed sessions ────────────────────────────────────
@@ -650,6 +658,22 @@ export default function ProgressPage() {
             }
           </div>
         </ChartCard>
+
+        {/* Phase D — when the active arc isn't SBD-focused (longevity /
+            mobility / new dad), surface a one-line context note above the SBD
+            charts so the athlete isn't measured against a goal they didn't set. */}
+        {activeArc &&
+          !activeArc.priorities.includes('COMPETITION') &&
+          !activeArc.priorities.includes('STRENGTH_BARBELL') && (
+            <div
+              className="rounded-2xl p-3 text-xs"
+              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, color: C.muted }}
+            >
+              You're in <span style={{ color: C.text, fontWeight: 600 }}>{activeArc.name}</span> —
+              SBD trends below aren't your primary focus. See the longevity dashboard for
+              ROM, mobility, and pillar trends.
+            </div>
+          )}
 
         {/* ── CHART 2: ESTIMATED 1RM TREND ─────────────────────────────── */}
         <ChartCard

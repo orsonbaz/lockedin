@@ -9,13 +9,14 @@
  * redirects to /home.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { db }        from '@/lib/db/database';
 import { C }         from '@/lib/theme';
 import type { Sex, Federation, WeighIn, Equipment, Bottleneck, Responder } from '@/lib/db/types';
 import { generateSession } from '@/lib/engine/session';
 import { newId } from '@/lib/db/database';
+import { ARC_PRESETS, createArc, type ArcPreset } from '@/lib/arcs';
 
 // ── Option sets ───────────────────────────────────────────────────────────────
 const FEDERATIONS: Federation[]  = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
@@ -153,6 +154,16 @@ export default function OnboardingStep1() {
   const [overshooter,   setOvershooter]   = useState(false);
   const [trainingYears, setTrainingYears] = useState('1');
 
+  // Phase D — arc preset selection. Default to "Get Healthy" (longevity) so
+  // first-run athletes start in the modern philosophy by default. Picking
+  // "Back to Powerlifting" toggles the competition fields back on.
+  const [arcPresetKey, setArcPresetKey] = useState<string>('get_healthy');
+  const selectedPreset: ArcPreset | undefined = useMemo(
+    () => ARC_PRESETS.find((p) => p.key === arcPresetKey),
+    [arcPresetKey],
+  );
+  const isCompetitionArc = selectedPreset?.priorities.includes('COMPETITION') ?? false;
+
   const [saving, setSaving]   = useState(false);
   const [error,  setError]    = useState('');
 
@@ -160,17 +171,25 @@ export default function OnboardingStep1() {
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   async function handleSubmit() {
-    // Validate required fields
-    const squat    = parseFloat(maxSquat);
-    const bench    = parseFloat(maxBench);
-    const deadlift = parseFloat(maxDeadlift);
+    // Validate required fields. SBD maxes are required only when the chosen
+    // arc has COMPETITION priority — otherwise they're optional (athlete may
+    // not lift the barbell at all, or just hasn't tested).
+    const squatRaw    = parseFloat(maxSquat);
+    const benchRaw    = parseFloat(maxBench);
+    const deadliftRaw = parseFloat(maxDeadlift);
     const weight   = parseFloat(weightKg);
     const freq     = parseInt(frequency);
 
+    const squat    = !isNaN(squatRaw)    && squatRaw    > 0 ? squatRaw    : 0;
+    const bench    = !isNaN(benchRaw)    && benchRaw    > 0 ? benchRaw    : 0;
+    const deadlift = !isNaN(deadliftRaw) && deadliftRaw > 0 ? deadliftRaw : 0;
+
     if (!name.trim()) { setError('Please enter your name.'); return; }
-    if (isNaN(squat)    || squat    <= 0) { setError('Enter your competition squat max.'); return; }
-    if (isNaN(bench)    || bench    <= 0) { setError('Enter your competition bench max.'); return; }
-    if (isNaN(deadlift) || deadlift <= 0) { setError('Enter your competition deadlift max.'); return; }
+    if (isCompetitionArc) {
+      if (squat <= 0)    { setError('Enter your competition squat max.'); return; }
+      if (bench <= 0)    { setError('Enter your competition bench max.'); return; }
+      if (deadlift <= 0) { setError('Enter your competition deadlift max.'); return; }
+    }
     if (isNaN(weight)   || weight   <= 0) { setError('Enter your body weight.'); return; }
 
     const trainingAgeMonths = Math.round(parseFloat(trainingYears || '1') * 12);
@@ -224,6 +243,26 @@ export default function OnboardingStep1() {
         onboardingComplete: true,
         updatedAt:          now,
       });
+
+      // Phase D — create the athlete's first arc from the chosen preset
+      // (activates it immediately so the coach turns on with the right voice
+      // from session 1). Skipped if an arc already exists, since arc
+      // management lives at /settings/arcs and shouldn't be clobbered here.
+      const existingArcCount = await db.trainingArcs.count();
+      if (existingArcCount === 0 && selectedPreset) {
+        await createArc({
+          name:               selectedPreset.name,
+          intent:             selectedPreset.intent,
+          primaryGoal:        selectedPreset.primaryGoal,
+          priorities:         selectedPreset.priorities,
+          deprioritized:      selectedPreset.deprioritized,
+          constraints:        selectedPreset.constraints,
+          weeklyTimeBudgetMin: selectedPreset.weeklyTimeBudgetMin,
+          coachDirective:     selectedPreset.coachDirective,
+          activate:           true,
+          transitionReason:   'Initial arc from onboarding',
+        });
+      }
 
       // Remove the seeded dummy meet so the user starts with a clean slate
       await db.meets
@@ -381,15 +420,58 @@ export default function OnboardingStep1() {
           </div>
         </div>
 
-        {/* ── SECTION 2: YOUR LIFTS ────────────────────────────────────── */}
+        {/* ── SECTION 2 (Phase D): TRAINING SEASON ────────────────────── */}
+        {/* The arc preset is the steering wheel — it frames every coach reply
+            and gates competition fields below. Default is "Get Healthy"
+            (longevity), but a competition athlete picks "Back to Powerlifting"
+            here and the next sections re-enable. */}
         <div
           className="rounded-3xl p-5 mb-4"
           style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
         >
           <SectionTitle
             n={2}
+            title="What's your training season?"
+            sub="Pick the arc that fits where you are today — you can switch anytime."
+          />
+          <div className="flex flex-col gap-2">
+            {ARC_PRESETS.map((preset) => {
+              const active = arcPresetKey === preset.key;
+              return (
+                <button
+                  key={preset.key}
+                  type="button"
+                  onClick={() => setArcPresetKey(preset.key)}
+                  className="text-left rounded-2xl p-3 border transition-all active:scale-[0.99]"
+                  style={{
+                    backgroundColor: active ? `${C.accent}18` : C.bg,
+                    borderColor: active ? C.accent : C.border,
+                  }}
+                  aria-pressed={active}
+                >
+                  <p className="text-sm font-semibold" style={{ color: active ? C.accent : C.text }}>
+                    {preset.name}
+                  </p>
+                  <p className="text-xs mt-0.5 leading-snug" style={{ color: C.muted }}>
+                    {preset.intent}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── SECTION 3: YOUR LIFTS ────────────────────────────────────── */}
+        <div
+          className="rounded-3xl p-5 mb-4"
+          style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+        >
+          <SectionTitle
+            n={3}
             title="Your current maxes"
-            sub="Your current strength benchmarks — recent training maxes are fine."
+            sub={isCompetitionArc
+              ? 'Required for meet prep — your best competition (or training) lifts.'
+              : 'Optional. Enter what you have — leave blank if you don\'t lift the barbell.'}
           />
 
           <div className="flex flex-col gap-4">
@@ -426,12 +508,16 @@ export default function OnboardingStep1() {
           </div>
         </div>
 
-        {/* ── SECTION 3: COMPETITION SETUP ─────────────────────────────── */}
+        {/* ── SECTION 4: COMPETITION SETUP ─────────────────────────────── */}
+        {/* Phase D — only shown when the chosen arc has COMPETITION priority.
+            Federation, equipment, weigh-in are powerlifting-meet specifics
+            that don't apply to longevity / mobility-rebuild / new-dad arcs. */}
+        {isCompetitionArc && (
         <div
           className="rounded-3xl p-5 mb-4"
           style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
         >
-          <SectionTitle n={3} title="Competition setup" sub="Affects programming rules and attempt selection" />
+          <SectionTitle n={4} title="Competition setup" sub="Affects programming rules and attempt selection" />
 
           <div className="flex flex-col gap-4">
             {/* Federation */}
@@ -503,13 +589,14 @@ export default function OnboardingStep1() {
             </div>
           </div>
         </div>
+        )}
 
-        {/* ── SECTION 4: TRAINING PROFILE ──────────────────────────────── */}
+        {/* ── SECTION 5: TRAINING PROFILE ──────────────────────────────── */}
         <div
           className="rounded-3xl p-5 mb-4"
           style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
         >
-          <SectionTitle n={4} title="Your Training Profile" sub="Helps us personalise your programming" />
+          <SectionTitle n={5} title="Your Training Profile" sub="Helps us personalise your programming" />
 
           <div className="flex flex-col gap-4">
             {/* Training age */}

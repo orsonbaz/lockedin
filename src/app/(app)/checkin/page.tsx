@@ -155,20 +155,34 @@ function HrvDeviationBadge({ deviation }: { deviation: number }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-const MODALITY_OPTIONS: {
+interface ModalityOption {
   key: SessionModalityChoice;
   label: string;
   sub: string;
   emoji: string;
   minutes?: number;
   equipment?: string[];
-}[] = [
-  { key: 'FULL',         label: 'Full gym',      sub: 'Squat + bench + deadlift + accessories as programmed.', emoji: '🏋️' },
-  { key: 'QUICK',        label: '30-min squeeze',sub: 'Keep comp lifts, drop accessories.',  emoji: '⏱️', minutes: 30 },
-  { key: 'CALISTHENICS', label: 'Calisthenics',  sub: 'Bars / rings — weighted pull-ups, dips, skills.', emoji: '🤸', equipment: ['pullup_bar', 'dip_station', 'rings'] },
-  { key: 'BODYWEIGHT',   label: 'Bodyweight',    sub: 'No gear at all. Push/pull/squat with what you have.', emoji: '💪', equipment: ['bodyweight'] },
-  { key: 'TRAVEL',       label: 'Travel / hotel',sub: 'Dumbbells or bands, limited room.',   emoji: '🧳', equipment: ['dumbbell', 'band'], minutes: 45 },
-];
+}
+
+// Phase D — Full-gym copy is arc-aware. A barbell-priority arc still reads as
+// SBD-flavored; non-barbell arcs get a discipline-neutral description so a
+// Get Healthy or Mobility Rebuild athlete doesn't see "squat + bench + DL"
+// as their default session shape.
+function modalityOptionsForArc(arc: TrainingArc | null): ModalityOption[] {
+  const fullSub = !arc || arc.priorities.includes('STRENGTH_BARBELL') || arc.priorities.includes('COMPETITION')
+    ? 'Squat + bench + deadlift + accessories as programmed.'
+    : arc.primaryGoal === 'MOBILITY_REBUILD'
+      ? 'Full-ROM tempo loaded work + mobility, no max effort.'
+      : 'Today\'s programmed session — strength compounds, accessories, and prep.';
+
+  return [
+    { key: 'FULL',         label: 'Full gym',      sub: fullSub, emoji: '🏋️' },
+    { key: 'QUICK',        label: '30-min squeeze',sub: 'Keep comp lifts, drop accessories.',  emoji: '⏱️', minutes: 30 },
+    { key: 'CALISTHENICS', label: 'Calisthenics',  sub: 'Bars / rings — weighted pull-ups, dips, skills.', emoji: '🤸', equipment: ['pullup_bar', 'dip_station', 'rings'] },
+    { key: 'BODYWEIGHT',   label: 'Bodyweight',    sub: 'No gear at all. Push/pull/squat with what you have.', emoji: '💪', equipment: ['bodyweight'] },
+    { key: 'TRAVEL',       label: 'Travel / hotel',sub: 'Dumbbells or bands, limited room.',   emoji: '🧳', equipment: ['dumbbell', 'band'], minutes: 45 },
+  ];
+}
 
 export default function CheckInPage() {
   // useSearchParams needs a Suspense boundary for Next 16 static prerender.
@@ -219,6 +233,8 @@ function CheckInInner() {
   // v8: arc + injuries drive what's worth surfacing here.
   const [activeArc, setActiveArc] = useState<TrainingArc | null>(null);
   const [activeInjuries, setActiveInjuries] = useState<Injury[]>([]);
+  // Phase D — modality copy reacts to the active arc's priorities.
+  const MODALITY_OPTIONS = useMemo(() => modalityOptionsForArc(activeArc), [activeArc]);
   const [preferredPrimary, setPreferredPrimary] = useState<'SQUAT' | 'BENCH' | 'DEADLIFT' | null>(null);
   /**
    * Explicit override for the secondary comp lift:
@@ -709,6 +725,13 @@ function CheckInInner() {
           <p className="text-sm mt-1" style={{ color: MUTED }}>
             {dateDisplay}
           </p>
+          {/* Phase D — arc context. Shows which season the readiness will
+              calibrate against; non-intrusive single line. */}
+          {activeArc && (
+            <p className="text-xs mt-2" style={{ color: MUTED }}>
+              Calibrating for <span style={{ color: TEXT, fontWeight: 600 }}>{activeArc.name}</span>
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">

@@ -24,8 +24,9 @@ import { forceRefreshApp }                     from '@/components/lockedin/Servi
 import { ProfilePatchSchema }                 from '@/lib/db/schemas';
 import { SegmentedControl }                   from '@/components/lockedin/SegmentedControl';
 import { C }                                  from '@/lib/theme';
-import type { AthleteProfile, Federation }    from '@/lib/db/types';
+import type { AthleteProfile, Federation, TrainingArc }    from '@/lib/db/types';
 import type { UserEquipmentProfile }          from '@/lib/exercises/types';
+import { getActiveArc, arcDayCount }          from '@/lib/arcs';
 
 const FEDERATIONS: Federation[] = ['IPF', 'USAPL', 'USPA', 'RPS', 'CPU', 'OTHER'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -134,12 +135,19 @@ export default function SettingsPage() {
   const [hasKneeSleeves,   setHasKneeSleeves]   = useState(false);
   const [hasWristWraps,    setHasWristWraps]     = useState(false);
 
+  // Phase D — surface the active arc as the IA spine: the arc card sits at the
+  // top of settings and gates competition-only fields (federation, target
+  // weight class, equipment) so non-competition arcs hide them.
+  const [activeArc, setActiveArc] = useState<TrainingArc | null>(null);
+
   useEffect(() => {
     async function load() {
-      const [p, eq] = await Promise.all([
+      const [p, eq, arc] = await Promise.all([
         db.profile.get('me'),
         db.equipmentProfile.get('me'),
+        getActiveArc(),
       ]);
+      setActiveArc(arc);
       if (p) {
         setProfile(p);
         setName(p.name);
@@ -348,6 +356,69 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* ── 0. TRAINING STYLE (Phase D — Arc + Health up top) ─────────── */}
+        <SectionHeader title="Training Style" />
+        <SettingsCard>
+          <Row>
+            <RowLabel
+              label="Active Arc"
+              sub={activeArc
+                ? `${activeArc.name} · day ${arcDayCount(activeArc)}`
+                : 'No active arc — set one to frame every coach reply'}
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/settings/arcs')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              {activeArc ? 'Manage' : 'Choose'}
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
+              label="Longevity Dashboard"
+              sub="Seven-pillar health score — sleep, cardio, strength, mobility, recovery, nutrition, injury risk"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/health')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Open
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
+              label="Mobility"
+              sub="Daily CARs, PAILs/RAILs, ROM tracking"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/mobility')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Open
+            </button>
+          </Row>
+          <Row>
+            <RowLabel
+              label="Injuries"
+              sub="Filters the swap engine — coach reads these on every turn"
+            />
+            <button
+              type="button"
+              onClick={() => router.push('/health/injuries')}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
+            >
+              Manage
+            </button>
+          </Row>
+        </SettingsCard>
+
         {/* ── 1. PROFILE ─────────────────────────────────────────────────── */}
         <SectionHeader title="Profile" />
         <SettingsCard>
@@ -371,29 +442,34 @@ export default function SettingsPage() {
             {numInput(weightKg, setWeightKg, (n) => void save({ weightKg: n }), 'kg', 'settings-weight')}
           </Row>
 
-          {/* Target weight class */}
-          <Row>
-            <RowLabel label="Target Weight Class" htmlFor="settings-wc" />
-            {numInput(targetWC, setTargetWC, (n) => void save({ targetWeightClass: n }), 'kg', 'settings-wc')}
-          </Row>
-
-          {/* Federation */}
-          <Row>
-            <RowLabel label="Federation" htmlFor="settings-federation" />
-            <select
-              id="settings-federation"
-              value={federation}
-              onChange={(e) => {
-                const v = e.target.value as Federation;
-                setFederation(v);
-                void save({ federation: v });
-              }}
-              className="rounded-xl border px-3 py-2 text-sm outline-none appearance-none"
-              style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
-            >
-              {FEDERATIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </Row>
+          {/* Phase D — competition fields (weight class, federation) only
+              surface when the active arc actually prioritizes COMPETITION
+              or no arc is set (legacy behavior). Hide for longevity / mobility
+              / new-dad arcs so settings doesn't ask for IPF weight class. */}
+          {(!activeArc || activeArc.priorities.includes('COMPETITION')) && (
+            <>
+              <Row>
+                <RowLabel label="Target Weight Class" htmlFor="settings-wc" />
+                {numInput(targetWC, setTargetWC, (n) => void save({ targetWeightClass: n }), 'kg', 'settings-wc')}
+              </Row>
+              <Row>
+                <RowLabel label="Federation" htmlFor="settings-federation" />
+                <select
+                  id="settings-federation"
+                  value={federation}
+                  onChange={(e) => {
+                    const v = e.target.value as Federation;
+                    setFederation(v);
+                    void save({ federation: v });
+                  }}
+                  className="rounded-xl border px-3 py-2 text-sm outline-none appearance-none"
+                  style={{ backgroundColor: C.bg, borderColor: C.border, color: C.text }}
+                >
+                  {FEDERATIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </Row>
+            </>
+          )}
         </SettingsCard>
 
         {/* ── 2. TRAINING MAXES ──────────────────────────────────────────── */}
@@ -449,6 +525,10 @@ export default function SettingsPage() {
         </SettingsCard>
 
         {/* ── 4. EQUIPMENT & GEAR ────────────────────────────────────────── */}
+        {/* Phase D — equipment (belt, sleeves, wraps) is barbell-sport gear.
+            Hidden on non-competition arcs so a Get Healthy / Mobility Rebuild
+            athlete doesn't see "Powerlifting Belt" as a primary setting. */}
+        {(!activeArc || activeArc.priorities.includes('COMPETITION') || activeArc.priorities.includes('STRENGTH_BARBELL')) && (<>
         <SectionHeader title="Gym Equipment & Gear" />
         <SettingsCard>
           <Row>
@@ -524,6 +604,7 @@ export default function SettingsPage() {
             </button>
           </Row>
         </SettingsCard>
+        </>)}
 
         {/* ── 5. AI ──────────────────────────────────────────────────────── */}
         <SectionHeader title="AI Coach" />
@@ -573,62 +654,10 @@ export default function SettingsPage() {
               </button>
             </Row>
           )}
-          <Row>
-            <RowLabel
-              label="Training Arcs"
-              sub="What season of training you're in — frames every coach reply"
-            />
-            <button
-              type="button"
-              onClick={() => router.push('/settings/arcs')}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
-            >
-              Manage
-            </button>
-          </Row>
-          <Row>
-            <RowLabel
-              label="Mobility"
-              sub="Daily flows, library, ROM tracking"
-            />
-            <button
-              type="button"
-              onClick={() => router.push('/mobility')}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
-            >
-              Open
-            </button>
-          </Row>
-          <Row>
-            <RowLabel
-              label="Injuries"
-              sub="Filters the swap engine — coach reads these on every turn"
-            />
-            <button
-              type="button"
-              onClick={() => router.push('/health/injuries')}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
-            >
-              Manage
-            </button>
-          </Row>
-          <Row>
-            <RowLabel
-              label="Health dashboard"
-              sub="Longevity score + pillar breakdown"
-            />
-            <button
-              type="button"
-              onClick={() => router.push('/health')}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: C.dim, color: C.text, border: `1px solid ${C.border}` }}
-            >
-              Open
-            </button>
-          </Row>
+          {/* Training Arcs, Mobility, Health, and Injuries moved up to the
+              new Training Style section (Phase D). AI Coach now houses just
+              the coach-specific configuration (API key, memory, telemetry)
+              and the lifestyle inputs (Schedule, Nutrition, Wearables). */}
           <Row>
             <RowLabel
               label="Coach Memory"

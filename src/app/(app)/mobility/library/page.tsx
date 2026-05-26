@@ -8,7 +8,7 @@
  * one move — useful for spot checks during the day).
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ChevronRight, Activity } from 'lucide-react';
 import {
@@ -18,8 +18,12 @@ import {
 import { C } from '@/lib/theme';
 import type { MobilityCategory, MobilityMovement } from '@/lib/db/types';
 
+// Phase D — FRC categories (CARs + PAILs/RAILs) lead, then mobility/stretch
+// work, then breathing/soft-tissue. Order encodes "daily input first, deep
+// work next, accessory last."
 const CATEGORY_ORDER: MobilityCategory[] = [
   'CARS',
+  'PAILS_RAILS',
   'HIP_OPENER',
   'T_SPINE',
   'L_SPINE',
@@ -32,9 +36,27 @@ const CATEGORY_ORDER: MobilityCategory[] = [
   'SOFT_TISSUE',
 ];
 
+// Filter chips surfaced at the top of the library page. CARs and PAILs/RAILs
+// are first-class because the unified style puts daily CARs + end-range gap
+// work at the center of mobility practice.
+const FILTER_CHIPS: ReadonlyArray<{ label: string; cats: MobilityCategory[] }> = [
+  { label: 'All', cats: CATEGORY_ORDER },
+  { label: 'CARs', cats: ['CARS'] },
+  { label: 'PAILs / RAILs', cats: ['PAILS_RAILS'] },
+  { label: 'Stretch', cats: ['HIP_OPENER', 'T_SPINE', 'L_SPINE', 'SHOULDER_ROM', 'ANKLE', 'WRIST_FOREARM'] },
+  { label: 'Flow', cats: ['GROUND_FLOW', 'NEURAL_GLIDE'] },
+  { label: 'Breathing', cats: ['BREATHING', 'SOFT_TISSUE'] },
+];
+
 export default function MobilityLibraryPage() {
   const router = useRouter();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [filterIdx, setFilterIdx] = useState(0);
+
+  const visibleCategories = useMemo(
+    () => FILTER_CHIPS[filterIdx].cats.filter((c) => CATEGORY_ORDER.includes(c)),
+    [filterIdx],
+  );
 
   return (
     <div className="min-h-screen pb-16" style={{ backgroundColor: C.bg, color: C.text }}>
@@ -55,7 +77,31 @@ export default function MobilityLibraryPage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-5">
-        {CATEGORY_ORDER.map((cat) => {
+        {/* Phase D — filter chips. CARs + PAILs/RAILs are surfaced as
+            first-class entry points (FRC backbone of the unified style). */}
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          {FILTER_CHIPS.map((chip, i) => {
+            const active = filterIdx === i;
+            return (
+              <button
+                key={chip.label}
+                type="button"
+                onClick={() => setFilterIdx(i)}
+                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95"
+                style={{
+                  backgroundColor: active ? C.accent : C.surface,
+                  color: active ? '#0a0a0a' : C.text,
+                  border: `1px solid ${active ? C.accent : C.border}`,
+                }}
+                aria-pressed={active}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {visibleCategories.map((cat) => {
           const list = MOBILITY_BY_CATEGORY.get(cat) ?? [];
           if (list.length === 0) return null;
           return (

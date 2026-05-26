@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Sunrise, Moon, Play, BookOpen, BarChart3, ArrowLeft } from 'lucide-react';
+import { Sunrise, Moon, Play, BookOpen, BarChart3, ArrowLeft, Flame } from 'lucide-react';
 import { db } from '@/lib/db/database';
 import {
   ensureSeeded,
@@ -22,23 +22,33 @@ import {
   MOBILITY_BY_ID,
   MOBILITY_CATEGORY_LABELS,
 } from '@/lib/mobility';
-import { recentRatings } from '@/lib/mobility/rom-assessment';
+import { recentRatings, computeCarStreak } from '@/lib/mobility/rom-assessment';
+import { getActiveArc } from '@/lib/arcs';
 import { C } from '@/lib/theme';
-import type { MobilityRoutine, MobilityRomEntry } from '@/lib/db/types';
+import type { MobilityRoutine, MobilityRomEntry, TrainingArc } from '@/lib/db/types';
 
 export default function MobilityHomePage() {
   const router = useRouter();
   const [routines, setRoutines] = useState<MobilityRoutine[] | null>(null);
   const [recent, setRecent] = useState<MobilityRomEntry[]>([]);
+  const [activeArc, setActiveArc] = useState<TrainingArc | null>(null);
+  const [carStreak, setCarStreak] = useState<{ current: number; daysWithCarsLast7: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await ensureSeeded();
-      const [list, rom] = await Promise.all([listRoutines(), recentRatings(8)]);
+      const [list, rom, arc, streak] = await Promise.all([
+        listRoutines(),
+        recentRatings(8),
+        getActiveArc(),
+        computeCarStreak(),
+      ]);
       if (!cancelled) {
         setRoutines(list);
         setRecent(rom);
+        setActiveArc(arc);
+        setCarStreak(streak);
       }
     })();
     return () => { cancelled = true; };
@@ -82,6 +92,41 @@ export default function MobilityHomePage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-5">
+        {/* Phase D — Daily CARs card. Surfaces specifically when the active arc
+            puts mobility in its priorities (FRC daily-input philosophy).
+            Shows current streak; one-tap to the AM Reset routine. */}
+        {activeArc && activeArc.priorities.includes('MOBILITY') && carStreak && (
+          <button
+            type="button"
+            onClick={() => router.push('/mobility/am_reset_12min/run')}
+            className="w-full rounded-2xl p-4 text-left transition-all active:scale-[0.99]"
+            style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+            aria-label="Start AM Reset (daily CARs)"
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center"
+                style={{ backgroundColor: `${C.accent}20` }}
+              >
+                <Flame size={20} color={C.accent} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+                  Today's CARs · FRC daily input
+                </p>
+                <p className="text-base font-semibold mt-0.5" style={{ color: C.text }}>
+                  {carStreak.current > 0
+                    ? `${carStreak.current}-day CAR streak`
+                    : 'Start the streak'}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: C.muted }}>
+                  {carStreak.daysWithCarsLast7}/7 days this week · tap to run AM Reset
+                </p>
+              </div>
+            </div>
+          </button>
+        )}
+
         {/* Today's recommended flow */}
         {recommended ? (
           <RecommendedCard
