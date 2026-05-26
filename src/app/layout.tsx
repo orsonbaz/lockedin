@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lockedin — AI Powerlifting Coach",
-  description: "Your personal AI-powered powerlifting coach",
+  title: "Lockedin — Strength & Longevity Coach",
+  description: "Your personal AI strength + longevity coach. Strong, big, mobile, durable.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

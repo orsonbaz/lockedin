@@ -878,7 +878,7 @@ export default function SettingsPage() {
 
         {/* Version */}
         <div className="text-center text-xs mt-8 leading-relaxed" style={{ color: C.muted }}>
-          <p>Lockedin · local-first powerlifting coach</p>
+          <p>Lockedin · local-first strength + longevity coach</p>
           <p>
             v{process.env.NEXT_PUBLIC_APP_VERSION}
             {' · '}

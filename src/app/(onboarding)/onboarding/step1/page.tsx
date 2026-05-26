@@ -389,7 +389,7 @@ export default function OnboardingStep1() {
           <SectionTitle
             n={2}
             title="Your current maxes"
-            sub="Enter your best competition lifts, or recent training maxes if you haven't competed"
+            sub="Your current strength benchmarks — recent training maxes are fine."
           />
 
           <div className="flex flex-col gap-4">
@@ -515,8 +515,8 @@ export default function OnboardingStep1() {
             {/* Training age */}
             <div>
               <FieldLabel
-                label="Years powerlifting"
-                hint="Counts from your first competition or dedicated powerlifting training"
+                label="Years of structured training"
+                hint="Time spent under a real program — barbell strength, calisthenics, or hybrid."
                 htmlFor="ob-training-years"
               />
               <NumberInput

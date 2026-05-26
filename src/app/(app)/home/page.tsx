@@ -34,7 +34,9 @@ import type { DailyTarget } from '@/lib/engine/nutrition';
 import type {
   AthleteProfile, ReadinessRecord, TrainingSession,
   SessionExercise, TrainingBlock, TrainingCycle, Meet, BodyweightEntry,
+  TrainingArc,
 } from '@/lib/db/types';
+import { getActiveArc, arcDayCount, ARC_PRIORITY_LABELS } from '@/lib/arcs';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDateFull(): string {
@@ -65,6 +67,8 @@ interface HomeData {
   nutritionTarget: DailyTarget | null;
   nutritionTotals: { kcal: number; proteinG: number; count: number };
   latestBodyweight: BodyweightEntry | null;
+  /** Phase D — active training arc, surfaced as the home steering wheel. */
+  activeArc:      TrainingArc | null;
 }
 
 export default function HomePage() {
@@ -78,6 +82,7 @@ export default function HomePage() {
     todayBudget: null, nutritionTarget: null,
     nutritionTotals: { kcal: 0, proteinG: 0, count: 0 },
     latestBodyweight: null,
+    activeArc: null,
   });
   const [abbreviating, setAbbreviating] = useState(false);
   const [spawning, setSpawning] = useState(false);
@@ -88,7 +93,7 @@ export default function HomePage() {
 
       // Check-in is no longer a gate — the athlete can view Home without it.
       // The readiness card links to /checkin if nothing has been logged yet.
-      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw, latestBodyweight] = await Promise.all([
+      const [profile, readiness, activeCycle, upcomingMeet, todayBudget, nutritionTarget, nutritionTotalsRaw, latestBodyweight, activeArc] = await Promise.all([
         db.profile.get('me'),
         db.readiness.where('date').equals(todayStr).first(),
         db.cycles.filter((c) => c.status === 'ACTIVE').first(),
@@ -97,6 +102,7 @@ export default function HomePage() {
         resolveTodayTarget(todayStr),
         macroTotalsFor(todayStr),
         db.bodyweight.orderBy('date').reverse().first(),
+        getActiveArc(),
       ]);
 
       // Seed a rule-engine baseline if the user navigates here before doing
@@ -164,6 +170,7 @@ export default function HomePage() {
           count: nutritionTotalsRaw.count,
         },
         latestBodyweight: latestBodyweight ?? null,
+        activeArc: activeArc ?? null,
       });
       setLoading(false);
     }
@@ -238,7 +245,11 @@ export default function HomePage() {
     );
   }
 
-  const { profile, readiness, session, exercises, block, cycle, cycleBlocks, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals, latestBodyweight } = data;
+  const { profile, readiness, session, exercises, block, cycle, cycleBlocks, upcomingMeet, recentSessions, loggedSetCount, todayBudget, nutritionTarget, nutritionTotals, latestBodyweight, activeArc } = data;
+  // Phase D: only surface meet affordances when the active arc actually
+  // prioritizes COMPETITION. Mirrors the soft gate on /meet/layout so the
+  // home screen doesn't contradict the rest of the app.
+  const meetVisible = upcomingMeet && (!activeArc || activeArc.priorities.includes('COMPETITION'));
   const programProgress = cycle && cycleBlocks.length > 0
     ? buildProgramProgress(cycle, cycleBlocks, upcomingMeet)
     : null;
@@ -334,6 +345,37 @@ export default function HomePage() {
             <Settings size={20} />
           </button>
         </div>
+
+        {/* ── 1b. ACTIVE ARC (Phase D — the steering wheel made visible) ── */}
+        {activeArc && (
+          <button
+            type="button"
+            onClick={() => router.push('/settings/arcs')}
+            className="w-full rounded-3xl p-4 mb-4 text-left transition-all active:scale-[0.99]"
+            style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+            aria-label={`Active arc: ${activeArc.name} — manage arcs`}
+          >
+            <div className="flex items-baseline justify-between mb-1">
+              <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+                Active arc · day {arcDayCount(activeArc)}
+              </p>
+              <p className="text-xs" style={{ color: C.muted }}>
+                Manage →
+              </p>
+            </div>
+            <p className="text-base font-semibold leading-snug" style={{ color: C.text }}>
+              {activeArc.name}
+            </p>
+            {activeArc.priorities.length > 0 && (
+              <p className="text-xs mt-1" style={{ color: C.muted }}>
+                {activeArc.priorities
+                  .slice(0, 3)
+                  .map((p) => ARC_PRIORITY_LABELS[p] ?? p)
+                  .join(' · ')}
+              </p>
+            )}
+          </button>
+        )}
 
         {/* ── 2. READINESS RING ─────────────────────────────────────────── */}
         <div
@@ -650,7 +692,10 @@ export default function HomePage() {
         )}
 
         {/* ── 4. MEET COUNTDOWN ─────────────────────────────────────────── */}
-        {upcomingMeet && (
+        {/* Phase D — gated on arc COMPETITION priority so /home doesn't ship
+            meet copy on a Get Healthy / Mobility Rebuild arc. Mirror of the
+            soft gate in /meet/layout.tsx. */}
+        {meetVisible && upcomingMeet && (
           <button
             type="button"
             onClick={() => router.push('/meet')}
@@ -710,18 +755,36 @@ export default function HomePage() {
               <CalendarClock size={18} color={C.blue} />
               <span className="text-xs font-semibold" style={{ color: C.text }}>Schedule</span>
             </button>
-            <button
-              type="button"
-              onClick={() => router.push('/meet')}
-              className="rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all active:scale-95"
-              style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
-              aria-label={upcomingMeet ? 'View meet prep' : 'Add a meet'}
-            >
-              <Trophy size={18} color={C.gold} />
-              <span className="text-xs font-semibold" style={{ color: C.text }}>
-                {upcomingMeet ? 'Meet prep' : 'Add meet'}
-              </span>
-            </button>
+            {/* Phase D — show Meet prep only in COMPETITION arcs; otherwise
+                surface the longevity dashboard, which is the higher-value
+                destination for everyone else. */}
+            {meetVisible || (activeArc && activeArc.priorities.includes('COMPETITION')) ? (
+              <button
+                type="button"
+                onClick={() => router.push('/meet')}
+                className="rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all active:scale-95"
+                style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+                aria-label={upcomingMeet ? 'View meet prep' : 'Add a meet'}
+              >
+                <Trophy size={18} color={C.gold} />
+                <span className="text-xs font-semibold" style={{ color: C.text }}>
+                  {upcomingMeet ? 'Meet prep' : 'Add meet'}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push('/health')}
+                className="rounded-2xl p-3 flex flex-col items-center gap-1.5 transition-all active:scale-95"
+                style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+                aria-label="View longevity dashboard"
+              >
+                <Trophy size={18} color={C.gold} />
+                <span className="text-xs font-semibold" style={{ color: C.text }}>
+                  Health
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
