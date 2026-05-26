@@ -14,6 +14,19 @@ import { db, today } from '@/lib/db/database';
 import { getFullKnowledge } from './knowledge-base';
 import { retrieveRelevantMemories } from './memory';
 import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
+import {
+  getActiveArc,
+  arcDayCount,
+  ARC_PRIORITY_LABELS,
+  ARC_CONSTRAINT_LABELS,
+} from '@/lib/arcs';
+import {
+  listActiveInjuries,
+  INJURY_STATUS_LABELS,
+  INJURY_CONSTRAINT_LABELS,
+  BODY_REGION_LABELS,
+  INJURY_MOVEMENT_PATTERN_LABELS,
+} from '@/lib/injuries';
 import type { AuthorInput } from './session-author';
 
 export async function buildAuthorContext(
@@ -84,6 +97,71 @@ Reward system: ${profile.rewardSystem}`);
     }
   }
   sections.push(`# GOALS\n${goalLines.join('\n')}`);
+
+  // ── 1c. Active arc — the binding frame for this session ──────────────────
+  // The chat coach reads the arc on every turn (see buildArcSection in
+  // coach.ts). Without this section the author defaults to its powerlifting
+  // training prior and overwrites the arc-aware deterministic baseline.
+  const activeArc = await getActiveArc().catch(() => null);
+  if (activeArc) {
+    const day = arcDayCount(activeArc, dateStr);
+    const priorityList = activeArc.priorities.length > 0
+      ? activeArc.priorities.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(' > ')
+      : '(none specified)';
+    const deprioritized = activeArc.deprioritized.length > 0
+      ? activeArc.deprioritized.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(', ')
+      : 'none';
+    const arcConstraints = activeArc.constraints.length > 0
+      ? activeArc.constraints.map((c) => ARC_CONSTRAINT_LABELS[c] ?? c).join(', ')
+      : 'none';
+    const directive = activeArc.coachDirective.trim() || '(no specific directive set)';
+    const budgetLine = activeArc.weeklyTimeBudgetMin
+      ? `Weekly time budget: ${activeArc.weeklyTimeBudgetMin} min.`
+      : 'No weekly time cap.';
+    const competitionMode = activeArc.priorities.includes('COMPETITION');
+    const phasingLine = competitionMode
+      ? 'Macrocycle framing: COMPETITION mode — the linear powerlifting macrocycle applies (accumulation → intensification → realization). Meet-prep vocabulary and peak timing are appropriate.'
+      : 'Macrocycle framing: LONGEVITY mode — open-ended sustainable rhythm. Do NOT frame this session around "weeks out", peaking, realization, or meet prep. Strength compounds through consistent dosed work.';
+    sections.push(`# ACTIVE ARC (binding frame)
+"${activeArc.name}" — started ${activeArc.startDate}, day ${day}.
+Intent: ${activeArc.intent.trim()}
+Primary goal: ${activeArc.primaryGoal}.
+Priorities (ordered, dominant first): ${priorityList}.
+Deprioritized: ${deprioritized}.
+Constraints: ${arcConstraints}. ${budgetLine}
+Athlete's directive to you: ${directive}
+${phasingLine}
+
+The arc IS the frame. Every exercise must serve its intent and ordered priorities. Do NOT silently push generic powerlifting on a "Get Healthy", "Mobility Rebuild", or other non-competition arc. If a CALISTHENICS-dominant arc is active, the primary should be UPPER or LOWER (weighted pull-up, pistol, etc.) — not SBD. If MOBILITY or INJURY_HEALING leads the priority list, lean on REMEDIAL_KNOWLEDGE and FRC mobility, and treat barbell + weighted-calisthenics strength as co-equal.`);
+  }
+
+  // ── 1d. Active injuries — hard constraints on exercise selection ──────────
+  // Structured Injury rows are the source of truth (AthleteMemory(kind=INJURY)
+  // is a fallback annotation only). The author must respect contraindicated
+  // patterns and constraints, and slot remedial work per REMEDIAL_KNOWLEDGE.
+  const activeInjuries = await listActiveInjuries().catch(() => []);
+  if (activeInjuries.length > 0) {
+    const injuryLines = activeInjuries.map((inj, i) => {
+      const regions = inj.regions.length > 0
+        ? inj.regions.map((r) => BODY_REGION_LABELS[r] ?? r).join(', ')
+        : '—';
+      const constraintsStr = inj.constraints.length > 0
+        ? inj.constraints.map((c) => INJURY_CONSTRAINT_LABELS[c] ?? c).join(', ')
+        : '—';
+      const contraPatterns = inj.contraindicatedPatterns?.length
+        ? inj.contraindicatedPatterns.map((p) => INJURY_MOVEMENT_PATTERN_LABELS[p] ?? p).join(', ')
+        : '—';
+      const preferredPatterns = inj.preferredPatterns?.length
+        ? inj.preferredPatterns.map((p) => INJURY_MOVEMENT_PATTERN_LABELS[p] ?? p).join(', ')
+        : '—';
+      const statusLabel = INJURY_STATUS_LABELS[inj.status] ?? inj.status;
+      return `${i + 1}. ${inj.label} — ${statusLabel}, severity ${inj.severity}/5. Regions: ${regions}. Constraints: ${constraintsStr}. Contraindicated patterns: ${contraPatterns}. Preferred patterns: ${preferredPatterns}.`;
+    });
+    sections.push(`# ACTIVE INJURIES (${activeInjuries.length} — hard constraints)
+${injuryLines.join('\n')}
+
+These are structured injury rows — the source of truth for what the athlete cannot do today. Never load a contraindicated movement pattern. For tendon / chronic complaints, slot heavy-slow-resistance (3-1-3 tempo, ~70 % 1RM) or isometric remedial work into accessory positions per REMEDIAL_KNOWLEDGE — not static stretching. For ACUTE / SUBACUTE or severity-4+ lower-body injuries, no jumping or explosive lower-body work today.`);
+  }
 
   // ── 2. Athlete memories — durable instructions from prior coach chats ─────
   const memoryQuery = [
