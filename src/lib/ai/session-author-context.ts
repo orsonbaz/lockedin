@@ -14,6 +14,7 @@ import { db, today } from '@/lib/db/database';
 import { getFullKnowledge } from './knowledge-base';
 import { retrieveRelevantMemories } from './memory';
 import { loadRecentLiftExposures, formatExposureLines } from '@/lib/engine/lift-exposures';
+import { resolveArcMode, type ArcMode } from '@/lib/engine/session';
 import {
   getActiveArc,
   arcDayCount,
@@ -27,11 +28,36 @@ import {
   BODY_REGION_LABELS,
   INJURY_MOVEMENT_PATTERN_LABELS,
 } from '@/lib/injuries';
+import type { Lift } from '@/lib/db/types';
 import type { AuthorInput } from './session-author';
+
+/**
+ * Metadata returned alongside the prompt context so the caller can hard-
+ * validate the LLM's output. Without these, the LLM's prior dominates and
+ * we end up with a powerlifting-flavoured session on a Get Healthy arc.
+ */
+export interface AuthorContextMeta {
+  /** Active arc routing mode — BARBELL means SBD rails are appropriate. */
+  arcMode: ArcMode;
+  /** Per-arc exercise ceiling — total including remedial prep + accessories. */
+  exerciseCap: number;
+  /**
+   * Locked primary lift when the arc isn't BARBELL — the LLM must use this
+   * exactly. The deterministic engine already routed to UPPER/LOWER per the
+   * arc; the LLM's job is to fill in the rest, not re-pick the primary.
+   */
+  lockedPrimary: Lift | null;
+  /**
+   * True when the arc deprioritizes COMPETITION (or doesn't include it as a
+   * priority) — the LLM may not slot Competition SBD lifts as primary or
+   * secondary work in this case.
+   */
+  forbidsCompetitionSbd: boolean;
+}
 
 export async function buildAuthorContext(
   input: AuthorInput,
-): Promise<{ context: string; memoryCount: number }> {
+): Promise<{ context: string; memoryCount: number; meta: AuthorContextMeta }> {
   const { profile, block, baseline, readinessScore, preferredPrimary } = input;
   const dateStr = today();
   const sections: string[] = [];
@@ -103,6 +129,42 @@ Reward system: ${profile.rewardSystem}`);
   // coach.ts). Without this section the author defaults to its powerlifting
   // training prior and overwrites the arc-aware deterministic baseline.
   const activeArc = await getActiveArc().catch(() => null);
+
+  // ── Compute hard constraints up-front so they can be surfaced AND used by
+  // the post-validator in session-author.ts. The arcMode + cap come from the
+  // engine's resolveArcMode so the LLM is bound by the same routing the
+  // deterministic baseline already followed.
+  const arcMode = resolveArcMode(activeArc?.priorities);
+  const exerciseCap = arcMode === 'BARBELL' ? 8 : arcMode === 'CALISTHENICS' ? 7 : 6;
+  const arcHasCompetition = activeArc?.priorities.includes('COMPETITION') ?? false;
+  const forbidsCompetitionSbd =
+    activeArc != null
+    && !arcHasCompetition
+    && activeArc.primaryGoal !== 'COMPETITION_PREP';
+  // Lock the primary lift the engine picked when the arc isn't BARBELL —
+  // the LLM may not flip a CALISTHENICS UPPER to a barbell BENCH.
+  const lockedPrimary: Lift | null =
+    arcMode !== 'BARBELL' ? baseline.primaryLift : null;
+
+  // Hard constraints surfaced at the TOP so the LLM reads them first. These
+  // are also enforced post-hoc in session-author.ts — any violation triggers
+  // a fallback to the deterministic baseline.
+  const hardConstraints: string[] = [];
+  hardConstraints.push(
+    `EXERCISE CEILING — TOTAL: ${exerciseCap}. Count every row you author (remedial prep + primary + secondary + variations + accessories). Do NOT exceed this number. If you would need more, drop the lowest-priority accessory.`,
+  );
+  if (lockedPrimary) {
+    hardConstraints.push(
+      `PRIMARY LIFT IS LOCKED: "${lockedPrimary}". The active arc routed to this primary via the engine's arc-aware selector — you may NOT substitute a different lift. UPPER means a weighted vertical pull (weighted pull-up, weighted chin) or vertical push as appropriate; LOWER means a unilateral or weighted-calisthenics leg movement (pistol squat, Bulgarian split squat, weighted step-up); FULL means a full-body movement. Build the session around this primary.`,
+    );
+  }
+  if (forbidsCompetitionSbd) {
+    hardConstraints.push(
+      `NO COMPETITION SBD: The active arc deprioritizes COMPETITION. Do NOT include "Competition Back Squat", "Competition Bench Press", or "Competition Deadlift" — or any near-equivalent ("Comp Squat", "Comp Bench", etc.) — as primary, secondary, or variation work. Heavy SBD belongs on a Back-to-Powerlifting / COMPETITION arc, not here. A non-comp barbell variation (paused, tempo, box, deficit) at moderate intensity is acceptable if it serves the arc.`,
+    );
+  }
+  sections.push(`# HARD CONSTRAINTS (your output will be REJECTED if any are violated)\n${hardConstraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`);
+
   if (activeArc) {
     const day = arcDayCount(activeArc, dateStr);
     const priorityList = activeArc.priorities.length > 0
@@ -303,5 +365,9 @@ ${baseLines.join('\n')}`);
   // ── 7. Knowledge base — full body of coaching principles ─────────────────
   sections.push(`# COACHING KNOWLEDGE BASE\n${getFullKnowledge()}`);
 
-  return { context: sections.join('\n\n'), memoryCount };
+  return {
+    context: sections.join('\n\n'),
+    memoryCount,
+    meta: { arcMode, exerciseCap, lockedPrimary, forbidsCompetitionSbd },
+  };
 }

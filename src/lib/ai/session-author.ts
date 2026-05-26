@@ -110,10 +110,12 @@ export async function authorSessionFromCoach(
 
   let context: string;
   let memoryCount = 0;
+  let meta: import('./session-author-context').AuthorContextMeta;
   try {
     const built = await buildAuthorContext(input);
     context = built.context;
     memoryCount = built.memoryCount;
+    meta = built.meta;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[author] context build failed:', msg);
@@ -122,6 +124,25 @@ export async function authorSessionFromCoach(
 
   try {
     const result = await callAuthor(key, context, input.baseline, memoryCount);
+
+    // Hard post-validation against the arc's binding constraints. The LLM
+    // ignores prose directives often enough that we treat these as gating
+    // rules rather than suggestions — any violation falls back to the
+    // deterministic baseline, which IS arc-aware. Logged so the failure
+    // mode is visible in the telemetry panel / browser console.
+    const violations = checkArcViolations(result.session, meta);
+    if (violations.length > 0) {
+      console.warn(
+        `[author] LLM output violated arc constraints — falling back to baseline:\n  ${violations.join('\n  ')}`,
+      );
+      return fallback(
+        input.baseline,
+        'validation-error',
+        memoryCount,
+        `arc-constraint: ${violations.join('; ')}`,
+      );
+    }
+
     console.info(
       `[author] authored session — ${result.session.exercises.length} exercises, saw ${memoryCount} memor${memoryCount === 1 ? 'y' : 'ies'}`,
     );
@@ -136,6 +157,59 @@ export async function authorSessionFromCoach(
       :                              'unknown';
     return fallback(input.baseline, reason, memoryCount, msg);
   }
+}
+
+/**
+ * Return human-readable reasons the LLM's session violates the active arc's
+ * hard constraints. Empty array → output is acceptable.
+ *
+ * The deterministic baseline already respects these constraints, so on any
+ * violation the caller should fall back to it rather than try to repair the
+ * LLM output.
+ */
+function checkArcViolations(
+  session:  GeneratedSession,
+  meta:     import('./session-author-context').AuthorContextMeta,
+): string[] {
+  const violations: string[] = [];
+
+  if (meta.lockedPrimary && session.primaryLift !== meta.lockedPrimary) {
+    violations.push(
+      `primary-lift-mismatch: arc locked "${meta.lockedPrimary}", LLM returned "${session.primaryLift}"`,
+    );
+  }
+
+  if (session.exercises.length > meta.exerciseCap) {
+    violations.push(
+      `exercise-count-over-cap: ${session.exercises.length} > ${meta.exerciseCap}`,
+    );
+  }
+
+  if (meta.forbidsCompetitionSbd) {
+    // Match "Competition" / "Comp" SBD by name. Loose match — we're catching
+    // the LLM dropping the literal Competition exercises the baseline avoids.
+    const compSbdRe = /\b(?:competition|comp)\s+(?:back\s+)?(?:squat|bench|deadlift)\b/i;
+    const offending = session.exercises.filter((e) => compSbdRe.test(e.name));
+    if (offending.length > 0) {
+      violations.push(
+        `forbidden-competition-sbd: ${offending.map((e) => `"${e.name}"`).join(', ')}`,
+      );
+    }
+    // Secondary SBD on a non-COMPETITION arc is also out of bounds — the
+    // arc routes through CALISTHENICS/REHAB mode and shouldn't be doubling
+    // the LLM's primary with bonus barbell comp work.
+    if (session.secondaryLifts && session.secondaryLifts.length > 0) {
+      const sbd: ReadonlyArray<string> = ['SQUAT', 'BENCH', 'DEADLIFT'];
+      const sbdSecondaries = session.secondaryLifts.filter((l) => sbd.includes(l));
+      if (sbdSecondaries.length > 0) {
+        violations.push(
+          `forbidden-sbd-secondary: ${sbdSecondaries.join(', ')}`,
+        );
+      }
+    }
+  }
+
+  return violations;
 }
 
 // ── Internals ─────────────────────────────────────────────────────────────────
@@ -258,6 +332,8 @@ import { buildAuthorContext } from './session-author-context';
 const AUTHOR_SYSTEM_PROMPT = `You are an elite strength coach AI. You operate from the Lockedin Coaching Intelligence Framework and the wider knowledge base — a synthesised body of principles drawn from evidence-based powerlifting, streetlifting, and calisthenics methodology. Reason from those principles. Synthesise across them; do not quote individual coaches by name.
 
 YOUR TASK is to AUTHOR this athlete's session for today — a complete prescription, not a review of someone else's draft.
+
+CRITICAL: Read the "# HARD CONSTRAINTS" section at the top of the user message FIRST. Those rules (exercise ceiling, locked primary lift, forbidden Competition SBD on non-comp arcs) are gating — your output will be rejected and replaced with the deterministic baseline if any are violated. They are NOT suggestions and the arc context that follows is NOT advisory — when the arc is "Get Healthy", "Mobility Rebuild", or anything else routing to a CALISTHENICS / REHAB mode, you may not slot Competition Back Squat / Bench / Deadlift, and you may not flip the locked primary to an SBD lift.
 
 You will be given:
 - The athlete's full profile, current maxes, federation, equipment, training age, phenotype.
