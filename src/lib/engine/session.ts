@@ -14,6 +14,8 @@ import type {
   SessionType,
   RewardSystem,
   Injury,
+  ArcPriority,
+  InjuryMovementPattern,
 } from '@/lib/db/types';
 import {
   prescribeLoad,
@@ -119,6 +121,21 @@ export interface SessionInput {
    * (see SwapContext.activeInjuries) — getting both wires consistent.
    */
   activeInjuries?: Injury[];
+  /**
+   * Active arc's ordered priorities. When omitted, the engine defaults to
+   * the legacy powerlifting rotation (SBD primaries, OHP/RDL for UPPER/
+   * LOWER). When present, the primary-lift selector and comp movement
+   * resolver shift to honour the arc:
+   *   • COMPETITION or STRENGTH_BARBELL dominant → SBD rotation (unchanged).
+   *   • STRENGTH_CALISTHENICS ranks above STRENGTH_BARBELL → UPPER/LOWER
+   *     alternation, with UPPER mapped to Weighted Pull-Up and LOWER to
+   *     Pistol Squat.
+   *   • INJURY_HEALING / MOBILITY dominant with no strength priority in
+   *     the top two → UPPER/LOWER alternation (light, calisthenics-mapped).
+   * Active injuries can also veto a primary lift whose movement pattern is
+   * contraindicated; the next-best lift is chosen instead.
+   */
+  arcPriorities?: ArcPriority[];
 }
 
 export interface GeneratedExercise {
@@ -191,10 +208,25 @@ export function generateSession(input: SessionInput): GeneratedSession {
     return [pref];
   };
 
+  // v8: arc-aware rotation. Cali- or rehab-dominant arcs short-circuit the
+  // SBD selectors and rotate UPPER/LOWER instead. forcePrimary still wins
+  // (athlete explicitly picked a lift at check-in), and a meet's COMPETITION
+  // priority routes back to the standard SBD path. injuryBlocksLift then
+  // vetoes any candidate whose movement pattern is contraindicated.
+  const arcMode = resolveArcMode(input.arcPriorities);
+
   const selection = (() => {
-    // Resolve primary via forcePrimary → adaptive → cold-start rotation.
+    const tryDemote = (primary: Lift, fallback: Lift): Lift =>
+      injuryBlocksLift(primary, input.activeInjuries, arcMode, sessionNumber)
+        ? fallback
+        : primary;
+
+    // Resolve primary via forcePrimary → arc-aware → adaptive → cold-start.
     const resolvePrimary = (): Lift => {
       if (input.forcePrimary) return input.forcePrimary;
+      if (arcMode !== 'BARBELL') {
+        return selectArcPrimary(sessionNumber, arcMode, input.activeInjuries);
+      }
       if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
         return selectAdaptivePrimary({
           exposures:       input.recentLiftExposures,
@@ -203,9 +235,13 @@ export function generateSession(input: SessionInput): GeneratedSession {
           blockType:       block.blockType,
           weekInBlock:     weekInBlockVal,
           totalBlockWeeks: totalBlockWeeksVal,
+          activeInjuries:  input.activeInjuries,
         }).primary;
       }
-      return selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+      return tryDemote(
+        selectPrimaryLift(sessionNumber, profile.weeklyFrequency),
+        'BENCH',
+      );
     };
 
     if (input.forceSBD && block.blockType !== 'DELOAD' && block.blockType !== 'REALIZATION') {
@@ -227,6 +263,12 @@ export function generateSession(input: SessionInput): GeneratedSession {
       };
     }
 
+    // Non-barbell arc: no SBD secondary stacking — calisthenics/rehab days
+    // run a single primary plus accessories.
+    if (arcMode !== 'BARBELL') {
+      return { primary: resolvePrimary(), secondary: [] as Lift[] };
+    }
+
     if (input.recentLiftExposures && input.recentLiftExposures.length > 0) {
       const adaptive = selectAdaptivePrimary({
         exposures:       input.recentLiftExposures,
@@ -235,6 +277,7 @@ export function generateSession(input: SessionInput): GeneratedSession {
         blockType:       block.blockType,
         weekInBlock:     weekInBlockVal,
         totalBlockWeeks: totalBlockWeeksVal,
+        activeInjuries:  input.activeInjuries,
       });
       return {
         primary:   adaptive.primary,
@@ -242,7 +285,10 @@ export function generateSession(input: SessionInput): GeneratedSession {
       };
     }
 
-    const primary = selectPrimaryLift(sessionNumber, profile.weeklyFrequency);
+    const primary = tryDemote(
+      selectPrimaryLift(sessionNumber, profile.weeklyFrequency),
+      'BENCH',
+    );
     const auto = pickSecondary(
       primary, [], profile, readinessScore, block.blockType,
       weekInBlockVal, totalBlockWeeksVal,
@@ -299,6 +345,7 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const exercises = buildSessionExercises(
     profile, block, primaryLift, volMult, totalRpeOffset, weekInBlockVal, isDupRepeat,
     sessionNumber, sbdDay, secondaryLifts.length === 1, appearanceIndex,
+    arcMode,
   );
 
   // SBD day: rebuild all exercises in competition order (S→B→D) so the
@@ -635,6 +682,107 @@ function selectPrimaryLift(sessionNumber: number, weeklyFrequency: number): Lift
   return rotations[freq][idx];
 }
 
+// ── Arc-Aware Primary-Lift Selector ───────────────────────────────────────────
+
+/**
+ * Which "shape" the active arc imposes on session generation:
+ *   • BARBELL       — legacy default: SBD rotation, OHP/RDL for UPPER/LOWER.
+ *   • CALISTHENICS  — STRENGTH_CALISTHENICS ranks above STRENGTH_BARBELL in
+ *                     priorities. Primary lift alternates UPPER (weighted
+ *                     pull-up) and LOWER (pistol squat); no SBD secondaries.
+ *   • REHAB         — INJURY_HEALING or MOBILITY dominant with no strength
+ *                     priority in the top two. Same UPPER/LOWER alternation
+ *                     as CALISTHENICS — accessories carry the session, comp
+ *                     lifts stay off the menu.
+ */
+export type ArcMode = 'BARBELL' | 'CALISTHENICS' | 'REHAB';
+
+export function resolveArcMode(priorities?: ArcPriority[]): ArcMode {
+  if (!priorities || priorities.length === 0) return 'BARBELL';
+
+  // COMPETITION anywhere in the top three keeps us on the powerlifting rails
+  // — meet prep needs SBD specificity regardless of secondary priorities.
+  if (priorities.slice(0, 3).includes('COMPETITION')) return 'BARBELL';
+
+  const barbellIdx = priorities.indexOf('STRENGTH_BARBELL');
+  const caliIdx    = priorities.indexOf('STRENGTH_CALISTHENICS');
+  const hasCali    = caliIdx !== -1;
+  const hasBarbell = barbellIdx !== -1;
+
+  // Whichever strength expression ranks first wins. STRENGTH_BARBELL first
+  // (or only) → BARBELL; STRENGTH_CALISTHENICS first → CALISTHENICS.
+  if (hasCali && (!hasBarbell || caliIdx < barbellIdx)) return 'CALISTHENICS';
+  if (hasBarbell) return 'BARBELL';
+
+  // No explicit strength priority in the list — INJURY_HEALING or MOBILITY
+  // in the top two routes to REHAB; everything else defaults to BARBELL so
+  // unknown arc shapes still produce a usable session.
+  const top2 = priorities.slice(0, 2);
+  if (top2.includes('INJURY_HEALING') || top2.includes('MOBILITY')) return 'REHAB';
+  return 'BARBELL';
+}
+
+/**
+ * UPPER/LOWER rotation for non-barbell arcs. Demotes off any lift whose
+ * movement pattern is contraindicated by an active injury; if both UPPER
+ * and LOWER are blocked, falls through to FULL (low-intensity full-body).
+ */
+function selectArcPrimary(
+  sessionNumber: number,
+  arcMode: ArcMode,
+  activeInjuries?: Injury[],
+): Lift {
+  const candidates: Lift[] = sessionNumber % 2 === 1
+    ? ['UPPER', 'LOWER', 'FULL']
+    : ['LOWER', 'UPPER', 'FULL'];
+  for (const lift of candidates) {
+    if (!injuryBlocksLift(lift, activeInjuries, arcMode, sessionNumber)) return lift;
+  }
+  // Everything contraindicated — fall back to FULL anyway so the session
+  // generator still produces output. The remedial prep + accessory selector
+  // will fill in something the athlete can actually do.
+  return 'FULL';
+}
+
+// ── Injury → Primary-Lift Vetoes ──────────────────────────────────────────────
+
+/**
+ * Map a primary-lift label to the movement pattern an injury could veto.
+ * Returns null when the lift is intentionally non-specific (e.g. FULL) so
+ * the caller treats it as "no movement-pattern conflict possible."
+ */
+function liftToPattern(lift: Lift, arcMode: ArcMode): InjuryMovementPattern | null {
+  if (arcMode !== 'BARBELL') {
+    if (lift === 'UPPER') return 'VERTICAL_PULL'; // weighted pull-up
+    if (lift === 'LOWER') return 'SINGLE_LEG';    // pistol squat
+  }
+  switch (lift) {
+    case 'SQUAT':    return 'SQUAT';
+    case 'DEADLIFT': return 'HINGE';
+    case 'BENCH':    return 'HORIZONTAL_PUSH';
+    case 'UPPER':    return 'VERTICAL_PUSH';      // OHP
+    case 'LOWER':    return 'HINGE';              // RDL
+    case 'FULL':     return null;                 // no single pattern
+  }
+}
+
+function injuryBlocksLift(
+  lift: Lift,
+  injuries: Injury[] | undefined,
+  arcMode: ArcMode,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _sessionNumber: number,
+): boolean {
+  if (!injuries || injuries.length === 0) return false;
+  const pattern = liftToPattern(lift, arcMode);
+  if (!pattern) return false;
+  for (const inj of injuries) {
+    if (inj.status === 'RESOLVED') continue;
+    if (inj.contraindicatedPatterns.includes(pattern)) return true;
+  }
+  return false;
+}
+
 // ── Adaptive Primary-Lift Selector ────────────────────────────────────────────
 
 /**
@@ -670,6 +818,8 @@ interface AdaptiveInput {
   exposures: LiftExposure[];
   profile: AthleteProfile;
   readinessScore: number;
+  /** Active injuries used to veto contraindicated primary picks. */
+  activeInjuries?: Injury[];
   blockType: BlockType;
   weekInBlock: number;
   totalBlockWeeks: number;
@@ -693,7 +843,15 @@ interface AdaptiveOutput {
  *        + 0.20·goalBoost // athlete goal / bottleneck bias
  */
 function selectAdaptivePrimary(input: AdaptiveInput): AdaptiveOutput {
-  const scored = scoreAdaptiveLifts(input);
+  const rawScored = scoreAdaptiveLifts(input);
+  // Demote any primary candidate whose movement pattern is contraindicated
+  // by an active injury — picking the next-best lift instead of forcing
+  // the athlete into a swap on session open.
+  const scored = rawScored.map((s) =>
+    injuryBlocksLift(s.lift, input.activeInjuries, 'BARBELL', 1)
+      ? { ...s, score: -Infinity }
+      : s,
+  ).sort((a, b) => b.score - a.score);
   const primary = scored[0].lift;
 
   // REALIZATION: single-lift focus only — meet prep specificity wins.
@@ -877,6 +1035,7 @@ function buildSessionExercises(
   sbdDay = false,
   hasSecondary = false,
   appearanceIndex = isDupRepeat ? 2 : 1,
+  arcMode: ArcMode = 'BARBELL',
 ): GeneratedExercise[] {
   const exercises: GeneratedExercise[] = [];
   const reward = profile.rewardSystem;
@@ -885,7 +1044,7 @@ function buildSessionExercises(
   const primaryExercises = buildPrimaryExercises(
     profile, block.blockType, primaryLift, volMult, rpeOffset,
     weekWithinBlock, totalBlockWeeks, isDupRepeat, reward, sbdDay,
-    appearanceIndex,
+    appearanceIndex, arcMode,
   );
   exercises.push(...primaryExercises);
 
@@ -925,8 +1084,9 @@ function buildPrimaryExercises(
   reward: RewardSystem = 'CONSISTENCY',
   sbdDay = false,
   appearanceIndex = isDupRepeat ? 2 : 1,
+  arcMode: ArcMode = 'BARBELL',
 ): GeneratedExercise[] {
-  const maxKg   = getLiftMax(lift, profile);
+  const maxKg   = getLiftMax(lift, profile, arcMode);
   const baseRpe = getBaseRpeForBlock(blockType, weekInBlock, totalBlockWeeks);
 
   // Apply overshooter flag, then readiness/history offset
@@ -934,8 +1094,8 @@ function buildPrimaryExercises(
     overshooterRpeAdjust(baseRpe, profile.overshooter) + rpeOffset,
   );
 
-  const compName        = getCompMovementName(lift);
-  const compLibraryId   = getCompMovementLibraryId(lift);
+  const compName        = getCompMovementName(lift, arcMode);
+  const compLibraryId   = getCompMovementLibraryId(lift, arcMode);
   const variation       = selectVariation(lift, profile.bottleneck, blockType, weekInBlock);
   const variationName   = variation?.name ?? null;
   const variationLibId  = variation?.libraryId ?? null;
@@ -1153,7 +1313,14 @@ function buildCoachNote(readinessScore: number, blockType: BlockType): string {
 
 // ── Lookup Helpers ─────────────────────────────────────────────────────────────
 
-function getLiftMax(lift: Lift, profile: AthleteProfile): number {
+function getLiftMax(lift: Lift, profile: AthleteProfile, arcMode: ArcMode = 'BARBELL'): number {
+  if (arcMode !== 'BARBELL') {
+    // Calisthenics / rehab arcs: route UPPER/LOWER through cali maxes so
+    // load prescription uses *added* weight on pull-ups / dips. Pistols are
+    // bodyweight-default (0 added) — athlete can swap to weighted later.
+    if (lift === 'UPPER') return profile.maxWeightedPullUp ?? 0;
+    if (lift === 'LOWER') return 0;
+  }
   switch (lift) {
     case 'SQUAT':     return profile.maxSquat;
     case 'BENCH':     return profile.maxBench;
@@ -1164,7 +1331,11 @@ function getLiftMax(lift: Lift, profile: AthleteProfile): number {
   }
 }
 
-function getCompMovementName(lift: Lift): string {
+function getCompMovementName(lift: Lift, arcMode: ArcMode = 'BARBELL'): string {
+  if (arcMode !== 'BARBELL') {
+    if (lift === 'UPPER') return 'Weighted Pull-Up';
+    if (lift === 'LOWER') return 'Pistol Squat';
+  }
   switch (lift) {
     case 'SQUAT':     return 'Competition Back Squat';
     case 'BENCH':     return 'Competition Bench Press';
@@ -1176,7 +1347,11 @@ function getCompMovementName(lift: Lift): string {
 }
 
 /** Returns the stable library exercise ID for the primary competition lift. */
-function getCompMovementLibraryId(lift: Lift): string {
+function getCompMovementLibraryId(lift: Lift, arcMode: ArcMode = 'BARBELL'): string {
+  if (arcMode !== 'BARBELL') {
+    if (lift === 'UPPER') return 'weighted_pull_up';
+    if (lift === 'LOWER') return 'pistol_squat';
+  }
   switch (lift) {
     case 'SQUAT':     return 'competition_squat';
     case 'BENCH':     return 'competition_bench_press';

@@ -22,8 +22,9 @@ import { readinessLabel }                                 from '@/lib/engine/rea
 import { detectMaxUpdate }                                from '@/lib/engine/calc';
 import type { MaxUpdateSuggestion }                       from '@/lib/engine/calc';
 import { C as _C }                                        from '@/lib/theme';
-import type { TrainingSession, TrainingBlock, SessionExercise, SetLog, AthleteProfile, GearConfig }  from '@/lib/db/types';
+import type { TrainingSession, TrainingBlock, SessionExercise, SetLog, AthleteProfile, GearConfig, TrainingArc }  from '@/lib/db/types';
 import { DEFAULT_GEAR }                                   from '@/lib/db/types';
+import { resolveArcMode }                                 from '@/lib/engine/session';
 import { suggestSwaps }                                   from '@/lib/exercises/swap';
 import { EXERCISE_BY_ID }                                 from '@/lib/exercises/index';
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
@@ -241,6 +242,65 @@ function ExerciseBadge({ type }: { type: SessionExercise['exerciseType'] }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Header label
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the session header from (blockType, primaryLift, sessionType, activeArc).
+ *
+ * Layer 1 — the framing word: meet-prep arcs keep the powerlifting phasing
+ * vocabulary ("ACCUMULATION", "PEAK"); longevity / cali / rehab arcs swap
+ * to neutral training language ("MOVEMENT QUALITY", "STRENGTH BUILD",
+ * "RECOVERY") so a Health Base block doesn't read as a deload.
+ *
+ * Layer 2 — the focus word: comp lifts (SQUAT/BENCH/DEADLIFT) print as-is
+ * since the athlete already trains them by name. UPPER/LOWER on a non-
+ * barbell arc translate to "PULL"/"LEGS" so the header matches the actual
+ * primary movement (Weighted Pull-Up / Pistol Squat).
+ */
+function sessionHeaderLabel(
+  blockType: TrainingBlock['blockType'] | undefined,
+  primaryLift: TrainingSession['primaryLift'],
+  sessionType: TrainingSession['sessionType'],
+  arc: TrainingArc | null,
+): string {
+  const mode = resolveArcMode(arc?.priorities);
+
+  const framing = (() => {
+    if (mode === 'BARBELL') {
+      // Powerlifting/competition framing — keep existing language.
+      return sessionType;
+    }
+    // Non-barbell arcs — frame by block intent, not powerlifting phase.
+    switch (blockType) {
+      case 'HEALTH_BASE':     return 'Movement Quality';
+      case 'ACCUMULATION':    return 'Strength Build';
+      case 'INTENSIFICATION': return 'Strength Push';
+      case 'REALIZATION':     return 'Test Day';
+      case 'DELOAD':          return 'Recovery';
+      case 'PIVOT':           return 'Pivot';
+      case 'MAINTENANCE':     return 'Maintenance';
+      default:                return 'Training';
+    }
+  })();
+
+  const focus = (() => {
+    if (mode === 'BARBELL') return primaryLift;
+    // Translate Lift labels into arc-appropriate focus words.
+    switch (primaryLift) {
+      case 'UPPER':    return 'Pull';
+      case 'LOWER':    return 'Legs';
+      case 'FULL':     return 'Full Body';
+      case 'SQUAT':    return 'Squat';
+      case 'BENCH':    return 'Press';
+      case 'DEADLIFT': return 'Hinge';
+    }
+  })();
+
+  return `${framing} — ${focus}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main Page
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -260,6 +320,7 @@ export default function SessionPage({
   const [setLogs,          setSetLogs]          = useState<SetLog[]>([]);
   const [todayReadiness,   setTodayReadiness]   = useState<number | undefined>();
   const [equipmentProfile, setEquipmentProfile] = useState<UserEquipmentProfile | null>(null);
+  const [activeArc,        setActiveArc]        = useState<TrainingArc | null>(null);
 
   // ── Swap modal ───────────────────────────────────────────────────────────
   const [swapForExId,      setSwapForExId]      = useState<string | null>(null);
@@ -356,13 +417,14 @@ export default function SessionPage({
         });
       }
 
-      const [sess, exs, sets, readiness, eqProfile, profileRow] = await Promise.all([
+      const [sess, exs, sets, readiness, eqProfile, profileRow, arc] = await Promise.all([
         db.sessions.get(sessionId),
         db.exercises.where('sessionId').equals(sessionId).sortBy('order'),
         db.sets.where('sessionId').equals(sessionId).toArray(),
         db.readiness.where('date').equals(today()).first(),
         db.equipmentProfile.get('me'),
         db.profile.get('me'),
+        getActiveArc().catch(() => null),
       ]);
       if (cancelled) return;
       setSession(sess ?? null);
@@ -371,6 +433,7 @@ export default function SessionPage({
       setTodayReadiness(readiness?.readinessScore);
       setEquipmentProfile(eqProfile ?? null);
       setGear(profileRow?.defaultGear ?? DEFAULT_GEAR);
+      setActiveArc(arc);
       // Fetch the block so we can use its blockType for swap suggestions
       if (sess?.blockId) {
         const blk = await db.blocks.get(sess.blockId);
@@ -1033,16 +1096,15 @@ export default function SessionPage({
       >
         <div className="max-w-lg mx-auto px-4">
 
-          {/* Header */}
+          {/* Header — arc-aware: meet-prep arcs see "ACCUMULATION SESSION
+              — SQUAT"; longevity / cali arcs see "MOVEMENT QUALITY — PULL". */}
           <div className="pt-8 pb-4 flex items-start gap-3">
             <div className="flex-1">
               <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: C.muted }}>
                 Today&apos;s Session
               </p>
-              <h1 className="text-2xl font-bold tracking-tight">
-                {session.sessionType} SESSION
-                {' '}&mdash;{' '}
-                {session.primaryLift}
+              <h1 className="text-2xl font-bold tracking-tight uppercase">
+                {sessionHeaderLabel(sessionBlock?.blockType, session.primaryLift, session.sessionType, activeArc)}
               </h1>
             </div>
             <button

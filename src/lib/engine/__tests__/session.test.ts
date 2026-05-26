@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateSession, abbreviateSession, estimateSessionMinutes } from '../session';
-import type { AthleteProfile, TrainingBlock } from '@/lib/db/types';
+import { generateSession, abbreviateSession, estimateSessionMinutes, resolveArcMode } from '../session';
+import type { AthleteProfile, TrainingBlock, Injury } from '@/lib/db/types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -1451,5 +1451,167 @@ describe('abbreviateSession', () => {
     const out = abbreviateSession(session, { maxMinutes: 30 });
     const after = estimateSessionMinutes(out.exercises);
     expect(after).toBeLessThan(before);
+  });
+});
+
+// ── Arc-aware primary-lift selection ──────────────────────────────────────────
+
+describe('resolveArcMode', () => {
+  it('returns BARBELL when priorities are omitted', () => {
+    expect(resolveArcMode(undefined)).toBe('BARBELL');
+    expect(resolveArcMode([])).toBe('BARBELL');
+  });
+
+  it('returns BARBELL when COMPETITION is in the top 3 priorities', () => {
+    expect(resolveArcMode(['COMPETITION', 'STRENGTH_BARBELL'])).toBe('BARBELL');
+    expect(resolveArcMode(['MOBILITY', 'STRENGTH_CALISTHENICS', 'COMPETITION'])).toBe('BARBELL');
+  });
+
+  it('returns CALISTHENICS when STRENGTH_CALISTHENICS outranks STRENGTH_BARBELL', () => {
+    expect(resolveArcMode(['STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL', 'MOBILITY']))
+      .toBe('CALISTHENICS');
+    expect(resolveArcMode(['MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL']))
+      .toBe('CALISTHENICS');
+  });
+
+  it('returns BARBELL when STRENGTH_BARBELL outranks STRENGTH_CALISTHENICS', () => {
+    expect(resolveArcMode(['STRENGTH_BARBELL', 'STRENGTH_CALISTHENICS']))
+      .toBe('BARBELL');
+  });
+
+  it('returns REHAB when INJURY_HEALING/MOBILITY is dominant and no strength priority', () => {
+    expect(resolveArcMode(['INJURY_HEALING', 'MOBILITY'])).toBe('REHAB');
+    expect(resolveArcMode(['MOBILITY', 'STRESS_REDUCTION'])).toBe('REHAB');
+  });
+});
+
+describe('generateSession — arc-aware primary lift', () => {
+  it('CALISTHENICS arc routes UPPER → Weighted Pull-Up as primary', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,            // odd → UPPER per selectArcPrimary
+      arcPriorities: ['STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL', 'MOBILITY'],
+    });
+
+    expect(result.primaryLift).toBe('UPPER');
+    const comp = result.exercises.find((e) => e.exerciseType === 'COMPETITION');
+    expect(comp?.name).toBe('Weighted Pull-Up');
+    expect(comp?.libraryExerciseId).toBe('weighted_pull_up');
+    // No SBD secondaries should be appended on a cali day.
+    expect(result.secondaryLifts ?? []).toEqual([]);
+  });
+
+  it('CALISTHENICS arc routes LOWER → Pistol Squat as primary', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 2,
+      readinessScore: goodReadiness,
+      sessionNumber: 2,            // even → LOWER per selectArcPrimary
+      arcPriorities: ['STRENGTH_CALISTHENICS', 'MOBILITY'],
+    });
+
+    expect(result.primaryLift).toBe('LOWER');
+    const comp = result.exercises.find((e) => e.exerciseType === 'COMPETITION');
+    expect(comp?.name).toBe('Pistol Squat');
+    expect(comp?.libraryExerciseId).toBe('pistol_squat');
+  });
+
+  it('BARBELL arc (default) keeps the SBD rotation', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      // no arcPriorities → legacy default
+    });
+    expect(['SQUAT', 'BENCH', 'DEADLIFT'] as const).toContain(result.primaryLift);
+  });
+
+  it('REHAB arc still produces a session even when accessories are sparse', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY'],
+    });
+    expect(['UPPER', 'LOWER', 'FULL'] as const).toContain(result.primaryLift);
+    expect(result.exercises.length).toBeGreaterThan(0);
+  });
+});
+
+describe('generateSession — injury vetoes primary lift', () => {
+  function makeInjury(overrides: Partial<Injury>): Injury {
+    return {
+      id: 'inj-1',
+      label: 'Test injury',
+      regions: ['LEFT_KNEE'],
+      status: 'MANAGING',
+      severity: 3,
+      onsetDate: '2024-01-01',
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: [],
+      constraints: [],
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('SQUAT-contraindicated injury demotes the SBD primary away from SQUAT', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,            // would normally rotate to SQUAT
+      activeInjuries: [makeInjury({ contraindicatedPatterns: ['SQUAT'] })],
+    });
+    expect(result.primaryLift).not.toBe('SQUAT');
+  });
+
+  it('VERTICAL_PULL-contraindicated injury demotes UPPER on a CALISTHENICS arc', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,            // odd → would pick UPPER
+      arcPriorities: ['STRENGTH_CALISTHENICS', 'MOBILITY'],
+      activeInjuries: [
+        makeInjury({
+          regions: ['LEFT_SHOULDER'],
+          contraindicatedPatterns: ['VERTICAL_PULL'],
+        }),
+      ],
+    });
+    // UPPER (pull-up) is blocked; selector should fall through to LOWER/FULL.
+    expect(result.primaryLift).not.toBe('UPPER');
+  });
+
+  it('adaptive scorer demotes SQUAT when a SQUAT-pattern injury is active', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      // Force the adaptive path by supplying exposures.
+      recentLiftExposures: [
+        { lift: 'SQUAT',    daysSince: 12, weekCount: 0 },
+        { lift: 'BENCH',    daysSince: 2,  weekCount: 1 },
+        { lift: 'DEADLIFT', daysSince: 2,  weekCount: 1 },
+      ],
+      activeInjuries: [makeInjury({ contraindicatedPatterns: ['SQUAT'] })],
+    });
+    // Despite SQUAT having the highest dueness, the injury must veto it.
+    expect(result.primaryLift).not.toBe('SQUAT');
   });
 });

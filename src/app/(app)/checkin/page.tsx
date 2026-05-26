@@ -505,6 +505,7 @@ function CheckInInner() {
             overshootHistory,
             recentLiftExposures,
             activeInjuries: liveInjuries,
+            arcPriorities: activeArc?.priorities,
             // Honor the athlete's lift preference and session format.
             ...(preferredPrimary ? { forcePrimary: preferredPrimary as Lift } : {}),
             ...(sbdMode ? { forceSBD: true } : {}),
@@ -531,6 +532,7 @@ function CheckInInner() {
               profile, block, weekDayOfWeek, readinessScore, sessionNumber,
               weekWithinBlock, overshootHistory, recentLiftExposures,
               activeInjuries: liveInjuries,
+              arcPriorities: activeArc?.priorities,
               forcePrimary: forced as Lift,
               ...(sbdMode ? {} : { preferredSecondary }),
             });
@@ -635,6 +637,7 @@ function CheckInInner() {
     preferredPrimary,
     preferredSecondary,
     sbdMode,
+    activeArc,
   ]);
 
   // ── Skip ───────────────────────────────────────────────────────────────
