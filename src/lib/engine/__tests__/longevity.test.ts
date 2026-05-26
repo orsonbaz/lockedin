@@ -72,18 +72,47 @@ describe('scoreCardio', () => {
     expect(scoreCardio({ zone2MinutesLast7d: 0 })).toBe(0);
   });
 
-  it('hits target = 100', () => {
+  it('hits target = 100 (back-compat path, no vo2max input)', () => {
     expect(scoreCardio({ zone2MinutesLast7d: 150 })).toBe(100);
   });
 
   it('half-credits minutes beyond target', () => {
-    // 300 min = 150 over target → 100 + 50 (half-credit)
     expect(scoreCardio({ zone2MinutesLast7d: 300 })).toBeLessThanOrEqual(100);
     expect(scoreCardio({ zone2MinutesLast7d: 300 })).toBeGreaterThanOrEqual(100);
   });
 
   it('respects a custom target', () => {
     expect(scoreCardio({ zone2MinutesLast7d: 100, weeklyTargetMin: 100 })).toBe(100);
+  });
+
+  // Phase B — polarized cardio scoring.
+  it('Phase B: polarized — full zone-2 + full vo2max = 100', () => {
+    expect(scoreCardio({
+      zone2MinutesLast7d: 150,
+      vo2maxSessionsLast7d: 1,
+    })).toBe(100);
+  });
+
+  it('Phase B: 70/30 weighting — full zone-2 only ≈ 70', () => {
+    expect(scoreCardio({
+      zone2MinutesLast7d: 150,
+      vo2maxSessionsLast7d: 0,
+    })).toBe(70);
+  });
+
+  it('Phase B: 70/30 weighting — full vo2max only ≈ 30', () => {
+    expect(scoreCardio({
+      zone2MinutesLast7d: 0,
+      vo2maxSessionsLast7d: 1,
+    })).toBe(30);
+  });
+
+  it('Phase B: 2× VO2max sessions does not exceed 1× weighting', () => {
+    // VO2max sub-score caps at 100 even with 2 sessions — recovery cost is real.
+    expect(scoreCardio({
+      zone2MinutesLast7d: 150,
+      vo2maxSessionsLast7d: 2,
+    })).toBe(100);
   });
 });
 
@@ -97,9 +126,61 @@ describe('scoreStrength', () => {
 });
 
 describe('scoreMobility', () => {
-  it('scales linearly to weekly target', () => {
+  it('scales linearly to weekly target (back-compat path)', () => {
     expect(scoreMobility({ routinesLast7d: 0 })).toBe(0);
     expect(scoreMobility({ routinesLast7d: 5 })).toBe(100);
+  });
+
+  // Phase B — FRC-aware composite.
+  it('Phase B: composite — full routines + full CAR streak + gap closing', () => {
+    expect(scoreMobility({
+      routinesLast7d: 5,
+      carDaysLast7: 5,
+      activeRomGapClosureDelta: -2,
+    })).toBe(100);
+  });
+
+  it('Phase B: CAR-only — no routines, daily CARs still scores meaningfully', () => {
+    // 0 routines (0% of 60% weight) + 5 CAR days (100% of 25% weight) + neutral gap (50% of 15% weight)
+    // = 0 + 25 + 7.5 ≈ 33
+    const score = scoreMobility({
+      routinesLast7d: 0,
+      carDaysLast7: 5,
+      activeRomGapClosureDelta: null,
+    });
+    expect(score).toBeGreaterThanOrEqual(30);
+    expect(score).toBeLessThanOrEqual(36);
+  });
+
+  it('Phase B: gap widening costs points vs closing', () => {
+    const closing = scoreMobility({
+      routinesLast7d: 5,
+      carDaysLast7: 5,
+      activeRomGapClosureDelta: -2,
+    });
+    const widening = scoreMobility({
+      routinesLast7d: 5,
+      carDaysLast7: 5,
+      activeRomGapClosureDelta: 5,
+    });
+    expect(widening).toBeLessThan(closing);
+  });
+
+  it('Phase B: null gap delta is neutral (50%), not penalized', () => {
+    const withData = scoreMobility({
+      routinesLast7d: 5,
+      carDaysLast7: 5,
+      activeRomGapClosureDelta: -2,
+    });
+    const noData = scoreMobility({
+      routinesLast7d: 5,
+      carDaysLast7: 5,
+      activeRomGapClosureDelta: null,
+    });
+    // No-data should be lower than full closing (50% < 100% on that sub-score)
+    // but still strong (≥ 90).
+    expect(noData).toBeLessThan(withData);
+    expect(noData).toBeGreaterThanOrEqual(90);
   });
 });
 

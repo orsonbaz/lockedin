@@ -29,6 +29,7 @@ export const singleLegExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Rear foot elevated on a bench. Front shin vertical. One of the most effective single-leg exercises for powerlifters. Highly transferable to the squat.',
     swapGroups: [SWAP_GROUPS.SINGLE_LEG_LUNGE],
+    tags: ['UNILATERAL', 'LENGTHENED_BIAS'],
     isCustom: false,
   },
 
@@ -58,6 +59,7 @@ export const singleLegExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Long stride to target glutes; shorter stride shifts to quads. Hold dumbbells or barbell on back.',
     swapGroups: [SWAP_GROUPS.SINGLE_LEG_LUNGE],
+    tags: ['UNILATERAL', 'LENGTHENED_BIAS'],
     isCustom: false,
   },
 
@@ -87,6 +89,7 @@ export const singleLegExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Step back rather than forward — lower knee demand. Good for athletes with knee sensitivity.',
     swapGroups: [SWAP_GROUPS.SINGLE_LEG_LUNGE],
+    tags: ['UNILATERAL'],
     isCustom: false,
   },
 
@@ -116,6 +119,7 @@ export const singleLegExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Drive through the heel of the elevated foot. Don\'t use the back leg to push off. Box height ~90 degrees of knee flexion.',
     swapGroups: [SWAP_GROUPS.SINGLE_LEG_STEPUP, SWAP_GROUPS.SINGLE_LEG_LUNGE],
+    tags: ['UNILATERAL'],
     isCustom: false,
   },
 
@@ -145,6 +149,7 @@ export const singleLegExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Full single-leg squat to the bottom. Demands excellent ankle mobility. Progress from box pistols before going freestanding.',
     swapGroups: [SWAP_GROUPS.SINGLE_LEG_PISTOL, SWAP_GROUPS.CALISTHENICS_SKILL],
+    tags: ['UNILATERAL', 'LENGTHENED_BIAS'],
     isCustom: false,
   },
 

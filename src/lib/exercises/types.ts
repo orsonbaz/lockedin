@@ -131,9 +131,42 @@ export interface LibraryExercise {
    * at least one of these disciplines. When omitted, the exercise is universal.
    */
   disciplines?: import('@/lib/db/types').Discipline[];
+  /**
+   * Phase B (unified training style) — orthogonal tags consumed by the swap
+   * scorer and the session generator. Each tag captures a quality the engine
+   * wants to bias toward in specific arc / injury / longevity contexts:
+   *   - LENGTHENED_BIAS: trains the muscle in its stretched position (RDL,
+   *     deep-ROM lunge, deficit pushup, dumbbell press with deep stretch).
+   *     Bumped in hypertrophy-priority arcs (stretch-mediated hypertrophy).
+   *   - KOT: Knees-Over-Toes progression (ATG split squat, backwards sled,
+   *     tibialis raise, Nordic curl, sissy squat, Spanish squat). Bumped in
+   *     LONGEVITY / MOBILITY_REBUILD arcs and around knee injuries.
+   *   - POWER: explosive / plyometric work (box jumps, broad jumps, med ball
+   *     slams). Used by the session generator's power-preservation warm-up.
+   *   - TEMPO: prescribed eccentric / pause tempo (3-1-0, 4-1-0 etc.). Already
+   *     implicit in the named tempo_* exercises; this tag lets the scorer
+   *     find them without ID matching.
+   *   - UNILATERAL: single-limb loading (split squat, single-arm row, pistol).
+   *     Surfaced for joint-friendly bias and post-injury asymmetry work.
+   *   - TENDON_ISO: heavy isometric for tendon adaptation (Spanish squat iso,
+   *     heavy calf iso, copenhagen plank). Used as a session finisher.
+   */
+  tags?: readonly ExerciseTag[];
   /** Discriminant for LibraryExercise | CustomExercise union narrowing. */
   isCustom:            false;
 }
+
+/**
+ * Orthogonal exercise tags introduced in Phase B of the unified training-style
+ * pass. See `LibraryExercise.tags` for usage and per-tag semantics.
+ */
+export type ExerciseTag =
+  | 'LENGTHENED_BIAS'
+  | 'KOT'
+  | 'POWER'
+  | 'TEMPO'
+  | 'UNILATERAL'
+  | 'TENDON_ISO';
 
 // ── Custom exercise (athlete-authored, stored in Dexie) ──────────────────────
 

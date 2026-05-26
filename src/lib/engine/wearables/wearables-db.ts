@@ -294,6 +294,7 @@ export async function buildWearablesSection(charCap: number): Promise<string> {
     BLOOD_GLUCOSE_FASTING: 'Fasting BG',
     BLOOD_PRESSURE_SYS:    'BP sys',
     BLOOD_PRESSURE_DIA:    'BP dia',
+    VO2_MAX_SESSION_MINUTES: 'VO₂max session',
   };
 
   for (const kind of order) {

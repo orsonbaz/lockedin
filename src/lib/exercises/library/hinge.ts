@@ -87,6 +87,7 @@ export const hingeExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Stand on 1-2 inch platform. Builds strength off the floor. Use ~10% less than competition deadlift.',
     swapGroups: [SWAP_GROUPS.HINGE_COMP],
+    tags: ['LENGTHENED_BIAS'],
     isCustom: false,
   },
 
@@ -146,6 +147,7 @@ export const hingeExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Hinge at the hips, soft knee bend. Feel the stretch in the hamstrings at the bottom. Don\'t round the lower back.',
     swapGroups: [SWAP_GROUPS.HINGE_HIP_DOMINANT, SWAP_GROUPS.HINGE_HAMSTRING],
+    tags: ['LENGTHENED_BIAS'],
     isCustom: false,
   },
 
@@ -176,6 +178,7 @@ export const hingeExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Works each leg independently. Great for identifying imbalances. Keep hips square to the floor.',
     swapGroups: [SWAP_GROUPS.HINGE_HAMSTRING, SWAP_GROUPS.SINGLE_LEG_LUNGE],
+    tags: ['LENGTHENED_BIAS', 'UNILATERAL'],
     isCustom: false,
   },
 
@@ -373,6 +376,7 @@ export const hingeExercises: LibraryExercise[] = [
     },
     coachingNotes: '3-0-1 tempo: 3 second controlled lower, no pause, normal pull. Builds lat tension and bar-path discipline. Use ~70% of comp DL.',
     swapGroups: [SWAP_GROUPS.HINGE_COMP, SWAP_GROUPS.HINGE_HAMSTRING],
+    tags: ['TEMPO'],
     isCustom: false,
   },
 ];

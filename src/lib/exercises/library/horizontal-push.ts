@@ -174,6 +174,7 @@ export const horizontalPushExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Greater ROM and chest stretch vs barbell. Addresses side-to-side imbalances. Use as volume work in accumulation.',
     swapGroups: [SWAP_GROUPS.PUSH_H_CHEST],
+    tags: ['LENGTHENED_BIAS'],
     isCustom: false,
   },
 
@@ -203,6 +204,7 @@ export const horizontalPushExercises: LibraryExercise[] = [
     },
     coachingNotes: 'Chest isolation with constant tension through full ROM. High-rep finisher for hypertrophy.',
     swapGroups: [SWAP_GROUPS.PUSH_H_CHEST],
+    tags: ['LENGTHENED_BIAS'],
     isCustom: false,
   },
 
@@ -423,6 +425,7 @@ export const horizontalPushExercises: LibraryExercise[] = [
     },
     coachingNotes: '3-1-0 tempo: 3 second controlled eccentric, 1 second pause, normal concentric. Trains bar-path discipline and leg-drive timing. Use ~75-80% of comp bench.',
     swapGroups: [SWAP_GROUPS.PUSH_H_COMP, SWAP_GROUPS.PUSH_H_CHEST],
+    tags: ['TEMPO'],
     isCustom: false,
   },
 ];

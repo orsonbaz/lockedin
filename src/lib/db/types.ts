@@ -315,12 +315,17 @@ export type WearableMetricKind =
   // v8: broader health metrics for the longevity dashboard
   | 'STEPS'                  // daily step count
   | 'ZONE_2_MINUTES'         // minutes spent in heart-rate zone 2
-  | 'VO2_MAX'                // ml/kg/min
+  | 'VO2_MAX'                // ml/kg/min (raw estimate from wearable)
   | 'ACTIVE_KCAL'            // active calories burned
   | 'STRESS_SCORE'           // 0-100 (Garmin, Oura)
   | 'BLOOD_GLUCOSE_FASTING'  // mg/dL
   | 'BLOOD_PRESSURE_SYS'     // mmHg
-  | 'BLOOD_PRESSURE_DIA';    // mmHg
+  | 'BLOOD_PRESSURE_DIA'     // mmHg
+  // Phase B (Lockedin v10) — VO2max session minutes. Distinct from the raw
+  // VO2_MAX estimate above: this counts minutes of high-intensity interval
+  // work the athlete actually performed (e.g. one Norwegian 4×4 ≈ 16 min).
+  // Used by scoreCardio() for polarized-cardio scoring.
+  | 'VO2_MAX_SESSION_MINUTES';
 
 export interface WearableImport {
   id: string;
@@ -773,6 +778,14 @@ export type MobilitySideTag = 'LEFT' | 'RIGHT';
 /**
  * A ROM data point. Either `selfRating` (0-100 slider, daily) or
  * `measuredDegrees` (periodic marker assessment), often both.
+ *
+ * Phase B (Lockedin v10) — adds FRC-aligned active vs passive ROM tracking.
+ * The active/passive *gap* (passiveRom - activeRom) is the central FRC metric:
+ * passive range you can reach minus active range you can OWN under control.
+ * A gap of 15°+ on a loadable joint is a flag for PAILs/RAILs work.
+ *
+ * `selfRating` is retained for back-compat; new entries can write any
+ * combination of (selfRating, measuredDegrees, passiveRom, activeRom).
  */
 export interface MobilityRomEntry {
   id: string;
@@ -781,6 +794,12 @@ export interface MobilityRomEntry {
   region: BodyRegion;
   selfRating?: number;                          // 0-100
   measuredDegrees?: number;
+  /** Phase B: passive (assisted / gravity / prop) end-range in degrees. */
+  passiveRom?: number;
+  /** Phase B: active (own control, no momentum) end-range in degrees. */
+  activeRom?: number;
+  /** Phase B: how the ROM was assessed. Defaults to SELF_RATING when absent. */
+  assessmentMethod?: 'SELF_RATING' | 'GONIOMETER' | 'PHOTO';
   side?: MobilitySideTag;
   loggedAt: string;                             // ISO timestamp
 }

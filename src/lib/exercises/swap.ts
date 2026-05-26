@@ -204,7 +204,7 @@ export function suggestSwaps(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Score a candidate's "joint-friendly" character. Returns a 0-40 boost added
+ * Score a candidate's "joint-friendly" character. Returns a 0-50 boost added
  * to the swap score when the SwapContext signals a longevity bias.
  *
  * Bias inputs (each addable independently):
@@ -213,14 +213,19 @@ export function suggestSwaps(
  *   - swapGroups includes `*_WEIGHTED_CALI`      → +8
  *   - spinalLoad in {LOW, NONE}                  → +8
  *   - specificity 2-3                            → +4
+ *   - Phase B tag LENGTHENED_BIAS                → +10
+ *   - Phase B tag KOT                            → +8
+ *   - Phase B tag TEMPO (redundant with swap-group, kept for direct tagging) → +6
+ *   - Phase B tag UNILATERAL                     → +6
  *
- * Sum is capped at 40 so a perfectly joint-friendly candidate gets a
+ * Sum is capped at 50 so a perfectly joint-friendly candidate gets a
  * meaningful bump without dwarfing the muscle/pattern fit.
  */
 function scoreJointFriendly(candidate: {
   swapGroups: readonly string[];
   fatigue: { spinalLoad: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE' };
   specificity: number;
+  tags?: readonly string[];
 }): number {
   let score = 0;
   const groups = candidate.swapGroups;
@@ -229,7 +234,15 @@ function scoreJointFriendly(candidate: {
   if (groups.some((g) => g.endsWith('_WEIGHTED_CALI'))) score += 8;
   if (candidate.fatigue.spinalLoad === 'LOW' || candidate.fatigue.spinalLoad === 'NONE') score += 8;
   if (candidate.specificity >= 2 && candidate.specificity <= 3) score += 4;
-  return Math.min(40, score);
+  // Phase B tag boosts — orthogonal to swap-group / spinal-load signals so
+  // tagged exercises (lengthened-bias accessories, KOT progressions) surface
+  // first when the context wants them.
+  const tags = candidate.tags ?? [];
+  if (tags.includes('LENGTHENED_BIAS')) score += 10;
+  if (tags.includes('KOT')) score += 8;
+  if (tags.includes('TEMPO')) score += 6;
+  if (tags.includes('UNILATERAL')) score += 6;
+  return Math.min(50, score);
 }
 
 function blockTypeToSpecificityWindow(blockType: BlockType): number {

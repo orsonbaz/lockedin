@@ -27,6 +27,10 @@ import type {
   MobilitySession,
 } from '@/lib/db/types';
 import { listActiveInjuries } from '@/lib/injuries';
+import {
+  computeCarStreak,
+  computeRomGapClosureDelta,
+} from '@/lib/mobility/rom-assessment';
 
 // ── Pillar weights (must sum to 1.0) ─────────────────────────────────────────
 
@@ -82,21 +86,49 @@ export function scoreSleep(input: {
 }
 
 /**
- * Cardio — weekly zone 2 minutes vs target. Linear up to target, half-credit
- * beyond (a little extra is fine but excessive is fatigue).
+ * Cardio — polarized scoring (Phase B, unified training style).
+ *
+ * Roughly 70% of the score is zone-2 vs the weekly target (default 150 min)
+ * and 30% is VO2max work vs the weekly target (default 1 session). Reflects
+ * the polarized 80/20 model: aerobic base is the bulk of weekly work, but
+ * VO2max is the single biggest longevity-biomarker lever and is rewarded
+ * meaningfully even when zone-2 minutes are below target.
+ *
+ * Back-compat: when `vo2maxSessionsLast7d` is omitted, the function falls
+ * back to zone-2-only scoring at 100% weight — existing callers keep working.
  */
 export function scoreCardio(input: {
   zone2MinutesLast7d: number;
   weeklyTargetMin?: number;
+  vo2maxSessionsLast7d?: number;
+  weeklyVo2maxTarget?: number;
 }): number {
-  const target = input.weeklyTargetMin ?? 150;
-  if (input.zone2MinutesLast7d <= 0) return 0;
-  if (input.zone2MinutesLast7d <= target) {
-    return Math.round((input.zone2MinutesLast7d / target) * 100);
+  const z2Target = input.weeklyTargetMin ?? 150;
+
+  // Zone-2 sub-score (linear up to target, half-credit beyond, capped at 100).
+  let zone2Score: number;
+  if (input.zone2MinutesLast7d <= 0) zone2Score = 0;
+  else if (input.zone2MinutesLast7d <= z2Target) {
+    zone2Score = (input.zone2MinutesLast7d / z2Target) * 100;
+  } else {
+    const extra = input.zone2MinutesLast7d - z2Target;
+    zone2Score = Math.min(100, 100 + (extra / z2Target) * 50);
   }
-  // Past target: each minute is half-credit, capped at 100.
-  const extra = input.zone2MinutesLast7d - target;
-  return Math.min(100, Math.round(100 + (extra / target) * 50));
+
+  // Back-compat path: no VO2max data → zone-2 only.
+  if (input.vo2maxSessionsLast7d === undefined) {
+    return Math.round(zone2Score);
+  }
+
+  // VO2max sub-score: 1 session/wk = 100; 2+ = 100 (more competes with
+  // strength recovery — no bonus). Zero sessions = 0.
+  const vo2Target = input.weeklyVo2maxTarget ?? 1;
+  const vo2Score = input.vo2maxSessionsLast7d <= 0
+    ? 0
+    : Math.min(100, (input.vo2maxSessionsLast7d / vo2Target) * 100);
+
+  // 70/30 polarized weighting.
+  return Math.round(zone2Score * 0.7 + vo2Score * 0.3);
 }
 
 /**
@@ -114,15 +146,61 @@ export function scoreStrength(input: {
 }
 
 /**
- * Mobility — completed routines / week. Target 5 (daily-ish). Zero floor.
+ * Mobility — FRC-aware composite (Phase B, unified training style).
+ *
+ * Composition:
+ *   60% — routine target hit-rate (existing v8 logic, scaled down)
+ *   25% — CAR days in last 7 (5+ = full credit — FRC's daily-input floor)
+ *   15% — active/passive ROM gap closure trend (negative delta = closing)
+ *
+ * Back-compat: when only `routinesLast7d` is provided, falls back to the
+ * v8 routine-count scoring at 100% weight.
+ *
+ * Rationale: under the unified style, "did 5 days of CARs" should score
+ * meaningfully higher than "did 5 random stretch routines on the same day"
+ * — FRC philosophy is daily low-intensity input, not session count. And
+ * closing the active-ROM gap (FRC's central training target) deserves
+ * direct credit, not just a proxy via routine counts.
  */
 export function scoreMobility(input: {
   routinesLast7d: number;
   weeklyTarget?: number;
+  carDaysLast7?: number;
+  /**
+   * Change in average ROM gap (passive - active) between the last 7d and
+   * the prior 7d. Negative = gap closing (good). Positive = widening.
+   * Null/undefined = not enough data.
+   */
+  activeRomGapClosureDelta?: number | null;
 }): number {
   const target = input.weeklyTarget ?? 5;
-  if (input.routinesLast7d <= 0) return 0;
-  return Math.min(100, Math.round((input.routinesLast7d / target) * 100));
+
+  // Routine sub-score (existing v8 logic).
+  const routineScore = input.routinesLast7d <= 0
+    ? 0
+    : Math.min(100, (input.routinesLast7d / target) * 100);
+
+  // Back-compat: no FRC inputs → v8 behaviour.
+  if (input.carDaysLast7 === undefined && input.activeRomGapClosureDelta === undefined) {
+    return Math.round(routineScore);
+  }
+
+  // CAR-day sub-score: 5/7+ days = 100, scales linearly below.
+  const carDays = input.carDaysLast7 ?? 0;
+  const carScore = Math.min(100, (carDays / 5) * 100);
+
+  // Gap-closure sub-score: negative delta → full, flat → half, widening → 0.
+  // Null delta (not enough data) → neutral 50 so we don't penalize new athletes.
+  let gapScore: number;
+  const delta = input.activeRomGapClosureDelta;
+  if (delta === null || delta === undefined) gapScore = 50;
+  else if (delta < -1) gapScore = 100;       // clearly closing
+  else if (delta <= 0) gapScore = 75;        // flat-to-closing
+  else if (delta <= 1) gapScore = 50;        // flat-to-slightly-widening
+  else if (delta <= 3) gapScore = 25;        // widening
+  else gapScore = 0;                         // clearly widening
+
+  return Math.round(routineScore * 0.60 + carScore * 0.25 + gapScore * 0.15);
 }
 
 /**
@@ -229,6 +307,7 @@ export async function computeSnapshot(opts: ComputeOptions = {}): Promise<Comput
     sleepHoursMetrics,
     sleepQualityMetrics,
     zone2Metrics,
+    vo2maxMetrics,
     sessions7d,
     mobility7d,
     todayHrv,
@@ -237,6 +316,8 @@ export async function computeSnapshot(opts: ComputeOptions = {}): Promise<Comput
     nutritionTargets7d,
     nutritionLogs7d,
     injuries,
+    carStreak,
+    romGapDelta,
   ] = await Promise.all([
     db.wearableMetrics
       .where('[date+metricKind]')
@@ -249,6 +330,11 @@ export async function computeSnapshot(opts: ComputeOptions = {}): Promise<Comput
     db.wearableMetrics
       .where('[date+metricKind]')
       .between([sevenDaysAgo, 'ZONE_2_MINUTES'], [date, 'ZONE_2_MINUTES￿'])
+      .toArray(),
+    // Phase B: VO2max session minutes for polarized scoreCardio.
+    db.wearableMetrics
+      .where('[date+metricKind]')
+      .between([sevenDaysAgo, 'VO2_MAX_SESSION_MINUTES'], [date, 'VO2_MAX_SESSION_MINUTES￿'])
       .toArray(),
     db.sessions
       .filter((s) => s.status === 'COMPLETED' && s.scheduledDate >= sevenDaysAgo && s.scheduledDate <= date)
@@ -272,7 +358,15 @@ export async function computeSnapshot(opts: ComputeOptions = {}): Promise<Comput
       .filter((l) => l.date >= sevenDaysAgo && l.date <= date)
       .toArray(),
     listActiveInjuries(),
+    // Phase B: FRC inputs for scoreMobility.
+    computeCarStreak(date),
+    computeRomGapClosureDelta(date),
   ]);
+
+  // A VO2max "session" = any wearable row reporting VO2_MAX_SESSION_MINUTES.
+  // We count distinct days that received any qualifying minutes rather than
+  // total minutes — one Norwegian 4×4 covers the weekly target.
+  const vo2maxSessionsLast7d = new Set(vo2maxMetrics.map((m) => m.date)).size;
 
   const pillars: PillarBreakdown = {
     sleep: scoreSleep({
@@ -281,12 +375,15 @@ export async function computeSnapshot(opts: ComputeOptions = {}): Promise<Comput
     }),
     cardio: scoreCardio({
       zone2MinutesLast7d: zone2Metrics.reduce((s, m) => s + m.value, 0),
+      vo2maxSessionsLast7d,
     }),
     strength: scoreStrength({
       sessionsLast7d: sessions7d.length,
     }),
     mobility: scoreMobility({
       routinesLast7d: mobility7d.length,
+      carDaysLast7: carStreak.daysWithCarsLast7,
+      activeRomGapClosureDelta: romGapDelta,
     }),
     recovery: scoreRecovery({
       hrvToday: todayHrv?.value,

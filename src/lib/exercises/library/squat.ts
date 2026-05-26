@@ -316,6 +316,7 @@ export const squatExercises: LibraryExercise[] = [
     },
     coachingNotes: '4-1-0 tempo: 4 second eccentric, 1 second pause, normal drive. Dials in bar path and bracing. Use ~75% of comp squat.',
     swapGroups: [SWAP_GROUPS.SQUAT_PAUSE_BOX, SWAP_GROUPS.SQUAT_COMP],
+    tags: ['TEMPO'],
     isCustom: false,
   },
   {
