@@ -28,7 +28,6 @@ import {
 import { generateSession, abbreviateSession, getExpectedSecondary, suggestPrimaryLift } from '@/lib/engine/session';
 import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import { reviewSessionPure, packReviewIssues } from '@/lib/engine/session-review';
-import { authorSessionFromCoach } from '@/lib/ai/session-author';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
 import { addOverride, loadOverridesFor } from '@/lib/engine/schedule';
 import { RingProgress }    from '@/components/lockedin/RingProgress';
@@ -575,30 +574,13 @@ function CheckInInner() {
             generated = abbreviateSession(generated, { maxMinutes: modalityDef.minutes });
           }
 
-          // AI coach authors the session from full context (profile, goals,
-          // memories, knowledge base, readiness, recent training). The rule
-          // engine's output is offered as a baseline + structural starting
-          // point — the LLM is free to discard or restructure. Silent fall
-          // back to the baseline if the API is unreachable / parse fails.
-          const authored = await authorSessionFromCoach({
-            profile,
-            block,
-            baseline: generated,
-            readinessScore,
-            preferredPrimary: preferredPrimary as Lift | undefined,
-            preferredSecondary: sbdMode ? 'AUTO' : preferredSecondary,
-          }).catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error('[check-in] session-author crashed:', msg);
-            return null;
-          });
-          if (authored?.source === 'authored') {
-            generated = authored.session;
-          } else if (authored?.failureReason && authored.failureReason !== 'no-api-key') {
-            console.warn(
-              `[check-in] session-author fell back: ${authored.failureReason}${authored.detail ? ` — ${authored.detail}` : ''}`,
-            );
-          }
+          // Session generation ends here. The deterministic engine is
+          // already arc-aware (UPPER/LOWER on calisthenics arcs), injury-
+          // aware (dosed remedial prep + contraindicated filter), readiness-
+          // adjusted, length-capped, and review-validated. No LLM author
+          // step — the chat coach handles targeted changes via SWAP /
+          // ADD / REMOVE / UPDATE_REPS / REORDER_EXERCISES tags after
+          // the athlete walks into the session.
 
           // 5a. Update session metadata — primaryLift can change on the fly
           // when the adaptive selector picks a different lift.

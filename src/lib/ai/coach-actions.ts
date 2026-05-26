@@ -82,6 +82,7 @@ export type CoachActionType =
   | 'SKIP_SESSION'
   | 'ADD_EXERCISE'
   | 'REMOVE_EXERCISE'
+  | 'REORDER_EXERCISES'
   | 'UPDATE_REPS'
   | 'SET_RPE_TARGET'
   | 'REMEMBER'
@@ -242,6 +243,19 @@ function buildAction(type: CoachActionType, params: Record<string, string>): Coa
         params,
         displayText: `Remove "${name}" from session`,
         confirmText: 'Remove exercise',
+      };
+    }
+
+    case 'REORDER_EXERCISES': {
+      const order = params.order;
+      if (!order) return null;
+      const names = order.split(',').map((n) => n.trim()).filter(Boolean);
+      if (names.length === 0) return null;
+      return {
+        type,
+        params,
+        displayText: `Reorder session: ${names.join(' → ')}`,
+        confirmText: 'Reorder',
       };
     }
 
@@ -715,6 +729,8 @@ export async function executeAction(action: CoachAction): Promise<ActionResult> 
         return await executeAddExercise(action.params);
       case 'REMOVE_EXERCISE':
         return await executeRemoveExercise(action.params);
+      case 'REORDER_EXERCISES':
+        return await executeReorderExercises(action.params);
       case 'UPDATE_REPS':
         return await executeUpdateReps(action.params);
       case 'SET_RPE_TARGET':
@@ -1078,6 +1094,87 @@ async function executeRemoveExercise(params: Record<string, string>): Promise<Ac
   return { success: true, message: `Removed ${target.name} from session.` };
 }
 
+/**
+ * Reorder today's session by exercise name. Accepts a comma-separated list
+ * matching the desired order; names are matched case-insensitively as
+ * substrings of the exercise's full name (same matching policy as SWAP /
+ * REMOVE / UPDATE_REPS so the coach can be loose).
+ *
+ * Any exercise the list doesn't mention keeps its relative ordering and is
+ * appended after the explicitly-ordered ones — so the coach can reorder
+ * just a slice ("warm-up rotator cuff before the bench") without having to
+ * re-list every accessory.
+ */
+async function executeReorderExercises(params: Record<string, string>): Promise<ActionResult> {
+  const session = await db.sessions
+    .where('scheduledDate').equals(today())
+    .filter((s) => s.status === 'SCHEDULED' || s.status === 'MODIFIED')
+    .first();
+  if (!session) {
+    return { success: false, message: 'No active session today.' };
+  }
+
+  const order = params.order;
+  if (!order) return { success: false, message: 'No order specified.' };
+  const wanted = order.split(',').map((n) => n.trim().toLowerCase()).filter(Boolean);
+  if (wanted.length === 0) {
+    return { success: false, message: 'Empty reorder list.' };
+  }
+
+  const exercises = await db.exercises
+    .where('sessionId').equals(session.id)
+    .sortBy('order');
+  if (exercises.length === 0) {
+    return { success: false, message: 'No exercises to reorder.' };
+  }
+
+  // Greedy match: each wanted name claims the first un-claimed exercise
+  // whose name contains the substring. This handles repeated patterns like
+  // "tempo bench" / "competition bench" without collapsing them.
+  const claimed = new Set<string>();
+  const reordered: typeof exercises = [];
+  const unmatched: string[] = [];
+  for (const want of wanted) {
+    const match = exercises.find(
+      (e) => !claimed.has(e.id) && e.name.toLowerCase().includes(want),
+    );
+    if (match) {
+      claimed.add(match.id);
+      reordered.push(match);
+    } else {
+      unmatched.push(want);
+    }
+  }
+
+  if (reordered.length === 0) {
+    return {
+      success: false,
+      message: `Could not find any of: ${unmatched.join(', ')}.`,
+    };
+  }
+
+  // Append unclaimed exercises in their original order so the coach can
+  // reorder a slice without listing the whole session.
+  for (const ex of exercises) {
+    if (!claimed.has(ex.id)) reordered.push(ex);
+  }
+
+  await db.transaction('rw', db.exercises, db.sessions, async () => {
+    for (let i = 0; i < reordered.length; i++) {
+      await db.exercises.update(reordered[i].id, { order: i + 1 });
+    }
+    await db.sessions.update(session.id, { status: 'MODIFIED' });
+  });
+
+  const unmatchedTail = unmatched.length > 0
+    ? ` (couldn't match: ${unmatched.join(', ')})`
+    : '';
+  return {
+    success: true,
+    message: `Reordered ${reordered.length} exercise${reordered.length === 1 ? '' : 's'}${unmatchedTail}.`,
+  };
+}
+
 async function executeUpdateReps(params: Record<string, string>): Promise<ActionResult> {
   const session = await db.sessions
     .where('scheduledDate').equals(today())
@@ -1342,11 +1439,15 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
   const readinessRow = await db.readiness.where('date').equals(today()).first();
   const readinessScore = readinessRow?.readinessScore ?? session.readinessScore ?? 70;
 
-  // Build a deterministic baseline from the rule engine, then ask the LLM
-  // session author to (re-)author from full goal + memory context.
+  // Deterministic rebuild from the rule engine — arc-aware (primary lift,
+  // UPPER/LOWER rotation, length cap), injury-aware (dosed remedial prep,
+  // contraindicated movement filter), readiness-aware (volume + intensity
+  // modulation). No LLM author in the loop; the coach should make targeted
+  // changes via SWAP/ADD/REMOVE/UPDATE_REPS tags rather than re-running
+  // this whole-session regenerator.
   const { generateSession } = await import('@/lib/engine/session');
   const { loadRecentLiftExposures } = await import('@/lib/engine/lift-exposures');
-  const { authorSessionFromCoach } = await import('@/lib/ai/session-author');
+  const { getActiveArc } = await import('@/lib/arcs');
   const { newId } = await import('@/lib/db/database');
 
   const recentLiftExposures = await loadRecentLiftExposures(today()).catch(() => []);
@@ -1361,24 +1462,19 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
   const cycleWeek = cycle?.currentWeek ?? 1;
   const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
 
-  // v8: prepend dosed remedial prep for active injuries.
-  const activeInjuries = await listActiveInjuries();
-  const baseline = generateSession({
+  const [activeInjuries, activeArc] = await Promise.all([
+    listActiveInjuries(),
+    getActiveArc().catch(() => null),
+  ]);
+
+  const finalSession = generateSession({
     profile, block,
     weekDayOfWeek: new Date(`${today()}T12:00:00`).getDay(),
     readinessScore, sessionNumber, weekWithinBlock,
     recentLiftExposures,
     activeInjuries,
+    arcPriorities: activeArc?.priorities,
   });
-
-  const authored = await authorSessionFromCoach({
-    profile, block, baseline, readinessScore,
-  }).catch((err: unknown) => {
-    console.error('[regen action] author crashed:', err);
-    return null;
-  });
-
-  const finalSession = authored?.source === 'authored' ? authored.session : baseline;
 
   await db.transaction('rw', db.sessions, db.exercises, async () => {
     await db.sessions.update(session.id, {
@@ -1388,7 +1484,7 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
       sessionType:     finalSession.sessionType,
       coachNote:       finalSession.coachNote,
       aiModifications: JSON.stringify(finalSession.modifications),
-      status:          authored?.source === 'authored' ? 'MODIFIED' : 'SCHEDULED',
+      status:          'SCHEDULED',
     });
     await db.exercises.where('sessionId').equals(session.id).delete();
     await db.exercises.bulkAdd(finalSession.exercises.map((ex) => ({
@@ -1408,19 +1504,9 @@ async function executeRegenerateSession(params: Record<string, string>): Promise
   });
 
   const reason = params.reason ? ` (${params.reason})` : '';
-  const memSuffix = authored?.memoryCount
-    ? ` (saw ${authored.memoryCount} memor${authored.memoryCount === 1 ? 'y' : 'ies'})`
-    : '';
-  if (authored?.source === 'authored') {
-    return {
-      success: true,
-      message: `Session rebuilt by AI coach${reason} — ${finalSession.exercises.length} exercises${memSuffix}.`,
-    };
-  }
-  const fallbackReason = authored?.failureReason ?? 'no-api-key';
   return {
     success: true,
-    message: `Session rebuilt from rule engine${reason} — ${finalSession.exercises.length} exercises. AI author skipped: ${fallbackReason}.`,
+    message: `Session rebuilt from rule engine${reason} — ${finalSession.exercises.length} exercises.`,
   };
 }
 
