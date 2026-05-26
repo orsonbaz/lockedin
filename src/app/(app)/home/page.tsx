@@ -15,7 +15,9 @@ import { useState, useEffect } from 'react';
 import { useRouter }                    from 'next/navigation';
 import { Skeleton }                     from '@/components/ui/skeleton';
 import { toast }                        from 'sonner';
-import { Settings, ChevronRight, CalendarClock, Clock, Flame, Camera, Trophy } from 'lucide-react';
+import { Settings, ChevronRight, CalendarClock, Clock, Flame, Camera, Trophy, HeartPulse } from 'lucide-react';
+import { computeSnapshot } from '@/lib/engine/longevity';
+import type { ComputedSnapshot } from '@/lib/engine/longevity';
 import { db, today }                    from '@/lib/db/database';
 import { readinessLabel }               from '@/lib/engine/readiness';
 import { RingProgress }                 from '@/components/lockedin/RingProgress';
@@ -250,6 +252,10 @@ export default function HomePage() {
   // prioritizes COMPETITION. Mirrors the soft gate on /meet/layout so the
   // home screen doesn't contradict the rest of the app.
   const meetVisible = upcomingMeet && (!activeArc || activeArc.priorities.includes('COMPETITION'));
+  // Phase D follow-up — competition-flavored cards (cycle peak countdown,
+  // SBD total goal) only render when the arc actually wants peak prep. On
+  // longevity / mobility-rebuild / new-dad arcs they're misleading.
+  const competitionAffordances = !activeArc || activeArc.priorities.includes('COMPETITION');
   const programProgress = cycle && cycleBlocks.length > 0
     ? buildProgramProgress(cycle, cycleBlocks, upcomingMeet)
     : null;
@@ -438,7 +444,10 @@ export default function HomePage() {
         </div>
 
         {/* ── 2a. PROGRAM TIMELINE ──────────────────────────────────────── */}
-        {programProgress && (
+        {/* Phase D follow-up — hide on non-COMPETITION arcs. The timeline
+            surfaces "days to peak" which is meaningless on longevity arcs;
+            the longevity pillar card below takes its place. */}
+        {programProgress && competitionAffordances && (
           <button
             type="button"
             onClick={() => router.push('/progress')}
@@ -455,10 +464,19 @@ export default function HomePage() {
         )}
 
         {/* ── 2a-ii. GOAL PROGRESS ──────────────────────────────────────── */}
-        {goalProgress && (
+        {/* Phase D follow-up — gated for non-competition arcs; SBD total
+            goals don't apply to a Get Healthy / Mobility Rebuild athlete. */}
+        {goalProgress && competitionAffordances && (
           <div className="mb-4">
             <GoalProgressCard progress={goalProgress} variant="compact" />
           </div>
+        )}
+
+        {/* ── 2a-iii. LONGEVITY SCORE (Phase D follow-up) ──────────────── */}
+        {/* On non-competition arcs, surface the longevity dashboard as the
+            primary "how am I doing" lens in place of the cycle/goal cards. */}
+        {!competitionAffordances && (
+          <LongevityHomeCard onClick={() => router.push('/health')} />
         )}
 
         {/* ── 2b. SCHEDULE OVERRIDE BANNER ──────────────────────────────── */}
@@ -526,12 +544,18 @@ export default function HomePage() {
               style={{ backgroundColor: C.accent, filter: 'blur(40px)' }}
             />
             <div className="p-5">
-              <span
-                className="inline-block text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-3"
-                style={{ backgroundColor: `${C.gold}20`, color: C.gold }}
-              >
-                {session!.sessionType}
-              </span>
+              {/* Phase D follow-up — sessionType badge ("ACCUMULATION" etc.)
+                  is meet-prep vocabulary that confuses longevity-arc athletes.
+                  Hide on non-competition arcs; the arc card at top already
+                  tells them which season they're in. */}
+              {competitionAffordances && (
+                <span
+                  className="inline-block text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full mb-3"
+                  style={{ backgroundColor: `${C.gold}20`, color: C.gold }}
+                >
+                  {session!.sessionType}
+                </span>
+              )}
 
               <h2 className="text-2xl font-black mb-1 leading-tight" style={{ color: C.text }}>
                 {session!.primaryLift} DAY
@@ -834,5 +858,60 @@ export default function HomePage() {
 
       </div>
     </div>
+  );
+}
+
+// ── Longevity card (Phase D follow-up) ──────────────────────────────────────
+// Surfaced on non-competition arcs in place of the cycle/SBD-goal cards.
+// Reads the latest snapshot directly so it stays fresh without pushing the
+// score into HomeData (computeSnapshot is cheap — bounded indexed reads).
+function LongevityHomeCard({ onClick }: { onClick: () => void }) {
+  const [snapshot, setSnapshot] = useState<ComputedSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void computeSnapshot({ persist: false }).then((s) => {
+      if (!cancelled) setSnapshot(s);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const score = snapshot?.score ?? null;
+  const ringColor = score === null
+    ? C.muted
+    : score >= 80 ? '#34d399'
+    : score >= 60 ? C.gold
+    : score >= 40 ? '#fb923c'
+    : '#ef4444';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-2xl p-4 mb-4 flex items-center gap-4 transition-all active:scale-[0.99]"
+      style={{ backgroundColor: C.surface, border: `1px solid ${C.border}`, textAlign: 'left' }}
+      aria-label="View longevity dashboard"
+    >
+      <div
+        className="flex-shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center"
+        style={{ backgroundColor: `${ringColor}20` }}
+      >
+        <HeartPulse size={22} color={ringColor} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-widest mb-0.5" style={{ color: C.muted }}>
+          Longevity Score
+        </p>
+        <p className="text-base font-bold" style={{ color: C.text }}>
+          {score === null ? '—' : `${score} / 100`} · seven pillars
+        </p>
+        {snapshot && (
+          <p className="text-xs mt-0.5" style={{ color: C.muted }}>
+            Sleep {snapshot.pillars.sleep} · Cardio {snapshot.pillars.cardio} ·
+            Strength {snapshot.pillars.strength} · Mobility {snapshot.pillars.mobility}
+          </p>
+        )}
+      </div>
+      <ChevronRight size={18} color={C.muted} />
+    </button>
   );
 }
