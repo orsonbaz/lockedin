@@ -2167,6 +2167,313 @@ default fits their phenotype + goal — or recommend the alternative when it gen
 - **Default for everyone else**: RPE-driven block periodization (the Lockedin default).
 `;
 
+// ── Modern hypertrophy + time-efficient strength ──────────────────────────────
+// Lockedin's "Big" leg. Synthesises Israetel/RP volume landmarks, Schoenfeld/Wolf
+// 2023-2024 stretch-mediated hypertrophy research, and time-efficient strength
+// methods (cluster sets, rest-pause). Co-equal with the heavy-strength side —
+// the two are not in conflict; the athlete builds both in parallel.
+
+export const HYBRID_STRENGTH_KNOWLEDGE = `
+## Hybrid Strength — Strong + Big in Parallel
+
+The athlete who wants to be strong AND big runs two systems concurrently: heavy
+compound strength (1–6 reps, RPE 7–9) for neural drive and 1RM expression, and
+modern hypertrophy work (8–20 reps near failure) for cross-sectional area.
+Neither replaces the other. Both fit inside a 45–60 minute session when designed
+for stimulus-per-minute, not stimulus-per-session.
+
+### Modern hypertrophy stack (post-2023 evidence base)
+- **Proximity to failure**: hypertrophy is driven by reps NEAR failure, not total
+  reps. 0–3 RIR on hard sets. Reps further from failure ("junk volume") are mostly
+  fatigue without stimulus.
+- **Stimulus-to-fatigue ratio (SFR)**: pick the exercise that gives the most
+  hypertrophy stimulus per unit fatigue. Machine hack squat ≥ heavy back squat
+  for quad growth when recovery is limited. Cable fly > heavy DB fly for chest.
+  The barbell isn't always the best hypertrophy tool.
+- **Lengthened-bias / stretch-mediated hypertrophy** (Wolf & Schoenfeld 2023):
+  training a muscle in the LENGTHENED position drives ~1.5–2× more growth than
+  shortened-position work. Practical picks: DB RDL > good morning, deep-ROM
+  lunge > shallow lunge, dumbbell press (deep stretch) > flat barbell bench
+  for pec growth, cable fly with full stretch > pec deck, deficit pushup > flat
+  pushup, Bulgarian split squat (full ROM) > leg press partials.
+- **Lengthened partials** as an extension: after a full-ROM set, perform 3–5
+  more reps in only the stretched half (e.g., RDL from mid-shin to floor only).
+  Adds stimulus when load is the limit but you still have reps in the stretch.
+- **Double progression**: pick a rep range (e.g., 8–12). When you hit the top
+  of the range across all sets, add load next session and drop back to the
+  bottom. Simple, evidence-aligned, removes guesswork.
+
+### Volume landmarks (Renaissance Periodization framework)
+- **MV (Maintenance Volume)**: minimum sets/week to keep size. Roughly 4–6
+  hard sets per muscle/week.
+- **MEV (Minimum Effective Volume)**: minimum to make progress. ~8–10 hard
+  sets/week per muscle group for most lifters.
+- **MAV (Maximum Adaptive Volume)**: the sweet spot. ~10–20 hard sets/week
+  per muscle for most. Sessions feel productive but recoverable.
+- **MRV (Maximum Recoverable Volume)**: ceiling before fatigue out-paces
+  growth. Cross it and progress stalls or reverses.
+- **Practical use**: run hypertrophy blocks from MEV → MAV → MRV across 3–6
+  weeks, then deload one week to ~50% volume. Don't START at MRV.
+
+### Time-efficient strength expression (cluster sets, rest-pause)
+- **Cluster sets**: break a heavy target into mini-sets with 15–30s intra-set
+  rest. E.g., target 5 reps at RPE 9 → do 2+2+1 with 20s breaks. You express
+  the load (which is the goal) without grinding. Recovery from clusters is
+  faster than from a straight RPE 9 set.
+- **Rest-pause**: take a set to RPE 9–10, rest 15s, do 2–4 more reps, rest
+  15s, do 1–3 more. Extends a single set into hypertrophy-relevant total reps
+  without adding another full set's warm-up.
+- **Myo-reps**: similar to rest-pause but with a fixed activation set (12–20
+  reps at RPE 9), then 3–5 mini-sets of 3–5 reps with 10–15s rest. Very
+  efficient hypertrophy stimulus.
+- **When to use what**: cluster sets for heavy strength expression on comp
+  lifts when time is tight. Rest-pause/myo-reps for hypertrophy on accessories
+  to compress 2–3 sets into 1.
+
+### Barbell vs weighted-calisthenics decision rules
+- **Barbell when**: training 1RM expression, axial loading is the goal,
+  competition specificity matters, you want maximum systemic strength.
+- **Weighted calisthenics when**: joint-friendly hypertrophy stimulus matters,
+  you want unilateral loading (weighted pistol > leg press for some), the
+  movement IS the goal (weighted pull-up, dip, muscle-up), or equipment is
+  limited.
+- **Both are co-equal expressions of strength**. The "barbell-only" mindset
+  costs you joint health and movement variety; the "calisthenics-only" mindset
+  costs you maximum loading. Use both per the arc's priorities.
+
+### Session design — strong + big in 45–60 minutes
+- **5 min**: power preservation (5×3 box jumps or med ball slams) + targeted
+  joint prep (CARs of the day's primary joint).
+- **20 min**: heavy compound — 2–4 working sets at RPE 7–9, cluster sets if
+  pushed for time, full-ROM, comp-relevant.
+- **20 min**: 2–3 hypertrophy accessories — lengthened-bias picks, 1–3 sets
+  each at 0–3 RIR, double progression, rest-pause to compress.
+- **5 min**: tendon-iso finisher or single-joint isolation. Done.
+
+### Size feeds strength (don't deprioritize hypertrophy in non-competition arcs)
+- A bigger muscle has a higher 1RM ceiling. Hypertrophy work pays off as
+  strength later — it's not "the other goal."
+- For non-COMPETITION arcs, hypertrophy is co-equal with top-set strength,
+  often dominant. For COMPETITION arcs, hypertrophy compresses during
+  intensification/realization and re-expands in the next accumulation block.
+
+### What modern hypertrophy will NOT do
+- It will not build maximal 1RM strength by itself — that requires heavy
+  loading and neural adaptation (1–6 reps, RPE 8–9).
+- It will not replace specificity for competition — comp lifts at comp ROM
+  with comp commands remain the bedrock for competing athletes.
+`;
+
+// ── FRC (Functional Range Conditioning) — Mobility + Joint Health ─────────────
+// Lockedin's "Mobile" leg. CARs as daily input, PAILs/RAILs for active-ROM gap
+// closure, Knees-Over-Toes as the load-bearing extension. Explicit boundary:
+// FRC owns mobility and joint capsule strength — it does NOT prescribe
+// hypertrophy or 1RM programming.
+
+export const FRC_MOBILITY_KNOWLEDGE = `
+## FRC + Knees-Over-Toes — Mobile, Durable Joints
+
+Functional Range Conditioning (Dr. Andreo Spina) is the joint-health backbone
+of Lockedin. It owns mobility, joint capsule strength, and active range of
+motion. It is NOT a hypertrophy or 1RM system — use the hybrid-strength stack
+for those.
+
+### Core mechanics
+- **CARs (Controlled Articular Rotations)**: daily, joint-by-joint, biggest
+  circle the joint can make under control, ~60–80% effort. Five minutes for
+  the full body. The "morning brush-your-teeth of joint health." Daily input,
+  never deloaded.
+- **PAILs/RAILs**: end-range isometric loading. Sequence:
+  1. Move into passive end-range (e.g., couch stretch). Hold 90 seconds.
+  2. **PAIL** — ramp an isometric contraction INTO the stretch (push the
+     restraining tissue) for ~10s, building from 20% to 100% effort.
+  3. **RAIL** — ramp an isometric contraction OUT of the stretch (use the
+     opposing muscle to actively pull deeper) for ~10s, 20% → 100%.
+  4. Try to actively expand into new range (1–3 reps).
+  This is the central FRC mechanism for closing the active-ROM gap.
+- **Hovers / lift-offs**: at passive end-range, lift the limb off support
+  by 1–2 inches under active control. Proves you OWN the range — not just
+  reach it. The gap between what you can reach passively and what you can
+  hover into actively IS the training target.
+
+### Active vs passive ROM gap — the central metric
+- **Passive ROM**: how far the joint can be moved (gravity, partner, prop).
+- **Active ROM**: how far the joint can be moved under your own muscular
+  control, no momentum, no assistance.
+- **The gap** (passive minus active) is what FRC trains. A 15°+ gap on a
+  loadable joint is a flag — that's range you can reach but can't protect.
+  PAILs/RAILs on that joint, weekly, until the gap closes.
+
+### Joint hierarchy
+- **Spine** (segmented — cervical, thoracic, lumbar): owns posture and load
+  transfer. T-spine rotation and segmental CARs are the most-skipped, highest-ROI.
+- **Hip and shoulder** (ball-and-socket): the most-trained for capsular work.
+  PAILs/RAILs here have the highest ROI for sustained heavy lifting.
+- **Knee, elbow** (hinge with rotational component): more about end-range
+  load tolerance (Knees-Over-Toes work) than raw mobility.
+- **Ankle, wrist** (multi-axis but often neglected): chronic gaps here limit
+  squat depth and pressing health. CARs daily; loaded end-range work weekly.
+
+### Knees-Over-Toes (Ben Patrick) — load-bearing extension of FRC
+The KOT progressions LOAD the ranges FRC builds. Where FRC opens the door,
+KOT walks the joint through it under weight.
+- **ATG split squat**: deep front-knee-over-toe split squat. Builds end-range
+  knee tolerance, vastus medialis, hip mobility under load.
+- **Backwards sled drag**: trains the VMO and patellar tendon in a way no
+  forward gait does. Rebuilds knees post-injury; bulletproofs knees pre-injury.
+- **Tibialis raises**: under-loaded muscle that prevents shin splints and
+  protects the knee. Easy to add; high ROI.
+- **Nordic curls**: heavy eccentric hamstring at the knee. Prevents hamstring
+  strains, builds short-head hamstring under length.
+- **Sissy squats / Spanish squats**: quad-dominant knee-over-toe positions
+  under isometric or tempo load.
+- **Order of operations**: tibialis + ATG split squat are the entry-level
+  picks. Backwards sled and Nordics come next. Sissy squats are advanced.
+
+### Heavy isometrics for tendon health (Keith Baar)
+Tendons adapt to slow, heavy, sustained loading — not high-rep dynamic work.
+- **Protocol**: 5 × 30s holds at 70–80% of the max load you could hold for
+  30s. Knee extension iso, Spanish squat iso, copenhagen plank, hamstring
+  isometrics.
+- **When**: after the strength session as a finisher (3–5 min). Twice a
+  week per tendon at most.
+- **Why**: tendon turnover slows past 30. Tendinopathy prevention is far
+  cheaper than rehab. Patellar, achilles, biceps, elbow tendons all respond.
+
+### Joint readiness as a coaching primitive
+- A joint that hasn't been CAR'd that morning isn't necessarily UNREADY for
+  heavy load — but a cranky joint (sore, stiff, low active-ROM today) IS a
+  load-down signal.
+- Pre-load CAR check: 60 seconds of CARs on the day's primary joint before
+  warmup sets. If the joint moves cleanly, proceed at planned load. If it's
+  catching, locked, or painful, drop intensity 10–20%. Pain = stop.
+- This is NOT a session blocker. It's a 60-second readiness primitive on top
+  of the existing readiness score.
+
+### What FRC does NOT do
+- **FRC does not prescribe hypertrophy rep schemes or 1RM programming.** End-
+  range isometrics drive joint capsule and tissue tolerance, not muscle
+  cross-sectional area or maximal strength.
+- **FRC does not replace heavy lifting for strength.** Active ROM under
+  bodyweight ≠ strength under load.
+- **Full-ROM heavy compound lifting does NOT replace daily CARs.** Squats
+  load the hip but don't move it through its full circle, and they don't
+  provide the daily low-intensity input the capsule needs.
+- **CARs are not a workout.** They're a 5-minute daily input, like brushing
+  teeth. Athletes who treat them as a workout will skip them.
+
+### Where FRC + strength meet (the overlap zone)
+- **Full-ROM compound lifts**: a deep ATG squat is a hip mobility input AND a
+  quad hypertrophy stimulus. RDLs to the floor train hamstring length AND
+  hypertrophy. Train both legs of the philosophy on the same exercise when
+  the ROM is honest.
+- **End-range loaded work**: PAILs/RAILs build the capsule tolerance that
+  lets you safely load deeper positions. The mobile chassis lets the
+  hypertrophy engine push harder.
+`;
+
+// ── Longevity cardio — polarized model + tendons + power preservation ─────────
+// Lockedin's "Durable" leg. Zone 2 + 1× VO2max per week; tendon isometrics;
+// power preservation (5×3 jumps). Focuses on what actually moves the longevity
+// needle past 30 rather than generic "do some cardio" framing.
+
+export const LONGEVITY_CARDIO_KNOWLEDGE = `
+## Longevity Cardio — Polarized + Power Preservation
+
+For athletes past 30, cardio is not a side dish — it's a longevity primitive.
+VO2max is the single strongest biomarker for all-cause mortality
+(Mandsager et al., JAMA 2018: above-average VO2max → ~3–4× lower mortality
+vs below-average). But zone-2-only training plateaus VO2max in trained
+athletes. The polarized model is the modern standard.
+
+### Polarized cardio model (~80/20)
+- **~80% of weekly cardio at Zone 2**: conversational pace, nose-breathable,
+  HR roughly 60–70% of max. Aerobic base, mitochondrial density, metabolic
+  flexibility, fat oxidation. Target: 150 minutes/week minimum, 180+ for
+  athletes who can recover from it.
+- **~20% at high intensity** (VO2max work or above lactate threshold): one
+  weekly session is enough to drive VO2max in trained athletes. More than
+  one competes with strength recovery.
+- **Don't live in the "moderate" middle.** Zone 3 (above conversational,
+  below VO2max) accumulates fatigue without driving either adaptation
+  efficiently. Polarize: easy stays easy, hard stays hard.
+
+### VO2max protocol — Norwegian 4×4 (gold standard)
+- **Warm-up**: 10 min easy.
+- **Main set**: 4 minutes at ~90–95% HRmax (RPE 8–9, hard but sustainable
+  across 4 intervals), 3 minutes easy recovery.
+- **Repeat**: 4 times total (4 work + 4 recovery intervals = ~28 min main set).
+- **Cool-down**: 5–10 min easy.
+- **Equipment-agnostic**: treadmill (incline 4–6%, ~9–10 km/h works for
+  most), assault bike, rower, hill repeats, elliptical. Hotel treadmill
+  qualifies.
+- **Frequency**: 1× per week for general athletes. 2× per week only in
+  dedicated cardio blocks (rare for strength athletes; recovery cost is real).
+- **Effect**: drives VO2max ~10% over 8–12 weeks in untrained, ~3–5% in
+  trained. Even small gains translate to large mortality reductions.
+
+### When the polarized model bends
+- **Competition arcs (powerlifting peak)**: drop VO2max work during peak
+  weeks — its recovery cost competes with bar-speed adaptation. Keep zone 2
+  as walks/easy bike for active recovery.
+- **High-volume strength blocks**: keep VO2max to 1× per week, scheduled
+  48h+ from heavy lower-body sessions.
+- **Returning from injury/illness**: rebuild zone 2 first, add VO2max once
+  the aerobic base is back.
+
+### Heavy isometrics for tendons (Keith Baar) — durability layer
+- Tendons adapt to **slow, heavy, sustained loading**, not high-rep dynamic
+  work. They turn over slowly (years), and turnover slows further past 30.
+- **Protocol**: 5 × 30s isometric holds at ~70–80% of the max load you
+  could sustain for 30s. Spanish squat iso (patellar), heavy single-leg
+  calf iso on a step (achilles), copenhagen plank (groin), bench press iso
+  in the bottom (pec/biceps tendon).
+- **Frequency**: twice weekly per tendon, as a session finisher (3–5 min
+  at the end of a strength session).
+- **ROI**: patellar tendinopathy, achilles tendinopathy, golfer's/tennis
+  elbow prevention. Cheaper than rehab by an order of magnitude.
+
+### Power preservation — 5×3 jumps/throws
+- **Fast-twitch fibers decline fastest past 30.** They're not used in 8–12
+  rep hypertrophy work or in slow heavy strength work, so they atrophy
+  silently.
+- **Antidote**: 5 × 3 reps of explosive work, 60–90s rest between sets,
+  before the main strength work. Box jumps, broad jumps, vertical jumps,
+  med ball slams, kettlebell swings (powerful), or sprints.
+- **Total time**: ~5 minutes. Doesn't compete with strength — actually
+  primes the nervous system for it.
+- **Frequency**: every strength session, or 3–4× per week minimum.
+- **Why it matters**: maintaining power past 30 correlates strongly with
+  reduced fall risk, sustained athletic capability, and preserved
+  fast-twitch fiber count. It's the cheapest anti-aging intervention in
+  the gym.
+- **Skip if**: acute lower-body injury, joint flare, severe sleep debt.
+  Otherwise non-negotiable.
+
+### Estimating VO2max without lab access
+- **Cooper test**: max distance run in 12 minutes. Formula:
+  VO2max ≈ (distance_meters - 504.9) / 44.73.
+- **Rockport walk test**: 1-mile fast walk, log time + HR at finish; formula
+  in any cardio textbook.
+- **Wearables**: Apple Watch, Garmin, Polar all estimate VO2max from HR +
+  pace data. Trend over 12+ weeks is more meaningful than absolute value.
+
+### Daily movement floor (the non-cardio cardio)
+- **Steps**: 7,000–10,000/day baseline. Mortality reductions plateau around
+  10k for most populations.
+- **Stair climbs**: a flight of stairs per day correlates with reduced
+  cardiovascular events. Skip the elevator.
+- **Walks after meals**: 10 min walks post-meal improve glucose response
+  and aerobic exposure. Counts toward zone 2 if at conversational pace.
+
+### What this section does NOT cover
+- Sport-specific endurance training (marathon, hyrox, triathlon). Athletes
+  with sport-cardio needs program separately.
+- Detailed heart-rate zones beyond the polarized model. The 5-zone model
+  is fine for athletes who want precision; for most, "easy / hard / very
+  hard" is sufficient.
+`;
+
 // ── Assembler ─────────────────────────────────────────────────────────────────
 
 /**
@@ -2201,6 +2508,11 @@ export function getFullKnowledge(): string {
     INJURY_KNOWLEDGE,
     PROGRAMMING_KNOWLEDGE,
     ALT_METHODOLOGY_KNOWLEDGE,
+    // Phase A unified-philosophy additions — the strong + big + mobile + durable
+    // backbone. Always present in the full prompt; topic-routed in topic mode.
+    HYBRID_STRENGTH_KNOWLEDGE,
+    FRC_MOBILITY_KNOWLEDGE,
+    LONGEVITY_CARDIO_KNOWLEDGE,
   ].join('\n');
 }
 
@@ -2360,6 +2672,52 @@ const KW_ALT_METHOD    = [
   '5/3/1', 'wendler', 'bulgarian',
   'undulat', 'linear progression',
 ] as const;
+// Modern hypertrophy + time-efficient strength (Phase A — "Big" leg).
+const KW_HYBRID_STRENGTH = [
+  'hypertrophy', 'mass', 'size', 'grow', 'gain muscle', 'add muscle',
+  'bigger', 'mass gain', 'put on size',
+  'lengthened', 'stretch-mediated', 'lengthened partial', 'lengthened bias',
+  'sfr', 'stimulus to fatigue', 'stimulus-to-fatigue',
+  'mev', 'mav', 'mrv', 'volume landmark', 'junk volume',
+  'cluster', 'cluster set', 'rest-pause', 'rest pause', 'myo-rep', 'myo rep',
+  'proximity to failure', 'close to failure', 'failure',
+  'rir', 'reps in reserve',
+  'double progression', 'rep range',
+  'short workout', 'time efficient', 'time-efficient', '45 min', '60 min',
+  'focused session',
+] as const;
+// FRC + Knees-Over-Toes (Phase A — "Mobile" leg).
+const KW_FRC_MOBILITY = [
+  'car ', 'cars', 'controlled articular',
+  'pail', 'rail', 'pails', 'rails', 'end-range', 'end range',
+  'active rom', 'passive rom', 'rom gap', 'active range', 'passive range',
+  'capsule', 'capsular', 'tissue tolerance',
+  'frc', 'functional range', 'spina',
+  'mobility', 'mobile', 'range of motion', 'rom ', ' rom',
+  'joint health', 'joint capsule', 'joint',
+  'stiff', 'tight joint', 'lock', 'locked up',
+  'atg', 'knees over toes', 'knees-over-toes', 'koft',
+  'tibialis', 'tib raise', 'nordic', 'sissy squat', 'spanish squat',
+  'backwards sled', 'reverse sled', 'sled drag',
+  'hover', 'lift-off', 'lift off',
+  'shoulder car', 'hip car', 'ankle car', 't-spine car',
+] as const;
+// Longevity cardio + power preservation + tendons (Phase A — "Durable" leg).
+const KW_LONGEVITY_CARDIO = [
+  'cardio', 'aerobic', 'conditioning',
+  'zone 2', 'zone two', 'zone-2', 'z2 ',
+  'vo2', 'vo2max', 'vo2 max', 'aerobic capacity',
+  'interval', 'norwegian', '4x4', '4×4', 'hiit',
+  'polarized', 'polarised', '80/20',
+  'longevity', 'healthspan', 'mortality', 'lifespan',
+  'tendon', 'tendinopathy', 'tendinitis',
+  'heavy isometric', 'isometric hold', 'baar',
+  'patellar', 'achilles', 'spanish squat',
+  'power preservation', 'fast twitch', 'fast-twitch',
+  'jump ', 'jumps', 'plyometric', 'plyo', 'box jump', 'broad jump', 'med ball',
+  'sprint', 'explosive',
+  'steps', 'walk', 'cooper test',
+] as const;
 // Framework keywords — meta-layer about how to coach (mindset, decision-making,
 // athlete patterns, voice). Distinct from KW_COACH which is named philosophies.
 const KW_FRAMEWORK     = [
@@ -2415,15 +2773,37 @@ const SECTION_CATALOG: readonly KbSection[] = [
   { content: INJURY_KNOWLEDGE,                keywords: KW_INJURY,         softCap: 800  },
   { content: PROGRAMMING_KNOWLEDGE,           keywords: KW_PROGRAMMING,    softCap: 1000 },
   { content: ALT_METHODOLOGY_KNOWLEDGE,       keywords: KW_ALT_METHOD,     softCap: 1000 },
+  // Unified-philosophy backbones (Phase A — strong/big/mobile/durable).
+  { content: HYBRID_STRENGTH_KNOWLEDGE,       keywords: KW_HYBRID_STRENGTH, softCap: 2200 },
+  { content: FRC_MOBILITY_KNOWLEDGE,          keywords: KW_FRC_MOBILITY,    softCap: 2200 },
+  { content: LONGEVITY_CARDIO_KNOWLEDGE,      keywords: KW_LONGEVITY_CARDIO, softCap: 2000 },
 ];
 
 const TOTAL_KNOWLEDGE_BUDGET = 6000;
+
+/**
+ * Identifiers for the unified-philosophy backbones, used by callers to force
+ * a section into the prompt regardless of keyword match (e.g., always include
+ * FRC when the active arc has MOBILITY in its priorities).
+ */
+export type ForceIncludeSection =
+  | 'HYBRID_STRENGTH'
+  | 'FRC_MOBILITY'
+  | 'LONGEVITY_CARDIO';
+
+const FORCE_INCLUDE_MAP: Record<ForceIncludeSection, string> = {
+  HYBRID_STRENGTH:  HYBRID_STRENGTH_KNOWLEDGE,
+  FRC_MOBILITY:     FRC_MOBILITY_KNOWLEDGE,
+  LONGEVITY_CARDIO: LONGEVITY_CARDIO_KNOWLEDGE,
+};
 
 /**
  * Returns knowledge relevant to a specific topic.
  *
  * Algorithm:
  * 1. Score each catalog section by keyword-match count + priority bonus.
+ *    Sections in `forceInclude` get a flat bonus so they survive the gate
+ *    even if the user message doesn't mention their keywords.
  * 2. Sort by score (descending), keeping framework pinned first.
  * 3. Assemble within TOTAL_KNOWLEDGE_BUDGET. If a section's softCap would
  *    exceed remaining budget, slice it. Skip sections with score 0 once the
@@ -2431,14 +2811,30 @@ const TOTAL_KNOWLEDGE_BUDGET = 6000;
  *
  * Keywords are matched case-insensitively as substrings (kept simple — no
  * embeddings — to stay debuggable and zero-dependency).
+ *
+ * @param topic         The user's message (or any text to score keywords on).
+ * @param forceInclude  Section identifiers to force into the prompt even
+ *                      when keyword score is zero. Typically derived from
+ *                      the active arc (MOBILITY priority → FRC_MOBILITY,
+ *                      LONGEVITY goal → LONGEVITY_CARDIO).
  */
-export function getTopicKnowledge(topic: string): string {
+export function getTopicKnowledge(
+  topic: string,
+  forceInclude?: readonly ForceIncludeSection[],
+): string {
   const t = topic.toLowerCase();
+  const forced = new Set<string>(
+    (forceInclude ?? []).map((id) => FORCE_INCLUDE_MAP[id]),
+  );
 
-  // Score every section.
+  // Score every section. Forced sections get a flat bonus that keeps them
+  // above the score>0 gate without dominating the priority-pinned framework.
   const scored = SECTION_CATALOG.map((sec) => ({
     sec,
-    score: countMatches(t, sec.keywords) + (sec.priorityBonus ?? 0),
+    score:
+      countMatches(t, sec.keywords)
+      + (sec.priorityBonus ?? 0)
+      + (forced.has(sec.content) ? 50 : 0),
   }));
 
   // Sort descending by score; stable fallback preserves catalog order.

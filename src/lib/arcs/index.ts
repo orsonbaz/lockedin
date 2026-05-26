@@ -217,6 +217,27 @@ async function writeTransition(
 
 // ── Presets ──────────────────────────────────────────────────────────────────
 
+/**
+ * The unifying training philosophy. Prepended to every arc directive by
+ * `buildArcSection()` so the coach always operates from the same thesis,
+ * weighted differently per arc rather than re-stated each time.
+ *
+ * Strong + Big come from heavy compounds (RPE 7–9) and modern hypertrophy
+ * (SFR, lengthened-bias, proximity-to-failure, MEV→MRV). Mobile comes from
+ * FRC (daily CARs, PAILs/RAILs for the active-ROM gap) plus Knees-Over-Toes
+ * end-range loading. Durable comes from polarized cardio (zone 2 + 1× VO2max),
+ * tendon isometrics, and power preservation. The four legs reinforce; they
+ * never compete.
+ */
+export const TRAINING_PHILOSOPHY = `
+TRAINING PHILOSOPHY: Get strong and big while being as mobile and durable as possible — on focused sessions, for decades.
+- Strong + Big come from heavy compounds and modern hypertrophy (SFR exercise pick, lengthened-bias, proximity-to-failure 0–3 RIR, MEV→MRV volume landmarks, cluster sets for time-efficient strength).
+- Mobile comes from FRC: daily CARs as a floor, PAILs/RAILs for any joint with an active/passive ROM gap, plus Knees-Over-Toes loaded end-range work.
+- Durable comes from polarized cardio (zone 2 + 1× VO2max session), heavy tendon isometrics, and power preservation (jumps/throws past age 30).
+- Stimulus per minute > stimulus per session. No long workouts as a side-effect.
+- FRC does NOT prescribe hypertrophy rep schemes or 1RM programming; modern hypertrophy methods do NOT replace heavy strength work. Use the right tool per leg.
+`.trim();
+
 export interface ArcPreset {
   key: string;
   name: string;
@@ -232,82 +253,99 @@ export interface ArcPreset {
 /**
  * Curated starting points for the most common training seasons. The new-arc
  * page seeds these into the form; athletes are expected to edit before saving.
+ *
+ * Each `coachDirective` weights the unifying TRAINING_PHILOSOPHY for that
+ * season — it does NOT restate the philosophy. The coach prepends the philosophy
+ * once per turn via `buildArcSection()`.
  */
 export const ARC_PRESETS: ArcPreset[] = [
   {
     key: 'get_healthy',
     name: 'Get Healthy',
-    intent: 'Rebuild durable joint health and mobility while keeping baseline strength.',
+    intent: 'Rebuild durable joint health and mobility on a strong, mobile chassis — without losing size.',
     primaryGoal: 'LONGEVITY',
     priorities: ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'],
     deprioritized: ['COMPETITION'],
     constraints: ['POST_INJURY'],
     coachDirective:
-      'Prioritize joint health over peak performance. ' +
-      'Treat barbell and weighted-calisthenics strength as co-equal expressions. ' +
-      'When in doubt, choose the joint-friendly variation.',
+      'Build sustainable strength and size on a mobile chassis. Daily CARs are the floor. ' +
+      'PAILs/RAILs for any joint with a >15° active/passive gap. ATG split squat + Nordics ' +
+      'build durable knees. Lengthened-bias accessories (DB RDL, deep ROM lunges) over ' +
+      'standard variants. Hypertrophy work in the 8–15 rep range. Polarized cardio: zone 2 ' +
+      'most of the week, one VO2max session.',
   },
   {
     key: 'get_strong',
     name: 'Get Strong Again',
-    intent: 'Rebuild a sustainable strength base across both barbell and weighted-calisthenics tracks.',
+    intent: 'Rebuild a sustainable strength base — strong, big, and mobile in parallel.',
     primaryGoal: 'STRENGTH_PROGRESSION',
     priorities: ['STRENGTH_BARBELL', 'STRENGTH_CALISTHENICS', 'MOBILITY'],
     deprioritized: ['COMPETITION'],
     constraints: [],
     coachDirective:
-      'Push intensity but stay clear of grinders. Track Comfortable Heavy Singles, not true 1RMs. ' +
-      'Run 2-3 strength sessions per week with one full-ROM accessory day.',
+      'Hypertrophy is co-equal with top-set strength. Lengthened-bias accessories, 1–3 hard sets ' +
+      'close to failure (0–3 RIR). Cluster sets and rest-pause for heavy work so sessions stay ' +
+      'under an hour. Track Comfortable Heavy Singles, not true 1RMs. Daily CARs on training-day ' +
+      'joints. One VO2max session per week through the build.',
   },
   {
     key: 'back_to_powerlifting',
     name: 'Back to Powerlifting',
-    intent: 'Peak for a powerlifting or street-lift meet.',
+    intent: 'Peak for a powerlifting or street-lift meet without losing mobility or durability.',
     primaryGoal: 'COMPETITION_PREP',
     priorities: ['COMPETITION', 'STRENGTH_BARBELL', 'MOBILITY'],
     deprioritized: ['CONDITIONING', 'BODY_COMP'],
     constraints: [],
     coachDirective:
-      'Specificity wins — bias SBD comp lifts. Use intelligent attempt selection. ' +
-      'Stay healthy through the peak; pull back at the first sign of a flare-up.',
+      'Specificity wins — bias SBD comp lifts. Linear macrocycle (accumulation → intensification ' +
+      '→ realization). Use intelligent attempt selection. Pre-load CARs for the day\'s primary ' +
+      'joint stay in even during peak — they\'re a readiness check, not a workout. One VO2max ' +
+      'session per week through accumulation; drop it during peak. Pull back at the first sign ' +
+      'of a flare-up.',
   },
   {
     key: 'new_dad',
     name: 'New Dad / No Time',
-    intent: 'Hold the line on strength and movement with whatever minutes are available.',
+    intent: 'Hold the line on strength, size, and movement with whatever minutes are available.',
     primaryGoal: 'MAINTENANCE',
     priorities: ['TIME_EFFICIENT', 'STRENGTH_CALISTHENICS', 'MOBILITY', 'STRESS_REDUCTION'],
     deprioritized: ['COMPETITION', 'BODY_COMP'],
     constraints: ['LIMITED_TIME', 'HIGH_LIFE_STRESS', 'SLEEP_DEPRIVED'],
     weeklyTimeBudgetMin: 120,
     coachDirective:
-      'Sessions cap at 30 minutes. Compound lifts only, full-body splits. ' +
-      'Cardio counts as steps and play with the kid — not formal zone 2.',
+      'Morning CARs (5 min) are the non-negotiable, even when training doesn\'t happen. Sessions ' +
+      'cap at 30 minutes — cluster sets and rest-pause for strength density, 1–2 hard sets ' +
+      'close to failure for hypertrophy. Compound lifts only, full-body splits. Cardio counts as ' +
+      'steps and play with the kid — formal zone 2 is a nice-to-have, not a must.',
   },
   {
     key: 'travel_heavy',
     name: 'Traveling Heavy',
-    intent: 'Stay in shape with hotel gyms and bodyweight.',
+    intent: 'Stay strong, big, and mobile from hotel gyms and bodyweight.',
     primaryGoal: 'GENERAL_FITNESS',
     priorities: ['STRENGTH_CALISTHENICS', 'CONDITIONING', 'MOBILITY'],
     deprioritized: ['STRENGTH_BARBELL', 'COMPETITION'],
     constraints: ['TRAVELING_FREQUENTLY', 'EQUIPMENT_LIMITED'],
     weeklyTimeBudgetMin: 180,
     coachDirective:
-      'Default to bodyweight + dumbbell circuits. If a barbell is available, ' +
+      'CARs travel for free — daily floor regardless of training. Default to bodyweight + ' +
+      'dumbbell circuits with lengthened-bias picks (DB RDL, deficit pushup, deep-ROM lunges). ' +
+      'Norwegian 4×4 on a hotel treadmill counts as a full session. If a barbell is available, ' +
       'one heavy day per trip is enough — quality over quantity.',
   },
   {
     key: 'mobility_rebuild',
     name: 'Mobility Rebuild',
-    intent: 'Restore range of motion after a sedentary period or post-injury.',
+    intent: 'Restore range of motion after a sedentary period or post-injury — close the active-ROM gap.',
     primaryGoal: 'MOBILITY_REBUILD',
     priorities: ['MOBILITY', 'INJURY_HEALING', 'STRENGTH_CALISTHENICS'],
     deprioritized: ['COMPETITION', 'STRENGTH_BARBELL'],
     constraints: ['POST_INJURY'],
     coachDirective:
-      'Daily mobility flow is non-negotiable. Strength work is light, full-ROM, tempo-biased. ' +
-      'No max effort. ROM markers tracked weekly.',
+      'Close the active-ROM gap — that\'s the metric. Daily CARs are non-negotiable. PAILs/RAILs ' +
+      'on any joint with a >15° passive-vs-active gap. Knees-Over-Toes progressions (ATG split ' +
+      'squat, backwards sled, tibialis raises, Nordics) where appropriate. Strength work is tempo ' +
+      'loaded full-ROM patterning, not a 1RM rebuild. ROM markers tracked weekly.',
   },
 ];
 

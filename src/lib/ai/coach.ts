@@ -13,11 +13,17 @@ import {
   getActiveArc,
   listTransitions,
   arcDayCount,
+  TRAINING_PHILOSOPHY,
   ARC_PRIORITY_LABELS,
   ARC_CONSTRAINT_LABELS,
 } from '@/lib/arcs';
+import type { TrainingArc } from '@/lib/db/types';
 import { readinessLabel }   from '@/lib/engine/readiness';
-import { getFullKnowledge, getTopicKnowledge } from './knowledge-base';
+import {
+  getFullKnowledge,
+  getTopicKnowledge,
+  type ForceIncludeSection,
+} from './knowledge-base';
 import { buildMemorySection, buildSummarySection } from './memory';
 import { buildWeakPointsSection } from '@/lib/engine/weak-points';
 import { buildNutritionSection } from '@/lib/engine/nutrition-db';
@@ -42,11 +48,14 @@ export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: stri
 // Per-section character caps. Total ceiling ~12k chars for Gemini.
 // The `knowledge` cap is dynamic.
 const SECTION_CAPS = {
-  role:       600,
+  // Role cap raised to 1300 in Phase A to fit the unified strong+big+mobile+
+  // durable role statement without truncation.
+  role:       1300,
   // Arc is the athlete's persistent training context (v8). It frames every
   // other section — keep it cheap to render but generous on the cap so the
-  // coachDirective body always fits in full.
-  arc:        1200,
+  // coachDirective body always fits in full. Cap raised to 2000 in Phase A
+  // to accommodate the prepended TRAINING_PHILOSOPHY single source of truth.
+  arc:        2000,
   profile:    500,
   program:    800,
   state:      500,
@@ -108,24 +117,31 @@ function renderSection(section: PromptSection, cap: number): string {
  */
 /**
  * Build the "Active Arc" section — the athlete's persistent training context.
- * Returns empty string when no arc is active so the section is omitted.
+ *
+ * Prepends the unifying TRAINING_PHILOSOPHY (single source of truth) so each
+ * arc directive doesn't need to restate it. When no arc is active, returns
+ * just the philosophy so the coach still has the unifying voice — important
+ * for first-run users who haven't created an arc yet.
+ *
+ * @param arc  Optional pre-fetched arc to avoid re-querying Dexie. When
+ *             omitted, this function fetches via `getActiveArc()` itself.
  */
-async function buildArcSection(): Promise<string> {
-  const arc = await getActiveArc();
-  if (!arc) return '';
+async function buildArcSection(arc?: TrainingArc | null): Promise<string> {
+  const activeArc = arc !== undefined ? arc : await getActiveArc();
+  if (!activeArc) return TRAINING_PHILOSOPHY;
 
-  const day = arcDayCount(arc, today());
-  const priorities = arc.priorities.length > 0
-    ? arc.priorities.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(' > ')
+  const day = arcDayCount(activeArc, today());
+  const priorities = activeArc.priorities.length > 0
+    ? activeArc.priorities.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(' > ')
     : '(none specified)';
-  const deprioritized = arc.deprioritized.length > 0
-    ? arc.deprioritized.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(', ')
+  const deprioritized = activeArc.deprioritized.length > 0
+    ? activeArc.deprioritized.map((p) => ARC_PRIORITY_LABELS[p] ?? p).join(', ')
     : 'none';
-  const constraints = arc.constraints.length > 0
-    ? arc.constraints.map((c) => ARC_CONSTRAINT_LABELS[c] ?? c).join(', ')
+  const constraints = activeArc.constraints.length > 0
+    ? activeArc.constraints.map((c) => ARC_CONSTRAINT_LABELS[c] ?? c).join(', ')
     : 'none';
-  const budgetLine = arc.weeklyTimeBudgetMin
-    ? `Weekly time budget: ${arc.weeklyTimeBudgetMin} min.`
+  const budgetLine = activeArc.weeklyTimeBudgetMin
+    ? `Weekly time budget: ${activeArc.weeklyTimeBudgetMin} min.`
     : 'No weekly time cap.';
 
   // Recent transitions — last 2 the athlete has been involved in, summary
@@ -139,12 +155,12 @@ async function buildArcSection(): Promise<string> {
       recent.map(async (t) => {
         // Skip the transition INTO the current arc (already shown above);
         // surface only outgoing / prior context.
-        if (t.toArcId === arc.id && !t.fromArcId) return null;
-        const otherId = t.toArcId === arc.id ? t.fromArcId : t.toArcId;
+        if (t.toArcId === activeArc.id && !t.fromArcId) return null;
+        const otherId = t.toArcId === activeArc.id ? t.fromArcId : t.toArcId;
         if (!otherId) return null;
         const other = await db.trainingArcs.get(otherId);
         if (!other) return null;
-        const tag = t.toArcId === arc.id ? 'Came from' : 'Switched to';
+        const tag = t.toArcId === activeArc.id ? 'Came from' : 'Switched to';
         const summary = t.summary ? ` — ${t.summary}` : '';
         return `  - ${tag} "${other.name}" on ${t.createdAt.slice(0, 10)}${summary}`;
       }),
@@ -155,9 +171,9 @@ async function buildArcSection(): Promise<string> {
     }
   }
 
-  const directive = arc.coachDirective.trim() || '(no specific directive set)';
-  const successMarkers = arc.successMarkers && arc.successMarkers.length > 0
-    ? `\nSuccess markers: ${arc.successMarkers.join('; ')}.`
+  const directive = activeArc.coachDirective.trim() || '(no specific directive set)';
+  const successMarkers = activeArc.successMarkers && activeArc.successMarkers.length > 0
+    ? `\nSuccess markers: ${activeArc.successMarkers.join('; ')}.`
     : '';
 
   // Phasing model: a competition arc gets the linear powerlifting macrocycle
@@ -165,15 +181,17 @@ async function buildArcSection(): Promise<string> {
   // open-ended sustainable rhythm — no peaking, no "weeks out", no realization.
   // Spelling this out keeps the coach from defaulting to meet-prep vocabulary
   // on a "Get Healthy" / "New Dad" / "Mobility Rebuild" arc.
-  const competitionMode = arc.priorities.includes('COMPETITION');
+  const competitionMode = activeArc.priorities.includes('COMPETITION');
   const phasingLine = competitionMode
     ? 'Macrocycle framing: COMPETITION mode. The standard linear macrocycle applies — accumulation → intensification → realization. It is appropriate to reference "weeks out", peak timing, attempt selection, and the upcoming realization block.'
     : 'Macrocycle framing: LONGEVITY mode. The macrocycle uses an open-ended sustainable rhythm (HEALTH_BASE work blocks with periodic deloads — never a realization peak). Do NOT frame programming in terms of "weeks out", "peaking", "time to peak", "meet prep", "realization", or "intensification block". Strength compounds through consistent dosed work, not by stacking phases toward a date. If the athlete asks to peak, propose UPDATE_ARC to add COMPETITION to priorities first.';
 
   return [
-    `ACTIVE ARC: "${arc.name}" — started ${arc.startDate}, day ${day}.`,
-    `Intent: ${arc.intent.trim()}`,
-    `Primary goal: ${arc.primaryGoal}.`,
+    TRAINING_PHILOSOPHY,
+    '',
+    `ACTIVE ARC: "${activeArc.name}" — started ${activeArc.startDate}, day ${day}.`,
+    `Intent: ${activeArc.intent.trim()}`,
+    `Primary goal: ${activeArc.primaryGoal}.`,
     `Priorities (ordered, dominant first): ${priorities}.`,
     `Deprioritized: ${deprioritized}.`,
     `Constraints: ${constraints}. ${budgetLine}${successMarkers}`,
@@ -181,6 +199,30 @@ async function buildArcSection(): Promise<string> {
     phasingLine,
     recentArcsBlock,
   ].filter(Boolean).join('\n');
+}
+
+/**
+ * Derive which unified-philosophy knowledge sections should be force-included
+ * for a given arc. The coach should hear about FRC on any mobility-priority
+ * arc, longevity cardio on any LONGEVITY/MOBILITY_REBUILD arc, and hybrid
+ * strength when the arc deprioritizes COMPETITION (i.e., size/strength is the
+ * day-to-day goal rather than peaking).
+ */
+function arcForceIncludeSections(
+  arc: TrainingArc | null,
+): ForceIncludeSection[] {
+  if (!arc) return [];
+  const sections: ForceIncludeSection[] = [];
+  if (arc.priorities.includes('MOBILITY') || arc.priorities.includes('INJURY_HEALING')) {
+    sections.push('FRC_MOBILITY');
+  }
+  if (arc.primaryGoal === 'LONGEVITY' || arc.primaryGoal === 'MOBILITY_REBUILD' || arc.primaryGoal === 'GENERAL_FITNESS') {
+    sections.push('LONGEVITY_CARDIO');
+  }
+  if (!arc.priorities.includes('COMPETITION')) {
+    sections.push('HYBRID_STRENGTH');
+  }
+  return sections;
 }
 
 export async function buildSystemPrompt(
@@ -491,13 +533,22 @@ export async function buildSystemPrompt(
     bwTrend = `Bodyweight trend (${recentBw.length}d): ${latest}kg (${diff > 0 ? '+' : ''}${diff.toFixed(1)}kg from ${recentBw.length} days ago).`;
   }
 
-  // ── Knowledge base (topic-aware) ──────────────────────────────────────────
-  const knowledge = userMessage ? getTopicKnowledge(userMessage) : getFullKnowledge();
+  // ── Active arc (read once; reused below for knowledge + arc section) ─────
+  const activeArc = await getActiveArc();
+  const forceInclude = arcForceIncludeSections(activeArc);
+
+  // ── Knowledge base (topic-aware, arc-aware) ───────────────────────────────
+  // Arc context force-includes its philosophy backbones (FRC, hybrid strength,
+  // longevity cardio) even when the user's message doesn't mention them, so
+  // the coach is always grounded in the unified style for the active season.
+  const knowledge = userMessage
+    ? getTopicKnowledge(userMessage, forceInclude)
+    : getFullKnowledge();
   const knowledgeCap = 6000;
 
   // ── Active arc + long-term memory + rolling conversation summary + weak points + nutrition + wearables ─
   const [arcBody, memoriesBody, summaryBody, weakPointsBody, nutritionBody, wearablesBody] = await Promise.all([
-    buildArcSection(),
+    buildArcSection(activeArc),
     buildMemorySection(userMessage, SECTION_CAPS.memories),
     buildSummarySection(SECTION_CAPS.summary),
     buildWeakPointsSection(SECTION_CAPS.weakPoints),
@@ -622,7 +673,7 @@ Worked example (open-ended ask — the coach does the inference, NOT REGENERATE_
   const sections: PromptSection[] = [
     {
       name: 'role',
-      content: 'You are the Lockedin AI coach — an elite strength coach. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor. Operate from the Coaching Intelligence Framework and the wider knowledge base — synthesise across the philosophies they encode rather than quoting individual coaches. When an Active Arc is present, treat it as the FIRST input: every recommendation must serve the arc\'s intent, respect its priorities and constraints, and avoid its deprioritized areas. Lean on RPE autoregulation, readiness signals, recent-exposure awareness, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
+      content: 'You are the Lockedin AI coach — an elite strength + longevity coach. The athlete\'s aim is to be strong, big, mobile, and durable in parallel, on focused sessions, for decades. You program powerlifting, street lifting (weighted pull-up + weighted dip), and weighted calisthenics with equal rigor for the strength side, and you back it with FRC-aligned mobility (daily CARs, PAILs/RAILs, Knees-Over-Toes) and polarized cardio (zone 2 + 1× VO2max) for the longevity side. Operate from the Coaching Intelligence Framework and the wider knowledge base — synthesise across the philosophies they encode rather than quoting individual coaches. When an Active Arc is present, treat it as the FIRST input: every recommendation must serve the arc\'s intent, respect its priorities and constraints, and avoid its deprioritized areas. Lean on RPE autoregulation, readiness signals, recent-exposure awareness, specificity, adherence, and fatigue management. Be direct and opinionated — no fluff.',
     },
     {
       name: 'arc',
