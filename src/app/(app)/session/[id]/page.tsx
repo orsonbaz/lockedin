@@ -30,7 +30,8 @@ import { EXERCISE_BY_ID }                                 from '@/lib/exercises/
 import type { SwapCandidate, UserEquipmentProfile }        from '@/lib/exercises/types';
 import { listActiveInjuries }                              from '@/lib/injuries';
 import { getActiveArc }                                    from '@/lib/arcs';
-import { ensureSessionFresh }                             from '@/lib/engine/ensure-session-fresh';
+import { ensureSessionFresh, regenerateSessionWithPrimary } from '@/lib/engine/ensure-session-fresh';
+import type { Lift }                                       from '@/lib/db/types';
 import { unpackReviewIssues }                             from '@/lib/engine/session-review';
 import { detectSessionPRs }                               from '@/lib/engine/session-prs';
 import type { SessionPR }                                 from '@/lib/engine/session-prs';
@@ -284,20 +285,48 @@ function sessionHeaderLabel(
     }
   })();
 
-  const focus = (() => {
-    if (mode === 'BARBELL') return primaryLift;
-    // Translate Lift labels into arc-appropriate focus words.
-    switch (primaryLift) {
-      case 'UPPER':    return 'Pull';
-      case 'LOWER':    return 'Legs';
-      case 'FULL':     return 'Full Body';
-      case 'SQUAT':    return 'Squat';
-      case 'BENCH':    return 'Press';
-      case 'DEADLIFT': return 'Hinge';
-    }
-  })();
+  const focus = focusLabel(primaryLift, arc);
 
   return `${framing} — ${focus}`;
+}
+
+/** Human-readable focus word for a Lift, given the active arc context. */
+function focusLabel(primaryLift: TrainingSession['primaryLift'], arc: TrainingArc | null): string {
+  const mode = resolveArcMode(arc?.priorities);
+  if (mode === 'BARBELL') return primaryLift;
+  switch (primaryLift) {
+    case 'UPPER':    return 'Pull';
+    case 'LOWER':    return 'Legs';
+    case 'FULL':     return 'Full Body';
+    case 'SQUAT':    return 'Squat';
+    case 'BENCH':    return 'Press';
+    case 'DEADLIFT': return 'Hinge';
+  }
+}
+
+/**
+ * Available primary-lift choices for the "Change focus" modal, gated by the
+ * active arc mode so the picker doesn't offer competition squats on a Get
+ * Healthy arc (or pistols on a meet-prep arc, for that matter).
+ */
+function focusOptions(arc: TrainingArc | null): { lift: TrainingSession['primaryLift']; label: string }[] {
+  const mode = resolveArcMode(arc?.priorities);
+  if (mode === 'BARBELL') {
+    return [
+      { lift: 'SQUAT',    label: 'Squat' },
+      { lift: 'BENCH',    label: 'Bench' },
+      { lift: 'DEADLIFT', label: 'Deadlift' },
+      { lift: 'UPPER',    label: 'Press (Upper)' },
+      { lift: 'LOWER',    label: 'Hinge (Lower)' },
+      { lift: 'FULL',     label: 'Full Body' },
+    ];
+  }
+  // CALISTHENICS + REHAB: same shape — Pull / Legs / Full Body.
+  return [
+    { lift: 'UPPER', label: 'Pull' },
+    { lift: 'LOWER', label: 'Legs' },
+    { lift: 'FULL',  label: 'Full Body' },
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -321,6 +350,10 @@ export default function SessionPage({
   const [todayReadiness,   setTodayReadiness]   = useState<number | undefined>();
   const [equipmentProfile, setEquipmentProfile] = useState<UserEquipmentProfile | null>(null);
   const [activeArc,        setActiveArc]        = useState<TrainingArc | null>(null);
+
+  // ── Change-focus modal ───────────────────────────────────────────────────
+  const [focusModalOpen,   setFocusModalOpen]   = useState(false);
+  const [focusBusy,        setFocusBusy]        = useState(false);
 
   // ── Swap modal ───────────────────────────────────────────────────────────
   const [swapForExId,      setSwapForExId]      = useState<string | null>(null);
@@ -756,6 +789,40 @@ export default function SessionPage({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageState]);
 
+  /** Swap the entire session's primary focus → rebuilds exercises in place. */
+  const changeFocusTo = useCallback(async (lift: Lift) => {
+    if (!session || focusBusy) return;
+    setFocusBusy(true);
+    try {
+      const result = await regenerateSessionWithPrimary(session.id, lift);
+      if (result.status === 'refused') {
+        const msg = result.reason === 'sets-logged'
+          ? "Can't change focus — you've already logged sets on this session."
+          : result.reason === 'session-completed'
+          ? "This session is already complete."
+          : 'Could not change focus right now.';
+        toast(msg, { duration: 3500 });
+        return;
+      }
+      // Reload session + exercises so the page reflects the regenerated state.
+      const [sess, exs] = await Promise.all([
+        db.sessions.get(session.id),
+        db.exercises.where('sessionId').equals(session.id).sortBy('order'),
+      ]);
+      if (sess) setSession(sess);
+      setExercises(exs);
+      setFocusModalOpen(false);
+      toast(`Session refocused on ${focusLabel(result.newPrimaryLift ?? lift, activeArc)}.`, {
+        duration: 2500,
+      });
+    } catch (err) {
+      console.error('[changeFocus] failed:', err);
+      toast('Change focus failed.', { duration: 3000 });
+    } finally {
+      setFocusBusy(false);
+    }
+  }, [session, focusBusy, activeArc]);
+
   /** Open swap modal for an exercise in the overview list. */
   const openSwapModal = useCallback(async (ex: SessionExercise) => {
     const libEx = ex.libraryExerciseId
@@ -1106,6 +1173,15 @@ export default function SessionPage({
               <h1 className="text-2xl font-bold tracking-tight uppercase">
                 {sessionHeaderLabel(sessionBlock?.blockType, session.primaryLift, session.sessionType, activeArc)}
               </h1>
+              <button
+                type="button"
+                onClick={() => setFocusModalOpen(true)}
+                className="mt-2 text-xs font-semibold px-2.5 py-1 rounded-full transition-opacity active:opacity-70"
+                style={{ backgroundColor: `${C.accent}18`, color: C.accent, border: `1px solid ${C.accent}40` }}
+                aria-label="Change today's session focus"
+              >
+                Change focus ↻
+              </button>
             </div>
             <button
               type="button"
@@ -1435,6 +1511,73 @@ export default function SessionPage({
             </button>
           )}
         </div>
+
+        {/* ── Change Focus Modal ─────────────────────────────────────────── */}
+        {focusModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end"
+            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+            onClick={() => { if (!focusBusy) setFocusModalOpen(false); }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Change session focus"
+          >
+            <div
+              className="rounded-t-3xl max-h-[70vh] overflow-y-auto overscroll-contain pb-10"
+              style={{ backgroundColor: C.surface, WebkitOverflowScrolling: 'touch' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 px-5 pt-5 pb-3" style={{ backgroundColor: C.surface }}>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-lg font-bold" style={{ color: C.text }}>
+                    Change session focus
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setFocusModalOpen(false)}
+                    disabled={focusBusy}
+                    className="text-sm px-3 py-1 rounded-lg disabled:opacity-50"
+                    style={{ color: C.muted, backgroundColor: C.dim }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <p className="text-xs" style={{ color: C.muted }}>
+                  Rebuilds today&apos;s exercises around the lift you pick. Logged
+                  sets block the swap.
+                </p>
+              </div>
+              <div className="px-5 pt-2 grid gap-2">
+                {focusOptions(activeArc).map((opt) => {
+                  const current = session.primaryLift === opt.lift;
+                  return (
+                    <button
+                      key={opt.lift}
+                      type="button"
+                      disabled={focusBusy || current}
+                      onClick={() => void changeFocusTo(opt.lift)}
+                      className="w-full py-4 rounded-xl text-base font-semibold text-left px-4 transition-opacity active:opacity-70 disabled:opacity-40"
+                      style={{
+                        backgroundColor: current ? `${C.accent}28` : C.dim,
+                        color: current ? C.accent : C.text,
+                        border: `1px solid ${current ? C.accent : C.border}`,
+                      }}
+                      aria-label={`Refocus session on ${opt.label}`}
+                    >
+                      {opt.label}
+                      {current && (
+                        <span className="ml-2 text-xs font-bold uppercase tracking-widest"
+                              style={{ color: C.accent }}>
+                          Current
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Swap Modal ────────────────────────────────────────────────── */}
         {swapForExId && (

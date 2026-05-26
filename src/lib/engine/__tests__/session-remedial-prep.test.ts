@@ -67,6 +67,14 @@ const baseInput = {
   sessionNumber: 1,
 };
 
+// Remedial prep rows always carry "Rehab prep" or "Rehab + loading" in their
+// notes (see buildRemedialPrep). Counting these directly is more robust than
+// diffing exercise count, because the arc-aware length cap can trim
+// accessories when prep is added.
+function countRehabPrep(exercises: { notes?: string }[]): number {
+  return exercises.filter((e) => /^rehab/i.test(e.notes ?? '')).length;
+}
+
 describe('generateSession — remedial prep injection (v8)', () => {
   it('no injuries → no remedial prep, exercises identical to baseline', () => {
     const baseline = generateSession(baseInput);
@@ -91,11 +99,10 @@ describe('generateSession — remedial prep injection (v8)', () => {
       makeInjury({ id: 'd', regions: ['LEFT_HIP'],      severity: 2 }),
       makeInjury({ id: 'e', regions: ['LEFT_ANKLE'],    severity: 1 }),
     ];
-    const baseline = generateSession(baseInput);
     const session = generateSession({ ...baseInput, activeInjuries: injuries });
-    const added = session.exercises.length - baseline.exercises.length;
-    expect(added).toBeLessThanOrEqual(5);
-    expect(added).toBeGreaterThan(0);
+    const prepCount = countRehabPrep(session.exercises);
+    expect(prepCount).toBeLessThanOrEqual(5);
+    expect(prepCount).toBeGreaterThan(0);
   });
 
   it('every active injury gets at least one remedy — even low-severity', () => {
@@ -112,20 +119,16 @@ describe('generateSession — remedial prep injection (v8)', () => {
 
   it('a solo low-severity injury still gets a couple of remedies', () => {
     const injury = makeInjury({ regions: ['LEFT_SHOULDER'], severity: 2 });
-    const baseline = generateSession(baseInput);
     const session = generateSession({ ...baseInput, activeInjuries: [injury] });
-    const added = session.exercises.length - baseline.exercises.length;
     // Solo injury + severity 2 → base want 1 + solo bonus 1 = 2 remedies.
-    expect(added).toBeGreaterThanOrEqual(2);
+    expect(countRehabPrep(session.exercises)).toBeGreaterThanOrEqual(2);
   });
 
   it('a solo high-severity injury gets more remedies (severity ≥ 3 + solo bonus)', () => {
     const injury = makeInjury({ regions: ['L_SPINE'], severity: 4 });
-    const baseline = generateSession(baseInput);
     const session = generateSession({ ...baseInput, activeInjuries: [injury] });
-    const added = session.exercises.length - baseline.exercises.length;
     // Sev ≥ 3 base want 2 + solo bonus 1 = 3 remedies.
-    expect(added).toBeGreaterThanOrEqual(3);
+    expect(countRehabPrep(session.exercises)).toBeGreaterThanOrEqual(3);
   });
 
   it('rehab prep comes before competition exercises', () => {

@@ -296,3 +296,113 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     exerciseCount: generated.exercises.length,
   };
 }
+
+// ── Whole-session swap (v8) ──────────────────────────────────────────────────
+
+export interface RegenerateWithPrimaryResult {
+  status: 'regenerated' | 'refused';
+  reason?: 'session-completed' | 'sets-logged' | 'session-not-found' | 'profile-missing' | 'block-missing';
+  newPrimaryLift?: Lift;
+  exerciseCount?: number;
+}
+
+/**
+ * Re-author the session's exercises with a different primary lift. Used by
+ * the in-session "Change focus" affordance — replaces the existing exercise
+ * list (variation + accessories + remedial prep) with a fresh generation
+ * pinned to `forcePrimary`.
+ *
+ * Safety contract — matching `ensureSessionFresh`:
+ *   • Refuses to touch COMPLETED or SKIPPED sessions.
+ *   • Refuses if ANY logged sets exist for this session — that work is real
+ *     and must not be erased by a focus change.
+ *
+ * Does NOT consult the LLM session author — the change happens via the
+ * deterministic rule engine, so the result is predictable and side-effect-
+ * free (no Gemini call). The athlete can layer further changes via the
+ * existing per-exercise swap modal.
+ */
+export async function regenerateSessionWithPrimary(
+  sessionId: string,
+  forcePrimary: Lift,
+): Promise<RegenerateWithPrimaryResult> {
+  const session = await db.sessions.get(sessionId);
+  if (!session) return { status: 'refused', reason: 'session-not-found' };
+  if (session.status === 'COMPLETED' || session.status === 'SKIPPED') {
+    return { status: 'refused', reason: 'session-completed' };
+  }
+  const loggedSetCount = await db.sets.where('sessionId').equals(sessionId).count();
+  if (loggedSetCount > 0) return { status: 'refused', reason: 'sets-logged' };
+
+  const [profile, block, cycle] = await Promise.all([
+    db.profile.get('me'),
+    db.blocks.get(session.blockId),
+    db.cycles.get(session.cycleId),
+  ]);
+  if (!profile) return { status: 'refused', reason: 'profile-missing' };
+  if (!block)   return { status: 'refused', reason: 'block-missing' };
+
+  const cycleWeek = cycle?.currentWeek ?? 1;
+  const weekWithinBlock = Math.max(1, cycleWeek - block.weekStart + 1);
+
+  const dateStr = session.scheduledDate;
+  const readinessRow = await db.readiness.where('date').equals(dateStr).first();
+  const readinessScore = readinessRow?.readinessScore ?? session.readinessScore ?? 70;
+  const weekDayOfWeek = new Date(`${dateStr}T12:00:00`).getDay();
+  const recentLiftExposures = await loadRecentLiftExposures(dateStr).catch(() => []);
+  const { listActiveInjuries } = await import('@/lib/injuries');
+  const { getActiveArc } = await import('@/lib/arcs');
+  const [activeInjuries, activeArc] = await Promise.all([
+    listActiveInjuries().catch(() => []),
+    getActiveArc().catch(() => null),
+  ]);
+
+  const sessionNumber = 1; // exact value rarely matters with forcePrimary set
+
+  const generated = generateSession({
+    profile,
+    block,
+    weekDayOfWeek,
+    readinessScore,
+    sessionNumber,
+    weekWithinBlock,
+    recentLiftExposures,
+    activeInjuries,
+    arcPriorities: activeArc?.priorities,
+    forcePrimary,
+  });
+
+  await db.transaction('rw', db.sessions, db.exercises, async () => {
+    await db.sessions.update(sessionId, {
+      primaryLift:     generated.primaryLift,
+      secondaryLifts:  generated.secondaryLifts ?? [],
+      sessionType:     generated.sessionType,
+      coachNote:       generated.coachNote,
+      aiModifications: JSON.stringify(generated.modifications),
+      status:          'MODIFIED',
+    });
+    await db.exercises.where('sessionId').equals(sessionId).delete();
+    const freshExercises: SessionExercise[] = generated.exercises.map((ex) => ({
+      id:              newId(),
+      sessionId,
+      name:            ex.name,
+      exerciseType:    ex.exerciseType,
+      setStructure:    ex.setStructure,
+      sets:            ex.sets,
+      reps:            ex.reps,
+      rpeTarget:       ex.rpeTarget,
+      estimatedLoadKg: ex.estimatedLoadKg,
+      order:           ex.order,
+      notes:           ex.notes,
+      ...(ex.libraryExerciseId ? { libraryExerciseId: ex.libraryExerciseId } : {}),
+      ...(ex.tempo ? { tempo: ex.tempo } : {}),
+    }));
+    await db.exercises.bulkAdd(freshExercises);
+  });
+
+  return {
+    status:         'regenerated',
+    newPrimaryLift: generated.primaryLift,
+    exerciseCount:  generated.exercises.length,
+  };
+}

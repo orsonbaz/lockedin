@@ -398,6 +398,21 @@ export function generateSession(input: SessionInput): GeneratedSession {
     }
   }
 
+  // ── 5b. Arc-aware length cap ──────────────────────────────────────────────
+  // After prep + comp + variation + accessories are all in the list, sessions
+  // can balloon past 10 exercises — especially when injuries add 3-5 prep
+  // rows on top of a barbell-style accessory load. Trim from the END of the
+  // accessory tail (the selector already ranks low-priority last) until total
+  // is under the arc-mode ceiling. Prep, comp, and variation are protected.
+  const cap = sessionExerciseCap(arcMode);
+  const trimmed = trimToCap(exercises, cap);
+  if (trimmed > 0) {
+    modifications.push(
+      `Trimmed ${trimmed} accessor${trimmed === 1 ? 'y' : 'ies'} to keep the session under ${cap} exercises.`,
+    );
+    exercises.forEach((e, i) => { e.order = i + 1; });
+  }
+
   // ── 6. Coach note ──────────────────────────────────────────────────────────
   const coachNote = buildCoachNote(readinessScore, block.blockType);
 
@@ -742,6 +757,52 @@ function selectArcPrimary(
   // generator still produces output. The remedial prep + accessory selector
   // will fill in something the athlete can actually do.
   return 'FULL';
+}
+
+// ── Arc-Aware Session Length Cap ──────────────────────────────────────────────
+
+/**
+ * Total-exercises ceiling per arc mode. Tuned so a remedial-prep-heavy
+ * session (3 prep + 1 comp + 1 variation + accessories) doesn't blow past
+ * a reasonable training window:
+ *
+ *   BARBELL       → 8  — comp + variation + 4-5 accessories; powerlifting
+ *                       sessions earn the higher count.
+ *   CALISTHENICS  → 7  — pull-up / pistol primary doesn't need a variation,
+ *                       so the budget leaves room for 4-5 accessories.
+ *   REHAB         → 6  — prep is the point; accessories stay minimal.
+ *
+ * Not currently arc-constraint-aware (LIMITED_TIME etc.) — abbreviateSession
+ * still handles explicit minute budgets downstream.
+ */
+function sessionExerciseCap(arcMode: ArcMode): number {
+  switch (arcMode) {
+    case 'BARBELL':       return 8;
+    case 'CALISTHENICS':  return 7;
+    case 'REHAB':         return 6;
+  }
+}
+
+/**
+ * In-place trim the lowest-priority ACCESSORY exercises off the end of the
+ * list until total is at or under `cap`. Competition, variation, and
+ * remedial-prep rows are protected — they never get dropped.
+ *
+ * Returns the number of exercises removed (for the caller to surface in
+ * `modifications`).
+ */
+function trimToCap(exercises: GeneratedExercise[], cap: number): number {
+  if (exercises.length <= cap) return 0;
+  let removed = 0;
+  // Walk from the end; only accessories are eligible. Stop when we hit the
+  // cap or we run out of accessories (everything else is structural).
+  for (let i = exercises.length - 1; i >= 0 && exercises.length > cap; i--) {
+    if (exercises[i].exerciseType === 'ACCESSORY') {
+      exercises.splice(i, 1);
+      removed += 1;
+    }
+  }
+  return removed;
 }
 
 // ── Injury → Primary-Lift Vetoes ──────────────────────────────────────────────

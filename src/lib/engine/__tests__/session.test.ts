@@ -1615,3 +1615,100 @@ describe('generateSession — injury vetoes primary lift', () => {
     expect(result.primaryLift).not.toBe('SQUAT');
   });
 });
+
+describe('generateSession — arc-aware length cap', () => {
+  function makeInjury(overrides: Partial<Injury>): Injury {
+    return {
+      id: 'inj-cap',
+      label: 'Cap test injury',
+      regions: ['LEFT_SHOULDER'],
+      status: 'MANAGING',
+      severity: 4,                 // sev ≥ 3 → 2 remedies allocated
+      onsetDate: '2024-01-01',
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: [],
+      constraints: [],
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('caps a BARBELL session at 8 exercises when prep would push it past', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      activeInjuries: [
+        makeInjury({ id: 'a', regions: ['LEFT_SHOULDER'], severity: 4 }),
+        makeInjury({ id: 'b', regions: ['LEFT_KNEE'],     severity: 4 }),
+      ],
+    });
+    expect(result.exercises.length).toBeLessThanOrEqual(8);
+  });
+
+  it('caps a REHAB arc session more aggressively (6 exercises)', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY'],
+      activeInjuries: [
+        makeInjury({ id: 'a', regions: ['LEFT_SHOULDER'], severity: 4 }),
+        makeInjury({ id: 'b', regions: ['LEFT_KNEE'],     severity: 4 }),
+      ],
+    });
+    expect(result.exercises.length).toBeLessThanOrEqual(6);
+  });
+
+  it('trim only drops accessories — competition and remedial prep are protected', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      activeInjuries: [
+        makeInjury({ id: 'a', regions: ['LEFT_SHOULDER'], severity: 4 }),
+        makeInjury({ id: 'b', regions: ['LEFT_KNEE'],     severity: 4 }),
+      ],
+    });
+    // Comp lift survives no matter what.
+    expect(result.exercises.some((e) => e.exerciseType === 'COMPETITION')).toBe(true);
+    // Rehab prep survives — at least one row has the "Rehab" notes prefix.
+    expect(result.exercises.some((e) => /^rehab/i.test(e.notes ?? ''))).toBe(true);
+  });
+
+  it('annotates modifications when a trim happens', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY'],
+      activeInjuries: [
+        makeInjury({ id: 'a', regions: ['LEFT_SHOULDER'], severity: 4 }),
+        makeInjury({ id: 'b', regions: ['LEFT_KNEE'],     severity: 4 }),
+        makeInjury({ id: 'c', regions: ['L_SPINE'],       severity: 3 }),
+      ],
+    });
+    expect(result.modifications.some((m) => /trimmed/i.test(m))).toBe(true);
+  });
+
+  it('no cap message when the session is already under the ceiling', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('DELOAD'),  // smaller accessory budget
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+    });
+    expect(result.modifications.every((m) => !/trimmed/i.test(m))).toBe(true);
+  });
+});
