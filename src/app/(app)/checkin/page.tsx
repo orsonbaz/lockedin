@@ -292,24 +292,32 @@ function CheckInInner() {
           setAutoFilled(wearable.hrvSource);
         }
 
-        // Load lift exposures and auto-suggest the most-due primary lift.
-        const exposures = await loadRecentLiftExposures(today()).catch(() => []);
-        if (!cancelled) {
-          setLiftExposures(exposures);
-          const suggested = suggestPrimaryLift(exposures);
-          if (suggested) setPreferredPrimary(suggested);
-        }
-
-        // v8: load arc + active injuries so the page can hide SBD-specific UI
-        // when the active arc isn't competition-focused, and surface a symptom
-        // quick-log card when there are injuries to track.
-        const [arc, injuries] = await Promise.all([
+        // Load lift exposures + arc + active injuries in parallel. The arc
+        // gates whether we auto-suggest an SBD primary at all — a Get Healthy
+        // / Mobility Rebuild athlete should NEVER have squat/bench/deadlift
+        // pre-filled as `forcePrimary`, because that overrides the arc's
+        // UPPER/LOWER rotation downstream inside generateSession.
+        const [exposures, arc, injuries] = await Promise.all([
+          loadRecentLiftExposures(today()).catch(() => []),
           getActiveArc().catch(() => null),
           listActiveInjuries().catch(() => []),
         ]);
         if (!cancelled) {
+          setLiftExposures(exposures);
           setActiveArc(arc);
           setActiveInjuries(injuries);
+          // Only auto-suggest a primary lift when the arc is competition-
+          // focused (or absent — legacy / pre-arc athletes). On a longevity
+          // arc the engine picks UPPER/LOWER itself; pre-filling SQUAT here
+          // would beat the arc as `forcePrimary` and produce the same
+          // squat-day-every-day session the v8 rotation is meant to prevent.
+          const showsCompUi = !arc
+            || arc.primaryGoal === 'COMPETITION_PREP'
+            || arc.priorities.includes('COMPETITION');
+          if (showsCompUi) {
+            const suggested = suggestPrimaryLift(exposures);
+            if (suggested) setPreferredPrimary(suggested);
+          }
         }
 
         setReady(true);
