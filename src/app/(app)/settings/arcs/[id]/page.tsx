@@ -33,6 +33,8 @@ import {
   pauseArc,
   resumeArc,
   updateArc,
+  findOrphanedMeetsForArc,
+  archiveMeet,
 } from '@/lib/arcs';
 import { C } from '@/lib/theme';
 import type {
@@ -41,6 +43,7 @@ import type {
   ArcConstraint,
   TrainingGoal,
   ArcTransition,
+  Meet,
 } from '@/lib/db/types';
 
 const ALL_PRIORITIES: ArcPriority[] = Object.keys(ARC_PRIORITY_LABELS) as ArcPriority[];
@@ -88,6 +91,13 @@ export default function ArcDetailPage({ params }: ArcDetailPageProps) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
+  // Phase D follow-up — meet-reconciliation prompt. When activating a non-
+  // competition arc with upcoming meets on the calendar, we offer to archive
+  // them so the cycle macrocycle stops pinning the athlete to peak prep.
+  const [pendingActivation, setPendingActivation] = useState<{
+    arcId: string;
+    orphanedMeets: Meet[];
+  } | null>(null);
 
   useEffect(() => {
     if (!arc) return;
@@ -176,14 +186,49 @@ export default function ArcDetailPage({ params }: ArcDetailPageProps) {
   };
 
   const handleActivate = async () => {
+    if (!arc) return;
+    // Phase D follow-up — detect orphaned meets BEFORE activation. If the
+    // target arc isn't competition-flavored AND meets are still upcoming,
+    // open a confirm dialog so the athlete chooses what happens to the meet.
     setTransitioning(true);
     try {
+      const orphaned = await findOrphanedMeetsForArc({ priorities });
+      if (orphaned.length > 0) {
+        setPendingActivation({ arcId: arc.id, orphanedMeets: orphaned });
+        setTransitioning(false);
+        return;
+      }
       await activateArc(arc.id, 'Activated from arc detail');
       toast.success(`${arc.name} is now active`);
     } catch {
       toast.error('Could not activate');
     } finally {
       setTransitioning(false);
+    }
+  };
+
+  /**
+   * Confirm the pending activation. If `archive` is true, archive every
+   * orphaned meet first; either way, then activate the arc. Closes the dialog.
+   */
+  const confirmActivation = async (archive: boolean) => {
+    if (!pendingActivation || !arc) return;
+    setTransitioning(true);
+    try {
+      if (archive) {
+        await Promise.all(pendingActivation.orphanedMeets.map((m) => archiveMeet(m.id)));
+      }
+      await activateArc(pendingActivation.arcId, 'Activated from arc detail');
+      toast.success(
+        archive
+          ? `${arc.name} is now active. ${pendingActivation.orphanedMeets.length} meet${pendingActivation.orphanedMeets.length === 1 ? '' : 's'} archived.`
+          : `${arc.name} is now active. Meet kept on the calendar.`,
+      );
+    } catch {
+      toast.error('Could not activate');
+    } finally {
+      setTransitioning(false);
+      setPendingActivation(null);
     }
   };
 
@@ -446,6 +491,76 @@ export default function ArcDetailPage({ params }: ArcDetailPageProps) {
               <Save size={15} />
               {saving ? 'Saving…' : 'Save changes'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase D follow-up — orphan-meet reconciliation dialog. Appears when
+          activating a non-competition arc with upcoming meets on the calendar.
+          Lets the athlete either archive the meets (cycle regenerates as a
+          HEALTH_BASE rhythm) or keep them and accept the cycle stays in
+          peak-prep mode. */}
+      {pendingActivation && arc && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="meet-archive-title"
+        >
+          <div
+            className="w-full max-w-md rounded-3xl p-5"
+            style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+          >
+            <h2 id="meet-archive-title" className="text-lg font-bold mb-1" style={{ color: C.text }}>
+              You have an upcoming meet
+            </h2>
+            <p className="text-sm mb-3" style={{ color: C.muted }}>
+              Activating <span style={{ color: C.text, fontWeight: 600 }}>{arc.name}</span> moves
+              you away from peak prep, but a meet is still on the calendar — the cycle will keep
+              pinning you to a realization block unless the meet is archived.
+            </p>
+            <ul className="mb-4 space-y-1.5">
+              {pendingActivation.orphanedMeets.map((m) => (
+                <li
+                  key={m.id}
+                  className="text-xs rounded-xl px-3 py-2"
+                  style={{ backgroundColor: C.bg, color: C.text, border: `1px solid ${C.border}` }}
+                >
+                  <span style={{ fontWeight: 600 }}>{m.name}</span>
+                  <span style={{ color: C.muted }}> · {m.date} · {m.federation}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void confirmActivation(true)}
+                disabled={transitioning}
+                className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity active:opacity-80"
+                style={{ backgroundColor: C.accent, color: '#0a0a0a' }}
+              >
+                {transitioning ? 'Working…' : 'Archive meet and activate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmActivation(false)}
+                disabled={transitioning}
+                className="w-full px-4 py-2.5 rounded-xl text-sm font-medium"
+                style={{ backgroundColor: 'transparent', color: C.text, border: `1px solid ${C.border}` }}
+              >
+                Keep meet, activate anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingActivation(null)}
+                disabled={transitioning}
+                className="w-full px-4 py-2 text-xs"
+                style={{ color: C.muted }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

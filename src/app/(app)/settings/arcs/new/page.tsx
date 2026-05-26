@@ -22,10 +22,12 @@ import {
   ARC_PRIORITY_LABELS,
   ARC_CONSTRAINT_LABELS,
   createArc,
+  findOrphanedMeetsForArc,
+  archiveMeet,
   type ArcPreset,
 } from '@/lib/arcs';
 import { C } from '@/lib/theme';
-import type { ArcPriority, ArcConstraint, TrainingGoal } from '@/lib/db/types';
+import type { ArcPriority, ArcConstraint, TrainingGoal, Meet } from '@/lib/db/types';
 
 const ALL_PRIORITIES: ArcPriority[] = Object.keys(ARC_PRIORITY_LABELS) as ArcPriority[];
 const ALL_CONSTRAINTS: ArcConstraint[] = Object.keys(ARC_CONSTRAINT_LABELS) as ArcConstraint[];
@@ -62,6 +64,10 @@ export default function NewArcPage() {
   const [weeklyTimeBudgetMin, setWeeklyTimeBudgetMin] = useState<string>('');
 
   const [saving, setSaving] = useState(false);
+  // Phase D follow-up — orphan-meet reconciliation. When the new arc is being
+  // activated and isn't competition-flavored, surface upcoming meets and let
+  // the athlete archive them before the cycle regenerates.
+  const [pendingOrphans, setPendingOrphans] = useState<Meet[] | null>(null);
 
   const applyPreset = (p: ArcPreset) => {
     setPresetKey(p.key);
@@ -103,8 +109,30 @@ export default function NewArcPage() {
       return;
     }
 
+    // Phase D follow-up — if this arc is being activated AND it isn't a
+    // competition arc, check for upcoming meets that would conflict. Surface
+    // them for the athlete to archive before activation.
+    if (activate) {
+      const orphans = await findOrphanedMeetsForArc({ priorities });
+      if (orphans.length > 0) {
+        setPendingOrphans(orphans);
+        return;
+      }
+    }
+    await commitArc(activate, false);
+  };
+
+  /**
+   * Create + (optionally) activate the arc, archiving orphan meets first when
+   * the athlete chose to. Shared by the direct path (no orphans) and the
+   * confirm-dialog path.
+   */
+  const commitArc = async (activate: boolean, archiveOrphans: boolean) => {
     setSaving(true);
     try {
+      if (archiveOrphans && pendingOrphans) {
+        await Promise.all(pendingOrphans.map((m) => archiveMeet(m.id)));
+      }
       const budget = parseInt(weeklyTimeBudgetMin, 10);
       const arc = await createArc({
         name,
@@ -125,6 +153,7 @@ export default function NewArcPage() {
       toast.error('Could not save arc');
     } finally {
       setSaving(false);
+      setPendingOrphans(null);
     }
   };
 
@@ -330,6 +359,74 @@ export default function NewArcPage() {
                 Start now
               </span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase D follow-up — orphan-meet reconciliation dialog (same surface
+          as the arc detail page, kept here so the new-arc flow doesn't need
+          to bounce through the detail page first). */}
+      {pendingOrphans && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-arc-meet-archive-title"
+        >
+          <div
+            className="w-full max-w-md rounded-3xl p-5"
+            style={{ backgroundColor: C.surface, border: `1px solid ${C.border}` }}
+          >
+            <h2 id="new-arc-meet-archive-title" className="text-lg font-bold mb-1" style={{ color: C.text }}>
+              You have an upcoming meet
+            </h2>
+            <p className="text-sm mb-3" style={{ color: C.muted }}>
+              Activating <span style={{ color: C.text, fontWeight: 600 }}>{name || 'this arc'}</span> moves
+              you away from peak prep, but a meet is still on the calendar — the cycle will keep
+              pinning you to a realization block unless the meet is archived.
+            </p>
+            <ul className="mb-4 space-y-1.5">
+              {pendingOrphans.map((m) => (
+                <li
+                  key={m.id}
+                  className="text-xs rounded-xl px-3 py-2"
+                  style={{ backgroundColor: C.bg, color: C.text, border: `1px solid ${C.border}` }}
+                >
+                  <span style={{ fontWeight: 600 }}>{m.name}</span>
+                  <span style={{ color: C.muted }}> · {m.date} · {m.federation}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void commitArc(true, true)}
+                disabled={saving}
+                className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold transition-opacity active:opacity-80"
+                style={{ backgroundColor: C.accent, color: '#0a0a0a' }}
+              >
+                {saving ? 'Working…' : 'Archive meet and activate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void commitArc(true, false)}
+                disabled={saving}
+                className="w-full px-4 py-2.5 rounded-xl text-sm font-medium"
+                style={{ backgroundColor: 'transparent', color: C.text, border: `1px solid ${C.border}` }}
+              >
+                Keep meet, activate anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingOrphans(null)}
+                disabled={saving}
+                className="w-full px-4 py-2 text-xs"
+                style={{ color: C.muted }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -12,6 +12,7 @@
 
 import { db, today, newId } from '@/lib/db/database';
 import { invalidateCache } from '@/lib/ai/coach-cache';
+import { regenerateCycleFromArc } from '@/lib/arcs/cycle-sync';
 import type {
   TrainingArc,
   ArcTransition,
@@ -19,6 +20,7 @@ import type {
   ArcConstraint,
   ArcStatus,
   TrainingGoal,
+  Meet,
 } from '@/lib/db/types';
 
 // ── Reads ────────────────────────────────────────────────────────────────────
@@ -151,6 +153,19 @@ export async function activateArc(id: string, reason?: string): Promise<void> {
     endDate: undefined,
     updatedAt: new Date().toISOString(),
   });
+  // Phase D follow-up — the macrocycle must reflect the new arc's priorities.
+  // Without this, a switch from Back to Powerlifting → Get Healthy left the
+  // user pinned to the old peak cycle ("33 days to peak") forever. The coach
+  // actions used to do this; now every activation path does.
+  const refreshed = await db.trainingArcs.get(id);
+  if (refreshed) {
+    await regenerateCycleFromArc(refreshed).catch((err) => {
+      // Macrocycle regen is best-effort — if it fails the arc is still
+      // active, just the cycle stays. Log so dev can see; don't surface to
+      // the athlete (would block the activation toast).
+      console.warn('[activateArc] regenerateCycleFromArc failed:', err);
+    });
+  }
   await invalidateCache();
 }
 
@@ -213,6 +228,36 @@ async function writeTransition(
     createdAt: new Date().toISOString(),
   };
   await db.arcTransitions.add(transition);
+}
+
+// ── Meet reconciliation (Phase D follow-up) ─────────────────────────────────
+//
+// When the athlete switches from a competition arc to a longevity / mobility /
+// new-dad arc, any UPCOMING meet pins the cycle to peak-prep mode even though
+// the arc says "don't peak." Surface those orphaned meets so the UI can offer
+// to archive them as part of the switch.
+
+/**
+ * Returns the upcoming meets that would conflict with the target arc — i.e.
+ * meets still in the future on an arc that doesn't include COMPETITION.
+ * Empty array when the arc is COMPETITION-flavored or when no meets are
+ * upcoming.
+ */
+export async function findOrphanedMeetsForArc(
+  arc: Pick<TrainingArc, 'priorities'>,
+): Promise<Meet[]> {
+  if (arc.priorities.includes('COMPETITION')) return [];
+  const upcoming = await db.meets.filter((m) => m.status === 'UPCOMING').toArray();
+  return upcoming;
+}
+
+/**
+ * Archive a meet by setting its status to COMPLETED. The cycle that referenced
+ * it stays intact — the arc-switch macrocycle regeneration will reshape it
+ * into the longevity HEALTH_BASE rhythm. Idempotent.
+ */
+export async function archiveMeet(meetId: string): Promise<void> {
+  await db.meets.update(meetId, { status: 'COMPLETED' });
 }
 
 // ── Presets ──────────────────────────────────────────────────────────────────
