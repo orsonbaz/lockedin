@@ -25,7 +25,7 @@ import {
   calcReadinessScore,
   readinessLabel,
 } from '@/lib/engine/readiness';
-import { generateSession, abbreviateSession, getExpectedSecondary, suggestPrimaryLift } from '@/lib/engine/session';
+import { generateSession, abbreviateSession, getExpectedSecondary, suggestPrimaryLift, resolveArcMode } from '@/lib/engine/session';
 import { loadRecentLiftExposures } from '@/lib/engine/lift-exposures';
 import { reviewSessionPure, packReviewIssues } from '@/lib/engine/session-review';
 import { resolveReadinessInputs } from '@/lib/engine/wearables/wearables-db';
@@ -540,10 +540,13 @@ function CheckInInner() {
           });
 
           // 4a. Post-generation review — swap primary lift on bench/squat/DL drought,
-          // but only when the athlete hasn't explicitly picked their focus lift.
+          // but only when the athlete hasn't explicitly picked their focus lift
+          // AND the active arc is a barbell arc (cali / rehab arcs deliberately
+          // step away from SBD frequency, so drought rules don't apply).
+          const arcMode = resolveArcMode(activeArc?.priorities);
           const reviewPass1 = reviewSessionPure({
             session: generated, profile, block,
-            exposures: recentLiftExposures, weekDayOfWeek,
+            exposures: recentLiftExposures, weekDayOfWeek, arcMode,
           });
           const blockSwap1 = !preferredPrimary && reviewPass1.issues.find(
             (i) => i.severity === 'BLOCK' && /_DROUGHT$/.test(i.code),
@@ -562,7 +565,7 @@ function CheckInInner() {
           }
           const finalReview = reviewSessionPure({
             session: generated, profile, block,
-            exposures: recentLiftExposures, weekDayOfWeek,
+            exposures: recentLiftExposures, weekDayOfWeek, arcMode,
             skipDroughtCheck: true,
           });
           generated = finalReview.session;

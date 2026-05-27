@@ -1546,6 +1546,70 @@ describe('generateSession — arc-aware primary lift', () => {
   });
 });
 
+describe('generateSession — forcePrimary on non-BARBELL arc', () => {
+  // Regression for the "I picked Get Healthy but check-in still gave me bench"
+  // bug: forcePrimary=BENCH was overriding the cali rotation. Cali / rehab
+  // arcs now ignore SBD forcePrimary and surface a modification note.
+  it('CALISTHENICS arc rejects forcePrimary=BENCH and rotates UPPER/LOWER', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'],
+      forcePrimary: 'BENCH',
+    });
+    expect(result.primaryLift).not.toBe('BENCH');
+    expect(['UPPER', 'LOWER', 'FULL'] as const).toContain(result.primaryLift);
+    expect(result.secondaryLifts ?? []).toEqual([]);
+    expect(result.modifications.some((m) => m.toLowerCase().includes('ignored'))).toBe(true);
+  });
+
+  it('REHAB arc rejects forcePrimary=SQUAT and rotates UPPER/LOWER', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 2,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY'],
+      forcePrimary: 'SQUAT',
+    });
+    expect(result.primaryLift).not.toBe('SQUAT');
+    expect(['UPPER', 'LOWER', 'FULL'] as const).toContain(result.primaryLift);
+  });
+
+  it('BARBELL arc still honors forcePrimary=BENCH', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['STRENGTH_BARBELL'],
+      forcePrimary: 'BENCH',
+    });
+    expect(result.primaryLift).toBe('BENCH');
+    expect(result.modifications.some((m) => m.toLowerCase().includes('ignored'))).toBe(false);
+  });
+
+  it('Non-SBD forcePrimary (UPPER) is honored on a CALISTHENICS arc', () => {
+    // Athlete on cali arc explicitly pinning UPPER should still work — the
+    // reroute only fires for SBD picks that conflict with the arc.
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('HEALTH_BASE'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 2,    // would default to LOWER without forcePrimary
+      arcPriorities: ['STRENGTH_CALISTHENICS', 'MOBILITY'],
+      forcePrimary: 'UPPER',
+    });
+    expect(result.primaryLift).toBe('UPPER');
+  });
+});
+
 describe('generateSession — injury vetoes primary lift', () => {
   function makeInjury(overrides: Partial<Injury>): Injury {
     return {

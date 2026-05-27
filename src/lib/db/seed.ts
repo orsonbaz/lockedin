@@ -1,5 +1,5 @@
 import { db, newId, today } from './database';
-import type { AthleteProfile, TrainingArc } from './types';
+import type { AthleteProfile, Injury, TrainingArc } from './types';
 
 /**
  * Inserts a default AthleteProfile + initial "Get Healthy" arc + a
@@ -149,3 +149,87 @@ export async function seedIfEmpty(): Promise<void> {
   // No readiness record is seeded — the user should complete their first check-in
   // via the /checkin page, which gates access to /home.
 }
+
+// ── Athlete-specific calibration ─────────────────────────────────────────────
+
+/**
+ * Recurring issues that should influence every session generation, baked in
+ * at the engine level rather than left to in-app injury logging.
+ *
+ * Idempotent — uses deterministic IDs so re-running is safe. Adds any rows
+ * that don't exist yet; never overwrites an existing row (the athlete may
+ * have moved one to RESOLVED). Safe to call from a client effect on every
+ * app load.
+ */
+export async function ensureAthleteCalibration(): Promise<void> {
+  const profileCount = await db.profile.count();
+  if (profileCount === 0) return;
+
+  const rows: Injury[] = buildCalibrationInjuries();
+
+  for (const row of rows) {
+    const existing = await db.injuries.get(row.id);
+    if (existing) continue;
+    await db.injuries.add(row);
+  }
+}
+
+export function buildCalibrationInjuries(): Injury[] {
+  const nowIso = new Date().toISOString();
+  const onset  = today();
+  const notes  = 'Athlete calibration — see plan';
+
+  return [
+    {
+      id: 'calib_left_pec_tendinopathy',
+      label: 'Left pec tendon — fails midway on bench, paused bench aggravates',
+      regions: ['LEFT_SHOULDER'],
+      status: 'MANAGING',
+      severity: 2,
+      onsetDate: onset,
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: ['VERTICAL_PULL', 'HORIZONTAL_PULL'],
+      constraints: ['PAIN_FREE_RANGE_ONLY'],
+      notes,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+    {
+      id: 'calib_left_hip_flexor_quad_tightness',
+      label: 'Left hip flexor + quad tightness — trouble reaching squat depth',
+      regions: ['LEFT_HIP', 'L_SPINE'],
+      status: 'MANAGING',
+      severity: 2,
+      onsetDate: onset,
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: ['SINGLE_LEG', 'SQUAT'],
+      constraints: [],
+      notes,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+    {
+      id: 'calib_left_glute_drive_deficit',
+      label: 'Left glute / left-leg drive deficit on deadlift',
+      regions: ['LEFT_HIP', 'LEFT_KNEE'],
+      status: 'MANAGING',
+      severity: 2,
+      onsetDate: onset,
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: ['HINGE', 'SINGLE_LEG'],
+      constraints: [],
+      notes,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+  ];
+}
+
+export const ATHLETE_CALIBRATION_IDS = [
+  'calib_left_pec_tendinopathy',
+  'calib_left_hip_flexor_quad_tightness',
+  'calib_left_glute_drive_deficit',
+] as const;

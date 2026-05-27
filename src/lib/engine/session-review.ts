@@ -19,8 +19,9 @@
 
 import { loadRecentLiftExposures } from './lift-exposures';
 import { db } from '@/lib/db/database';
-import type { AthleteProfile, Lift, TrainingBlock } from '@/lib/db/types';
-import type { GeneratedSession, GeneratedExercise, LiftExposure } from './session';
+import { resolveArcMode } from './session';
+import type { AthleteProfile, ArcPriority, Lift, TrainingBlock } from '@/lib/db/types';
+import type { ArcMode, GeneratedSession, GeneratedExercise, LiftExposure } from './session';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,8 +84,14 @@ export function reviewSessionPure(input: {
   exposures: LiftExposure[];
   weekDayOfWeek: number;
   skipDroughtCheck?: boolean;
+  /** Arc mode the session was generated under. Defaults to BARBELL so
+   *  existing callers keep their behaviour; cali / rehab arcs pass their
+   *  resolved mode to suppress SBD-only rules (drought, face pulls). */
+  arcMode?: ArcMode;
 }): ReviewResult {
   const { session, profile, exposures, block, skipDroughtCheck } = input;
+  const arcMode = input.arcMode ?? 'BARBELL';
+  const isBarbellArc = arcMode === 'BARBELL';
   const issues: ReviewIssue[] = [];
   let patched: GeneratedSession = session;
 
@@ -128,7 +135,11 @@ export function reviewSessionPure(input: {
     return Number.isFinite(n);
   }
 
-  if (!skipDroughtCheck && canRewrite) {
+  // Drought checks are SBD-pattern rules — they only make sense on a
+  // BARBELL arc. A CALISTHENICS / REHAB arc deliberately deprioritizes
+  // SBD frequency; firing BENCH_DROUGHT on a cali arc would rewrite the
+  // session back into the very lift the arc is steering away from.
+  if (!skipDroughtCheck && canRewrite && isBarbellArc) {
     // Priority order: bench (highest weekly target) > squat > deadlift.
     // Only one drought fires per pass.
     if (
@@ -177,6 +188,7 @@ export function reviewSessionPure(input: {
     && isLateWeek && benchThisWeek < 2
     && patched.primaryLift !== 'BENCH'
     && canRewrite
+    && isBarbellArc
   ) {
     issues.push({
       code: 'BENCH_UNDER_TARGET',
@@ -186,7 +198,10 @@ export function reviewSessionPure(input: {
   }
 
   // ── 4. Face pulls on bench day ──────────────────────────────────────────
-  if (patched.primaryLift === 'BENCH' && !hasExerciseNamed(patched, 'Face Pull')) {
+  // Bench-pattern rule — only meaningful when the session actually centres on
+  // barbell bench. On a cali arc the "primary" is a pull-up / pistol; the
+  // generator already routes posterior-shoulder work via remedial prep.
+  if (isBarbellArc && patched.primaryLift === 'BENCH' && !hasExerciseNamed(patched, 'Face Pull')) {
     issues.push({
       code: 'NO_FACE_PULLS',
       severity: 'BLOCK',
@@ -271,9 +286,12 @@ export async function reviewSession(input: {
   block: TrainingBlock;
   dateStr: string;
   weekDayOfWeek: number;
+  arcPriorities?: ArcPriority[];
+  arcMode?: ArcMode;
 }): Promise<ReviewResult> {
   const exposures = await loadRecentLiftExposures(input.dateStr).catch(() => []);
-  return reviewSessionPure({ ...input, exposures });
+  const arcMode = input.arcMode ?? resolveArcMode(input.arcPriorities);
+  return reviewSessionPure({ ...input, exposures, arcMode });
 }
 
 /**

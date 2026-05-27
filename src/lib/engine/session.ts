@@ -209,11 +209,21 @@ export function generateSession(input: SessionInput): GeneratedSession {
   };
 
   // v8: arc-aware rotation. Cali- or rehab-dominant arcs short-circuit the
-  // SBD selectors and rotate UPPER/LOWER instead. forcePrimary still wins
-  // (athlete explicitly picked a lift at check-in), and a meet's COMPETITION
-  // priority routes back to the standard SBD path. injuryBlocksLift then
+  // SBD selectors and rotate UPPER/LOWER instead. forcePrimary wins on a
+  // BARBELL arc, but a non-BARBELL arc rejects SBD forcePrimary (the athlete
+  // is on a cali / rehab arc — pinning bench would re-introduce the very
+  // movement pattern the arc is deprioritizing). injuryBlocksLift then
   // vetoes any candidate whose movement pattern is contraindicated.
   const arcMode = resolveArcMode(input.arcPriorities);
+
+  const isSBD = (lift: Lift): boolean =>
+    lift === 'SQUAT' || lift === 'BENCH' || lift === 'DEADLIFT';
+  const effectiveForcePrimary: Lift | undefined =
+    input.forcePrimary && (arcMode === 'BARBELL' || !isSBD(input.forcePrimary))
+      ? input.forcePrimary
+      : undefined;
+  const forcePrimaryRerouted =
+    input.forcePrimary !== undefined && effectiveForcePrimary === undefined;
 
   const selection = (() => {
     const tryDemote = (primary: Lift, fallback: Lift): Lift =>
@@ -223,7 +233,7 @@ export function generateSession(input: SessionInput): GeneratedSession {
 
     // Resolve primary via forcePrimary → arc-aware → adaptive → cold-start.
     const resolvePrimary = (): Lift => {
-      if (input.forcePrimary) return input.forcePrimary;
+      if (effectiveForcePrimary) return effectiveForcePrimary;
       if (arcMode !== 'BARBELL') {
         return selectArcPrimary(sessionNumber, arcMode, input.activeInjuries);
       }
@@ -252,14 +262,14 @@ export function generateSession(input: SessionInput): GeneratedSession {
       return { primary, secondary };
     }
 
-    if (input.forcePrimary) {
+    if (effectiveForcePrimary) {
       const auto = pickSecondary(
-        input.forcePrimary, input.recentLiftExposures, profile,
+        effectiveForcePrimary, input.recentLiftExposures, profile,
         readinessScore, block.blockType, weekInBlockVal, totalBlockWeeksVal,
       );
       return {
-        primary:   input.forcePrimary,
-        secondary: applySecondaryPreference(input.forcePrimary, auto),
+        primary:   effectiveForcePrimary,
+        secondary: applySecondaryPreference(effectiveForcePrimary, auto),
       };
     }
 
@@ -311,6 +321,11 @@ export function generateSession(input: SessionInput): GeneratedSession {
   const totalRpeOffset   = rpeReadOffset + rpeHistoryOffset;
 
   const modifications: string[] = [];
+  if (forcePrimaryRerouted) {
+    modifications.push(
+      `Active arc (${arcMode.toLowerCase()}) ignored pinned ${input.forcePrimary} — rotated to ${primaryLift} instead.`,
+    );
+  }
   if (volMult < 1.0) {
     modifications.push(
       `Volume reduced to ${Math.round(volMult * 100)}% — readiness score: ${readinessScore}.`,
@@ -843,8 +858,9 @@ function selectArcPrimary(
  *
  *   BARBELL       → 8  — comp + variation + 4-5 accessories; powerlifting
  *                       sessions earn the higher count.
- *   CALISTHENICS  → 7  — pull-up / pistol primary doesn't need a variation,
- *                       so the budget leaves room for 4-5 accessories.
+ *   CALISTHENICS  → 6  — pull-up / pistol primary doesn't need a variation;
+ *                       remedial prep + 3-4 accessories is plenty for a cali
+ *                       arc that's deliberately stepping volume down.
  *   REHAB         → 6  — prep is the point; accessories stay minimal.
  *
  * Not currently arc-constraint-aware (LIMITED_TIME etc.) — abbreviateSession
@@ -853,7 +869,7 @@ function selectArcPrimary(
 function sessionExerciseCap(arcMode: ArcMode): number {
   switch (arcMode) {
     case 'BARBELL':       return 8;
-    case 'CALISTHENICS':  return 7;
+    case 'CALISTHENICS':  return 6;
     case 'REHAB':         return 6;
   }
 }

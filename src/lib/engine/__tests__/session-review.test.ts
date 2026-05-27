@@ -146,3 +146,64 @@ describe('session-review — weekly bench target', () => {
     expect(result.issues.some((i) => i.code === 'BENCH_UNDER_TARGET')).toBe(true);
   });
 });
+
+describe('session-review — arc-aware suppression', () => {
+  // Drought, BENCH_UNDER_TARGET, and NO_FACE_PULLS are SBD-pattern rules.
+  // They only make sense on a BARBELL arc. On a CALISTHENICS / REHAB arc
+  // the engine is deliberately rotating UPPER/LOWER and bench is not a
+  // weekly target — the review must stop firing these.
+  const caliSession: GeneratedSession = {
+    sessionType: 'ACCUMULATION',
+    primaryLift: 'UPPER',
+    exercises: [
+      {
+        name: 'Weighted Pull-Up',
+        exerciseType: 'COMPETITION',
+        setStructure: 'STRAIGHT',
+        sets: 4, reps: 6, rpeTarget: 7, estimatedLoadKg: 20, order: 1,
+      },
+    ],
+    modifications: [],
+    coachNote: '',
+  };
+
+  it('suppresses BENCH_DROUGHT on a CALISTHENICS arc', () => {
+    const exposures: LiftExposure[] = [
+      { lift: 'SQUAT',    daysSince: 30, weekCount: 0 },
+      { lift: 'BENCH',    daysSince: 30, weekCount: 0 },
+      { lift: 'DEADLIFT', daysSince: 30, weekCount: 0 },
+    ];
+    const result = reviewSessionPure({
+      session: caliSession, profile, block, exposures, weekDayOfWeek: 3,
+      arcMode: 'CALISTHENICS',
+    });
+    expect(result.issues.find((i) => i.code === 'BENCH_DROUGHT')).toBeUndefined();
+    expect(result.issues.find((i) => i.code === 'SQUAT_DROUGHT')).toBeUndefined();
+    expect(result.issues.find((i) => i.code === 'DEADLIFT_DROUGHT')).toBeUndefined();
+  });
+
+  it('suppresses NO_FACE_PULLS when primary is a cali lift on a CALISTHENICS arc', () => {
+    // A pull-up day shouldn't get a "missing face pull" auto-append — that
+    // rule is specifically about barbell bench.
+    const result = reviewSessionPure({
+      session: { ...caliSession, primaryLift: 'BENCH' }, // simulate odd state
+      profile, block, exposures: [], weekDayOfWeek: 3,
+      arcMode: 'CALISTHENICS',
+    });
+    expect(result.issues.find((i) => i.code === 'NO_FACE_PULLS')).toBeUndefined();
+  });
+
+  it('still fires BENCH_DROUGHT when arcMode defaults to BARBELL', () => {
+    // Regression: omitting arcMode must preserve the existing barbell-arc
+    // behaviour. Drought still fires.
+    const exposures: LiftExposure[] = [
+      { lift: 'SQUAT',    daysSince: 1,  weekCount: 2 },
+      { lift: 'BENCH',    daysSince: 6,  weekCount: 0 },
+      { lift: 'DEADLIFT', daysSince: 3,  weekCount: 1 },
+    ];
+    const result = reviewSessionPure({
+      session: squatSession, profile, block, exposures, weekDayOfWeek: 3,
+    });
+    expect(result.issues.find((i) => i.code === 'BENCH_DROUGHT')).toBeDefined();
+  });
+});

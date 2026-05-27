@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { seedIfEmpty } from '@/lib/db/seed';
+import { seedIfEmpty, ensureAthleteCalibration } from '@/lib/db/seed';
 
 /**
  * Runs the DB seed check once on first client render.
@@ -9,7 +9,10 @@ import { seedIfEmpty } from '@/lib/db/seed';
  */
 export function DbSeedInitializer() {
   useEffect(() => {
-    seedIfEmpty().catch((err) =>
+    (async () => {
+      await seedIfEmpty();
+      await ensureAthleteCalibration();
+    })().catch((err) =>
       console.error('[Lockedin] DB seed failed:', err)
     );
   }, []);

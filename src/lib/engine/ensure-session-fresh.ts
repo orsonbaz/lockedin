@@ -20,7 +20,7 @@
  */
 
 import { db, newId }          from '@/lib/db/database';
-import { generateSession }    from './session';
+import { generateSession, resolveArcMode }    from './session';
 import { loadRecentLiftExposures } from './lift-exposures';
 import { reviewSessionPure, packReviewIssues } from './session-review';
 import type { Lift, SessionExercise, TrainingSession } from '@/lib/db/types';
@@ -201,6 +201,8 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
     getActiveArc().catch(() => null),
   ]);
 
+  const arcMode = resolveArcMode(activeArc?.priorities);
+
   let generated = generateSession({
     profile,
     block,
@@ -217,8 +219,10 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   // Post-generation sanity review. If the review flags a BLOCK-severity
   // primary-lift swap (bench drought, etc.) we re-run the generator with
   // the new primary pinned so the full accessory chain rebuilds cleanly.
+  // The review itself is arc-aware now (drought rules suppressed on non-
+  // BARBELL arcs), so this swap branch only fires when it should.
   const firstReview = reviewSessionPure({
-    session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek,
+    session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek, arcMode,
   });
   const blockSwap = firstReview.issues.find(
     (i) => i.severity === 'BLOCK' && (
@@ -248,7 +252,7 @@ export async function ensureSessionFresh(dateStr: string): Promise<EnsureResult>
   // skipDroughtCheck=true so we don't ping-pong between BENCH/SQUAT/DL
   // when the athlete is fresh and all three read Infinity-days-since.
   const finalReview = reviewSessionPure({
-    session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek,
+    session: generated, profile, block, exposures: recentLiftExposures, weekDayOfWeek, arcMode,
     skipDroughtCheck: true,
   });
   generated = finalReview.session;
