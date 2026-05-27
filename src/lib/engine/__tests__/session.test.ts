@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateSession, abbreviateSession, estimateSessionMinutes, resolveArcMode } from '../session';
-import type { AthleteProfile, TrainingBlock, Injury } from '@/lib/db/types';
+import { generateSession, abbreviateSession, estimateSessionMinutes, resolveArcMode, deriveArcShape } from '../session';
+import type { AthleteProfile, ArcPriority, TrainingBlock, Injury } from '@/lib/db/types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -1467,15 +1467,22 @@ describe('resolveArcMode', () => {
     expect(resolveArcMode(['MOBILITY', 'STRENGTH_CALISTHENICS', 'COMPETITION'])).toBe('BARBELL');
   });
 
-  it('returns CALISTHENICS when STRENGTH_CALISTHENICS outranks STRENGTH_BARBELL', () => {
-    expect(resolveArcMode(['STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL', 'MOBILITY']))
+  it('returns CALISTHENICS only when STRENGTH_BARBELL is absent', () => {
+    // CALI_FIRST arcShape: STRENGTH_CALISTHENICS present, STRENGTH_BARBELL not.
+    expect(resolveArcMode(['STRENGTH_CALISTHENICS', 'MOBILITY']))
       .toBe('CALISTHENICS');
-    expect(resolveArcMode(['MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL']))
+    expect(resolveArcMode(['MOBILITY', 'STRENGTH_CALISTHENICS']))
       .toBe('CALISTHENICS');
   });
 
-  it('returns BARBELL when STRENGTH_BARBELL outranks STRENGTH_CALISTHENICS', () => {
+  it('returns BARBELL when STRENGTH_BARBELL is anywhere in priorities (HEALTHY_POWERLIFTING)', () => {
+    // Even when cali ranks ahead of barbell, the presence of STRENGTH_BARBELL
+    // means the athlete still wants SBD frequency — directive is "co-equal".
     expect(resolveArcMode(['STRENGTH_BARBELL', 'STRENGTH_CALISTHENICS']))
+      .toBe('BARBELL');
+    expect(resolveArcMode(['STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL', 'MOBILITY']))
+      .toBe('BARBELL');
+    expect(resolveArcMode(['MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL']))
       .toBe('BARBELL');
   });
 
@@ -1485,15 +1492,45 @@ describe('resolveArcMode', () => {
   });
 });
 
+describe('deriveArcShape', () => {
+  it('returns COMP_FOCUS when COMPETITION is in the top 3', () => {
+    expect(deriveArcShape(['COMPETITION', 'STRENGTH_BARBELL'])).toBe('COMP_FOCUS');
+    expect(deriveArcShape(['MOBILITY', 'STRENGTH_CALISTHENICS', 'COMPETITION'])).toBe('COMP_FOCUS');
+  });
+
+  it('returns HEALTHY_POWERLIFTING for STRENGTH_BARBELL + longevity priority', () => {
+    // The Get Healthy arc — cali ranks ahead of barbell but barbell is present,
+    // and MOBILITY/INJURY_HEALING signal a longevity-flavoured stack.
+    expect(deriveArcShape(['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL']))
+      .toBe('HEALTHY_POWERLIFTING');
+    expect(deriveArcShape(['STRENGTH_BARBELL', 'MOBILITY']))
+      .toBe('HEALTHY_POWERLIFTING');
+  });
+
+  it('returns COMP_FOCUS for pure barbell stack with no longevity priorities', () => {
+    expect(deriveArcShape(['STRENGTH_BARBELL'])).toBe('COMP_FOCUS');
+  });
+
+  it('returns CALI_FIRST only when STRENGTH_BARBELL is absent', () => {
+    expect(deriveArcShape(['STRENGTH_CALISTHENICS', 'MOBILITY'])).toBe('CALI_FIRST');
+    expect(deriveArcShape(['MOBILITY', 'STRENGTH_CALISTHENICS'])).toBe('CALI_FIRST');
+  });
+
+  it('returns REHAB when no strength priority and longevity-only priorities', () => {
+    expect(deriveArcShape(['INJURY_HEALING', 'MOBILITY'])).toBe('REHAB');
+  });
+});
+
 describe('generateSession — arc-aware primary lift', () => {
-  it('CALISTHENICS arc routes UPPER → Weighted Pull-Up as primary', () => {
+  it('CALI_FIRST arc routes UPPER → Weighted Pull-Up as primary', () => {
     const result = generateSession({
       profile: baseProfile,
       block: makeBlock('HEALTH_BASE'),
       weekDayOfWeek: 1,
       readinessScore: goodReadiness,
       sessionNumber: 1,            // odd → UPPER per selectArcPrimary
-      arcPriorities: ['STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL', 'MOBILITY'],
+      // CALI_FIRST = STRENGTH_CALISTHENICS without STRENGTH_BARBELL.
+      arcPriorities: ['STRENGTH_CALISTHENICS', 'MOBILITY'],
     });
 
     expect(result.primaryLift).toBe('UPPER');
@@ -1501,6 +1538,23 @@ describe('generateSession — arc-aware primary lift', () => {
     expect(comp?.name).toBe('Weighted Pull-Up');
     expect(comp?.libraryExerciseId).toBe('weighted_pull_up');
     // No SBD secondaries should be appended on a cali day.
+    expect(result.secondaryLifts ?? []).toEqual([]);
+  });
+
+  it('HEALTHY_POWERLIFTING arc keeps SBD rotation even with cali ahead of barbell', () => {
+    // Regression for the "Get Healthy generates UPPER/LOWER" bug. STRENGTH_BARBELL
+    // is present (even if ranked below cali) → BARBELL arcMode → SBD rotation.
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'],
+    });
+
+    expect(['SQUAT', 'BENCH', 'DEADLIFT'] as const).toContain(result.primaryLift);
+    // HEALTHY_POWERLIFTING defaults to no comp-stacking.
     expect(result.secondaryLifts ?? []).toEqual([]);
   });
 
@@ -1548,16 +1602,17 @@ describe('generateSession — arc-aware primary lift', () => {
 
 describe('generateSession — forcePrimary on non-BARBELL arc', () => {
   // Regression for the "I picked Get Healthy but check-in still gave me bench"
-  // bug: forcePrimary=BENCH was overriding the cali rotation. Cali / rehab
-  // arcs now ignore SBD forcePrimary and surface a modification note.
-  it('CALISTHENICS arc rejects forcePrimary=BENCH and rotates UPPER/LOWER', () => {
+  // bug: forcePrimary=BENCH was overriding the cali rotation. CALI_FIRST /
+  // REHAB arcs ignore SBD forcePrimary and surface a modification note.
+  it('CALI_FIRST arc rejects forcePrimary=BENCH and rotates UPPER/LOWER', () => {
     const result = generateSession({
       profile: baseProfile,
       block: makeBlock('HEALTH_BASE'),
       weekDayOfWeek: 1,
       readinessScore: goodReadiness,
       sessionNumber: 1,
-      arcPriorities: ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'],
+      // Pure cali — no STRENGTH_BARBELL in priorities.
+      arcPriorities: ['STRENGTH_CALISTHENICS', 'MOBILITY'],
       forcePrimary: 'BENCH',
     });
     expect(result.primaryLift).not.toBe('BENCH');
@@ -1594,7 +1649,23 @@ describe('generateSession — forcePrimary on non-BARBELL arc', () => {
     expect(result.modifications.some((m) => m.toLowerCase().includes('ignored'))).toBe(false);
   });
 
-  it('Non-SBD forcePrimary (UPPER) is honored on a CALISTHENICS arc', () => {
+  it('HEALTHY_POWERLIFTING arc honors forcePrimary=BENCH (bench is welcome 2x/week)', () => {
+    // Get Healthy stack: cali ahead of barbell but barbell present. Under the
+    // new arcShape model this is HEALTHY_POWERLIFTING → BARBELL → SBD is the
+    // normal rotation. Pinning BENCH on a non-bench-rotation day is honored.
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'],
+      forcePrimary: 'BENCH',
+    });
+    expect(result.primaryLift).toBe('BENCH');
+  });
+
+  it('Non-SBD forcePrimary (UPPER) is honored on a CALI_FIRST arc', () => {
     // Athlete on cali arc explicitly pinning UPPER should still work — the
     // reroute only fires for SBD picks that conflict with the arc.
     const result = generateSession({
@@ -1607,6 +1678,114 @@ describe('generateSession — forcePrimary on non-BARBELL arc', () => {
       forcePrimary: 'UPPER',
     });
     expect(result.primaryLift).toBe('UPPER');
+  });
+});
+
+describe('generateSession — calibration vetoes variation', () => {
+  function calibrationInjury(id: string, overrides?: Partial<Injury>): Injury {
+    return {
+      id,
+      label: id,
+      regions: ['LEFT_SHOULDER'],
+      status: 'MANAGING',
+      severity: 2,
+      onsetDate: '2026-01-01',
+      contraindicatedPatterns: [],
+      contraindicatedSwapGroups: [],
+      preferredPatterns: [],
+      constraints: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  // HEALTHY_POWERLIFTING priorities = no comp-stacking, no S→B→D rebuild —
+  // makes the assertions about what's in the variation slot crisp.
+  const healthyArc: ArcPriority[] = ['INJURY_HEALING', 'MOBILITY', 'STRENGTH_CALISTHENICS', 'STRENGTH_BARBELL'];
+
+  it('substitutes Close Grip Bench Press for Tempo Bench Press on bench day when left pec MANAGING', () => {
+    // Bench × ACCUMULATION × BALANCED bottleneck × odd week selects tempo_bench.
+    // Calibration veto list catches tempo_bench → falls back to close_grip_bench.
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: healthyArc,
+      forcePrimary: 'BENCH',
+      weekWithinBlock: 1,
+      activeInjuries: [calibrationInjury('calib_left_pec_tendinopathy')],
+    });
+
+    const benchVariation = result.exercises.find(
+      (e) => e.exerciseType === 'VARIATION' && e.libraryExerciseId?.includes('bench'),
+    );
+    expect(benchVariation?.libraryExerciseId).toBe('close_grip_bench_press');
+    expect(result.modifications.some((m) => m.toLowerCase().includes('calibration'))).toBe(true);
+  });
+
+  it('substitutes Pause Deadlift for Block Pull on DL day when left glute MANAGING', () => {
+    // DL × INTENSIFICATION × NEURAL bottleneck × even week selects block_pull.
+    const neuralProfile: AthleteProfile = { ...baseProfile, bottleneck: 'NEURAL' };
+    const result = generateSession({
+      profile: neuralProfile,
+      block: makeBlock('INTENSIFICATION'),
+      weekDayOfWeek: 6,
+      readinessScore: goodReadiness,
+      sessionNumber: 4,
+      arcPriorities: healthyArc,
+      forcePrimary: 'DEADLIFT',
+      weekWithinBlock: 2,
+      activeInjuries: [calibrationInjury('calib_left_glute_drive_deficit', { regions: ['LEFT_HIP', 'LEFT_KNEE'] })],
+    });
+
+    const dlVariation = result.exercises.find(
+      (e) => e.exerciseType === 'VARIATION' && e.libraryExerciseId?.includes('deadlift'),
+    );
+    expect(dlVariation?.libraryExerciseId).toBe('pause_deadlift');
+    expect(dlVariation?.libraryExerciseId).not.toBe('block_pull');
+  });
+
+  it('leaves variation untouched when no calibration injury matches', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: healthyArc,
+      forcePrimary: 'BENCH',
+      weekWithinBlock: 1,
+      activeInjuries: [],
+    });
+
+    const benchVariation = result.exercises.find(
+      (e) => e.exerciseType === 'VARIATION' && e.libraryExerciseId?.includes('bench'),
+    );
+    // No calibration → algorithmic pick stands (tempo_bench for odd week BALANCED).
+    expect(benchVariation?.libraryExerciseId).toBe('tempo_bench_press');
+    expect(result.modifications.some((m) => m.toLowerCase().includes('calibration'))).toBe(false);
+  });
+
+  it('does not substitute when the injury is RESOLVED', () => {
+    const result = generateSession({
+      profile: baseProfile,
+      block: makeBlock('ACCUMULATION'),
+      weekDayOfWeek: 1,
+      readinessScore: goodReadiness,
+      sessionNumber: 1,
+      arcPriorities: healthyArc,
+      forcePrimary: 'BENCH',
+      weekWithinBlock: 1,
+      activeInjuries: [calibrationInjury('calib_left_pec_tendinopathy', { status: 'RESOLVED' })],
+    });
+
+    const benchVariation = result.exercises.find(
+      (e) => e.exerciseType === 'VARIATION' && e.libraryExerciseId?.includes('bench'),
+    );
+    expect(benchVariation?.libraryExerciseId).toBe('tempo_bench_press');
   });
 });
 
